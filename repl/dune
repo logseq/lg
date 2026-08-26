@@ -1,6 +1,15 @@
 (library
  (name lg_repl)
  (public_name lg.repl)
+ (modules
+  nrepl_bencode
+  nrepl_protocol
+  nrepl_server
+  protocol
+  reader
+  session
+  socket_session
+  watch_session)
  (modes byte)
  (libraries
   compiler-libs.toplevel

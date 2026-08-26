@@ -694,6 +694,27 @@ let redefable_function_wrapper root_name = function
               args ) )
   | _ -> assert false
 
+let compatible_redefinition_root env env_key value_ty =
+  match Env.find_opt env_key env with
+  | Some binding -> (
+      match
+        ( Types.runtime_root_name binding,
+          Types.runtime_root_value_type binding )
+      with
+      | Some root_name, Some previous_ty when previous_ty = value_ty ->
+          Some root_name
+      | Some _, Some _ | Some _, None | None, _ -> None)
+  | None -> None
+
+let reset_runtime_root root_name expression =
+  Semantic_ir.Apply
+    ( Semantic_ir.Ident "Stdlib.ignore",
+      [
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.replace",
+            [ Semantic_ir.Ident root_name; expression ] );
+      ] )
+
 let rec contains_unresolved_type = function
   | TUnknown | TMeta _ | TVar _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
@@ -4184,7 +4205,7 @@ and compile_resolved scope env next_type form =
                         expression = expr.semantic_expr;
                       } )
                 else
-                  ( binding,
+                  let recursive_binding =
                     Recursive_value_binding
                       {
                         name = ocaml_name;
@@ -4195,7 +4216,45 @@ and compile_resolved scope env next_type form =
                         type_annotation =
                           recursive_type_annotation scope env name;
                         expression = expr.semantic_expr;
-                      } )
+                      }
+                  in
+                  let redefable =
+                    source_scope_redefable_roots scope
+                    && not (contains_unresolved_type binding.ty)
+                  in
+                  if redefable then
+                    match compatible_redefinition_root env env_key binding.ty with
+                    | Some root_name ->
+                        ( { binding with redef_root_name = Some root_name },
+                          Value_binding
+                            {
+                              pattern = Ignore_pattern;
+                              expression =
+                                reset_runtime_root root_name expr.semantic_expr;
+                            } )
+                    | None ->
+                        let root_name = redef_root_name ocaml_name in
+                        ( redefable_binding binding,
+                          Group
+                            [
+                              recursive_binding;
+                              Value_binding
+                                {
+                                  pattern = Named root_name;
+                                  expression =
+                                    runtime_root_expression
+                                      (Semantic_ir.Ident ocaml_name);
+                                };
+                              Value_binding
+                                {
+                                  pattern =
+                                    located_value_pattern name_form
+                                      (Named ocaml_name);
+                                  expression =
+                                    redefable_function_wrapper root_name binding.ty;
+                                };
+                            ] )
+                  else (binding, recursive_binding)
               in
               Ok
                 ( scope,
@@ -4269,26 +4328,40 @@ and compile_resolved scope env next_type form =
                         && not (contains_unresolved_type published_ty)
                       in
                       if redefable then
-                        let root_name = redef_root_name ocaml_name in
-                        ( redefable_binding binding,
-                          Group
-                            [
+                        match
+                          compatible_redefinition_root env env_key published_ty
+                        with
+                        | Some root_name ->
+                            ( { binding with redef_root_name = Some root_name },
                               Value_binding
                                 {
-                                  pattern = Named root_name;
+                                  pattern = Ignore_pattern;
                                   expression =
-                                    runtime_root_expression expr.semantic_expr;
-                                };
-                              Value_binding
-                                {
-                                  pattern =
-                                    located_value_pattern name_form
-                                      (Named ocaml_name);
-                                  expression =
-                                    redefable_function_wrapper root_name
-                                      published_ty;
-                                };
-                            ] )
+                                    reset_runtime_root root_name
+                                      expr.semantic_expr;
+                                } )
+                        | None ->
+                            let root_name = redef_root_name ocaml_name in
+                            ( redefable_binding binding,
+                              Group
+                                [
+                                  Value_binding
+                                    {
+                                      pattern = Named root_name;
+                                      expression =
+                                        runtime_root_expression
+                                          expr.semantic_expr;
+                                    };
+                                  Value_binding
+                                    {
+                                      pattern =
+                                        located_value_pattern name_form
+                                          (Named ocaml_name);
+                                      expression =
+                                        redefable_function_wrapper root_name
+                                          published_ty;
+                                    };
+                                ] )
                       else
                         ( binding,
                           Value_binding

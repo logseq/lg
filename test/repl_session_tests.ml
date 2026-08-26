@@ -131,6 +131,55 @@ let test_runtime_failure_does_not_terminate_session session =
   Session.eval session "(+ scoped-value 1)" |> expect_ok
   |> expect_value ~value:"11" ~type_name:"int"
 
+let test_same_signature_redefinition_updates_existing_callers session =
+  Session.eval session "(ns repl.hot)" |> expect_ok |> ignore;
+  Session.eval session
+    "(defn render-label [^:int value] (str \"Before \" value))"
+  |> expect_ok |> ignore;
+  Session.eval session
+    "(defn committed-caller [^:int value] (render-label value))"
+  |> expect_ok |> ignore;
+  Session.eval session "(committed-caller 7)" |> expect_ok
+  |> expect_value ~value:"\"Before 7\"" ~type_name:"string";
+  Session.eval session
+    "(defn render-label [^:int value] (str \"After \" value))"
+  |> expect_ok |> ignore;
+  Session.eval session "(committed-caller 7)" |> expect_ok
+  |> expect_value ~value:"\"After 7\"" ~type_name:"string"
+
+let test_redefinition_observer_can_reject_and_restore_a_candidate session =
+  Session.eval session "(ns repl.guard)" |> expect_ok |> ignore;
+  Session.eval session
+    "(defn guarded-view [^:int value] (str \"Good \" value))"
+  |> expect_ok |> ignore;
+  Session.eval session
+    "(defn guarded-caller [^:int value] (guarded-view value))"
+  |> expect_ok |> ignore;
+  Session.eval session
+    "(def cancel-guard (watch-redef! guarded-view (fn [] false)))"
+  |> expect_ok |> ignore;
+  Session.eval session
+    "(defn guarded-view [^:int value] (str \"Rejected \" value))"
+  |> expect_error;
+  Session.eval session "(guarded-caller 3)" |> expect_ok
+  |> expect_value ~value:"\"Good 3\"" ~type_name:"string"
+
+let test_recursive_function_redefinition_updates_existing_callers session =
+  Session.eval session "(ns repl.recursive-redefinition)" |> expect_ok |> ignore;
+  Session.eval session
+    "(defn recursive-label [^:int value] (if (= value 0) \"Before\" (recursive-label (dec value))))"
+  |> expect_ok |> ignore;
+  Session.eval session
+    "(defn recursive-caller [^:int value] (recursive-label value))"
+  |> expect_ok |> ignore;
+  Session.eval session "(recursive-caller 2)" |> expect_ok
+  |> expect_value ~value:"\"Before\"" ~type_name:"string";
+  Session.eval session
+    "(defn recursive-label [^:int value] (if (= value 0) \"After\" (recursive-label (dec value))))"
+  |> expect_ok |> ignore;
+  Session.eval session "(recursive-caller 2)" |> expect_ok
+  |> expect_value ~value:"\"After\"" ~type_name:"string"
+
 let () =
   if Array.length Sys.argv <> 2 then
     fail "expected the precompiled stdlib state path";
@@ -145,4 +194,7 @@ let () =
   test_namespace_switching session;
   test_static_type_queries_do_not_execute session;
   test_compile_failure_does_not_advance_state session;
-  test_runtime_failure_does_not_terminate_session session
+  test_runtime_failure_does_not_terminate_session session;
+  test_same_signature_redefinition_updates_existing_callers session;
+  test_redefinition_observer_can_reject_and_restore_a_candidate session;
+  test_recursive_function_redefinition_updates_existing_callers session

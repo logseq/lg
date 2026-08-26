@@ -9168,6 +9168,59 @@ let create ~compile_expr =
                   (compile_expr scope env body_form))
         | _ -> Error.error "binding expects a binding vector and body"
                   )
+    | "__lg_watch_redef" -> (
+        match arg_forms with
+        | [ FSymbol name; callback_form ] ->
+            let lookup name = lookup_binding scope env name in
+            let resolved =
+              match lookup name with
+              | Ok binding -> Ok binding
+              | Error _ -> (
+                  match String.split_on_char '/' name with
+                  | [ alias; member ] -> (
+                      match Env.resolve_namespace_alias ~scope alias env with
+                      | Some namespace -> lookup (namespace ^ "/" ^ member)
+                      | None ->
+                          Error.error
+                            ("unknown watch-redef! target " ^ name))
+                  | _ ->
+                      Error.error ("unknown watch-redef! target " ^ name))
+            in
+            Result.bind resolved (fun binding ->
+                match
+                  ( Types.runtime_root_name binding,
+                    Types.runtime_root_value_type binding )
+                with
+                | Some root_name, Some _value_ty ->
+                    let callback_ty = TFn ([], TBool) in
+                    let callback_env =
+                      Env.with_expected_type (Some callback_ty) env
+                    in
+                    Result.bind
+                      (compile_expr scope callback_env callback_form)
+                      (fun callback ->
+                        if callback.ty = callback_ty then
+                          Ok
+                            (typed_ir (TFn ([], TBool))
+                               (Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_reference.observe_replacement_notifications",
+                                    [
+                                      Semantic_ir.Ident root_name;
+                                      callback.semantic_expr;
+                                    ] )))
+                        else
+                          Error.error
+                            ("watch-redef! " ^ name ^ " expects "
+                           ^ Types.source_name callback_ty ^ ", got "
+                           ^ Types.source_name callback.ty))
+                | None, _ | _, None ->
+                    Ok
+                      (typed_ir (TFn ([], TBool))
+                         (Semantic_ir.Fun ([], Semantic_ir.Bool false))))
+        | _ ->
+            Error.error
+              "watch-redef! expects one function symbol and one callback")
     | "__lg_with_redefs" -> (
         match arg_forms with
         | FVector bindings :: body_forms ->

@@ -7,9 +7,16 @@ type 'value watch =
       }
       -> 'value watch
 
+and 'value replacement_observer = {
+  replacement_observer_id : int;
+  replacement_callback : 'value -> 'value -> bool;
+}
+
 and 'value t = {
   mutable value : 'value;
   mutable watches : 'value watch list;
+  mutable replacement_observers : 'value replacement_observer list;
+  mutable next_replacement_observer_id : int;
   mutable validator : 'value validator;
   mutable metadata : Lg_edn_backend.t option;
   mutable binding_depth : int;
@@ -17,7 +24,15 @@ and 'value t = {
 and 'value validator = ('value -> bool) option
 
 let of_value value =
-  { value; watches = []; validator = None; metadata = None; binding_depth = 0 }
+  {
+    value;
+    watches = [];
+    replacement_observers = [];
+    next_replacement_observer_id = 0;
+    validator = None;
+    metadata = None;
+    binding_depth = 0;
+  }
 
 let deref reference = reference.value
 let is_bound reference = reference.binding_depth > 0
@@ -62,6 +77,48 @@ let reset reference value =
   reference.value <- value;
   notify reference old_value value;
   value
+
+let add_replacement_observer reference callback =
+  reference.next_replacement_observer_id <-
+    reference.next_replacement_observer_id + 1;
+  let observer =
+    {
+      replacement_observer_id = reference.next_replacement_observer_id;
+      replacement_callback = callback;
+    }
+  in
+  reference.replacement_observers <-
+    reference.replacement_observers @ [ observer ];
+  observer.replacement_observer_id
+
+let observe_replacements reference callback =
+  let observer_id = add_replacement_observer reference callback in
+  fun () ->
+    reference.replacement_observers <-
+      List.filter
+        (fun observer -> observer.replacement_observer_id <> observer_id)
+        reference.replacement_observers;
+    true
+
+let observe_replacement_notifications reference callback =
+  observe_replacements reference (fun _old_value _new_value -> callback ())
+
+let replace reference value =
+  validate reference value;
+  let old_value = reference.value in
+  reference.value <- value;
+  match
+    List.iter
+      (fun observer ->
+        if observer.replacement_callback old_value value then ()
+        else invalid_arg "replacement observer rejected candidate")
+      reference.replacement_observers;
+    notify reference old_value value
+  with
+  | () -> value
+  | exception exn ->
+      reference.value <- old_value;
+      raise exn
 
 let vreset reference value =
   reference.value <- value;

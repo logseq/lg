@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 260; then
-  echo "compiler call dispatch changed: expected 260 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 261; then
+  echo "compiler call dispatch changed: expected 261 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -226,6 +226,7 @@ awk '
     internal_abi["__lg_merge"] = "typed-variadic-map-shape-unification-primitive"
     internal_abi["__lg_memoize"] = "typed-fixed-arity-function-memoization-primitive"
     internal_abi["__lg_with_redefs"] = "typed-var-root-temporary-rebinding-primitive"
+    internal_abi["__lg_watch_redef"] = "typed-development-root-replacement-observer-primitive"
     internal_abi["__lg_set"] = "typed-seqable-to-set-conversion-primitive"
     internal_abi["__lg_some"] = "typed-nullable-first-truthy-sequence-search-primitive"
     internal_abi["__lg_complement"] = "typed-contextual-fixed-arity-predicate-negation-primitive"

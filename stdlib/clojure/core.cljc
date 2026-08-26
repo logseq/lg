@@ -1839,6 +1839,9 @@
 (defmacro with-redefs [bindings & body]
   `(__lg_with_redefs ~bindings ~@body))
 
+(defmacro watch-redef! [target callback]
+  `(__lg_watch_redef ~target ~callback))
+
 (defmacro with-precision [precision & expressions]
   (if (= :rounding (first expressions))
     `(__lg_with-precision ~precision ~(name (second expressions))

@@ -143,6 +143,11 @@
  (libraries lg.runtime lg.edn-backend.native rrbvec))
 
 (test
+ (name runtime_reference_tests)
+ (modules runtime_reference_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
  (name runtime_test_report_tests)
  (modules runtime_test_report_tests)
  (libraries lg.runtime lg.edn-backend.native rrbvec))

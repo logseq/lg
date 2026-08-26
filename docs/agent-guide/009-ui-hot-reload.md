@@ -1,6 +1,6 @@
 # ADR 009: Provide a Complete UI Hot Reload Experience
 
-- Status: Accepted; Phase 0 complete and Phase 1 retained reconciliation implemented
+- Status: Accepted; Phases 0 and 1 complete
 - Date: 2026-08-26
 - Decision owners: LG compiler and LUI maintainers
 - Related: `docs/design.md`, `docs/architecture.md`, and
@@ -286,7 +286,7 @@ dynamic-library replacement is not the default reload mechanism.
 
 ## Implementation status
 
-The implementation now has two layers of evidence.
+The implementation now has three layers of evidence.
 
 The isolated LG prototype proves typed same-address replacement semantics in a
 persistent process. The production LUI runtime now provides:
@@ -315,15 +315,33 @@ persistent process. The production LUI runtime now provides:
 - stable component state scopes, separate from generation-owned handler and
   subscription scopes, including nested component paths; and
 - retained-handler rebinding through typed node aliases, so compatible native
-  controls use the new generation's closures.
+  controls use the new generation's closures;
+- stable typed roots for ordinary and recursive same-signature functions, so
+  existing callers observe a replacement without a dynamic registry;
+- transactional root observers that let LUI validate a tentative candidate and
+  restore the last-known-good function when reconciliation rejects it;
+- an attached Native bytecode session that can bootstrap from an
+  application-specific saved state and open its linked implementation module;
+- a content-hashed watch session with monotonic generations, write-burst
+  settling, changed-path compilation, structured rejection, and last-known-good
+  behavior;
+- an LG-to-bytecode-to-LUI end-to-end test that creates a live reducer app,
+  reloads a saved View automatically, preserves its model, rejects invalid
+  source, and commits only the newest write in a burst;
+- explicit string reload keys whose identities survive sibling insertion and
+  reordering; and
+- active component-path tracking that retains compatible local state, prunes
+  removed state scopes, and restores the registry after candidate failure.
 
-This is not yet the completed developer experience. Production view reload
-now preserves matching descendants by type and structural position. Explicit
-key reconciliation, host-level focus/selection/scroll acceptance tests, and
-state-scope pruning for removed component paths remain before the retention
-contract is complete. The LG file watcher, incremental candidate compiler,
-attached bytecode loader, resource dependency graph, typed migrations, and
-automatic target restart are also still pending.
+Phase 1 is the complete View loop, not the complete ADR. The watcher accepts the
+transitive source closure from the development target and hashes every supplied
+path; automatic workspace closure discovery belongs in the developer tooling
+integration. Swift and Flutter retained-backend suites cover keyed moves,
+retained focus objects, draft/IME state, and atomic root replacement. A Web
+browser acceptance fixture for focus, selection, scroll, and window context is
+still part of Phase 4 tooling. The resource dependency graph, typed migrations,
+automatic target restart, and in-application diagnostic overlay remain in later
+phases.
 
 ## Prototype evidence
 
@@ -346,9 +364,10 @@ Run the evidence with:
 dune runtest prototype/hot_reload
 ```
 
-It does not yet prove real LG compilation, LUI reconciliation, file watching,
-asset replacement, same-signature logic replacement, migration, or attached
-application transport.
+Phase 0 by itself does not prove those behaviors. Phase 1 now proves real LG
+compilation, attached bytecode evaluation, LUI reconciliation, file watching,
+same-signature View and helper replacement, and retained model/widget state.
+Asset replacement, migration, and restart fallback remain later-phase work.
 
 ## Delivery phases
 
@@ -369,13 +388,19 @@ application transport.
 - Complete: reconcile matching descendants by type and structural position,
   remove stale properties, replace only incompatible subtrees, rebind event
   handlers, and preserve nested component-local state scopes.
-- Remaining: watch the transitive View dependency closure and compile the
-  replacement in the attached persistent bytecode process.
-- Remaining: add explicit-key reconciliation and prune state scopes for
-  component paths that are no longer mounted.
-- Remaining: prove focus, selection, scroll, and keyed widget state with host
-  acceptance tests; expose the complete diagnostic overlay; and meet the
-  documented latency target.
+- Complete: hash and watch the View dependency closure supplied by the
+  development target, settle editor write bursts, and compile changed paths in
+  the attached persistent bytecode process.
+- Complete: route tentative typed root replacement through LUI validation and
+  roll the root back when the candidate is rejected.
+- Complete: reconcile explicit keys and prune state scopes for component paths
+  that are no longer mounted.
+- Complete: prove the real save-to-visible-View loop, invalid-source LKG, and
+  newest-generation-only behavior in one attached end-to-end test.
+- Complete: retain host objects through atomic root replacement and keyed moves;
+  the Swift and Flutter suites cover focus-bearing controls and native draft/IME
+  state. Cross-host browser context restoration remains a tooling acceptance
+  item in Phase 4.
 
 ### Phase 2: UI code and resources
 

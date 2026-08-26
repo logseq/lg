@@ -81,8 +81,21 @@ let execute structure =
       (if String.equal message "" then "OCaml toplevel evaluation failed"
        else message)
 
-let open_precompiled_stdlib () =
-  let lexbuf = Lexing.from_string "open Lg_stdlib_native;;" in
+let valid_module_name name =
+  let valid_initial = function 'A' .. 'Z' -> true | _ -> false in
+  let valid_rest = function
+    | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '\'' -> true
+    | _ -> false
+  in
+  String.length name > 0
+  && valid_initial name.[0]
+  && String.for_all valid_rest name
+
+let open_precompiled_module module_name =
+  if not (valid_module_name module_name) then
+    infrastructure_error ("invalid bootstrap module " ^ module_name)
+  else
+  let lexbuf = Lexing.from_string ("open " ^ module_name ^ ";;") in
   Location.init lexbuf "<repl-bootstrap>";
   let phrase = !Toploop.parse_toplevel_phrase lexbuf in
   match phrase with
@@ -144,7 +157,7 @@ let configure_toplevel_load_path ~state_path ~packages =
          && Sys.file_exists path && Sys.is_directory path)
   |> List.sort_uniq String.compare |> List.iter Topdirs.dir_directory
 
-let create_from_stdlib ~state_path =
+let create_from_state ~include_directories ~state_path ~bootstrap_module =
   match Lg.Compiler_artifact.read ~kind:"saved-state" ~path:state_path with
   | Error message -> infrastructure_error message
   | Ok saved ->
@@ -163,13 +176,21 @@ let create_from_stdlib ~state_path =
             | Ok () ->
                 configure_toplevel_load_path ~state_path
                   ~packages:saved.packages;
+                include_directories
+                |> List.filter (fun path ->
+                       Sys.file_exists path && Sys.is_directory path)
+                |> List.iter Topdirs.dir_directory;
                 Result.map
                   (fun () ->
                     {
                       compiler_state =
                         Lg.Compiler.with_source_scope "user" compiler_state;
                     })
-                  (open_precompiled_stdlib ()))
+                  (open_precompiled_module bootstrap_module))
+
+let create_from_stdlib ~state_path =
+  create_from_state ~include_directories:[] ~state_path
+    ~bootstrap_module:"Lg_stdlib_native"
 
 let namespace session = Lg.Compiler.source_scope session.compiler_state
 let prompt session = namespace session ^ "=> "
@@ -211,6 +232,31 @@ let eval ?(filename = "<string>") session source =
               session.compiler_state <- candidate_state;
               { outcome; namespace = namespace session })
             outcome)
+
+let eval_files session paths =
+  let rec compile compiler_state structures count = function
+    | [] -> Ok (compiler_state, List.rev structures |> List.concat, count)
+    | path :: rest -> (
+        match In_channel.with_open_bin path In_channel.input_all with
+        | source -> (
+            match
+              Lg.Compiler.compile_chunk_parsetree_with_filename ~filename:path
+                compiler_state source
+            with
+            | Error _ as error -> error
+            | Ok (candidate_state, structure) ->
+                compile candidate_state (structure :: structures) (count + 1)
+                  rest)
+        | exception Sys_error message -> infrastructure_error message)
+  in
+  match compile session.compiler_state [] 0 paths with
+  | Error _ as error -> error
+  | Ok (candidate_state, structure, file_count) -> (
+      match execute structure with
+      | Error _ as error -> error
+      | Ok () ->
+          session.compiler_state <- candidate_state;
+          Ok file_count)
 
 let type_of session source =
   Lg.Compiler.infer_repl_type session.compiler_state source
