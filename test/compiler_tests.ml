@@ -16234,6 +16234,93 @@ let test_mutual_recursion_keeps_different_arities_separate () =
   assert_ocaml_runs "mutual_recursion_keeps_different_arities_separate" "42\n"
     ocaml_source
 
+let test_mutual_recursion_propagates_parameterized_record_results () =
+  let source =
+    {|
+(external-record Lg_runtime.Runtime_reify.t [db]
+  (payload :vector<db>))
+(type-alias relation [db]
+  :Lg_runtime.Runtime_reify.t<db>)
+(type-record database-view
+  (id :int))
+(signature user/consume
+  :fn<relation<database-view>;int;relation<database-view>>)
+(defn relation-items [relation]
+  (.-payload relation))
+(declare resolve-later)
+(defn resolve-first [relation remaining]
+  (let [matched (resolve-later relation remaining)]
+    (mapv (fn [item] (:id item)) (relation-items matched))
+    relation))
+(defn resolve-later [relation remaining]
+  (if (= remaining 0)
+    relation
+    (resolve-first relation (- remaining 1))))
+(defn consume [relation remaining]
+  (resolve-first relation remaining))
+|}
+  in
+  List.iter
+    (fun target ->
+      let _, compilation =
+        Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+          ~check_ocaml:false ~filename:"test/parameterized_record_scc.cljc"
+          (stdlib_state target) source
+        |> expect_ok
+      in
+      if string_contains_substring compilation.ocaml_source "Runtime_dynamic"
+      then failwith "parameterized record SCC results must remain static")
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
+let test_mutual_recursion_propagates_call_result_constraints () =
+  let source =
+    {|
+(external-record Lg_runtime.Runtime_reify.t [db]
+  (payload :db))
+(type-record database-view
+  (id :int))
+(type-alias relation
+  :Lg_runtime.Runtime_reify.t<database-view>)
+(signature user/project-relation
+  :fn<relation;relation>)
+(signature user/merge-relations
+  :fn<relation;relation;relation>)
+(defn project-relation [relation]
+  relation)
+(defn merge-relations [left _right]
+  left)
+(declare resolve-static)
+(defn resolve-or [relation branches]
+  (let [resolved
+        (mapv
+         (fn [branch]
+           (project-relation (resolve-static relation branch)))
+         branches)]
+    (if-some [first-branch (first resolved)]
+      (reduce merge-relations first-branch (subvec resolved 1))
+      relation)))
+(defn resolve-static [relation branch]
+  (if branch
+    (resolve-or relation [])
+    relation))
+(signature user/consume
+  :fn<relation;vector<bool>;relation>)
+(defn consume [relation branches]
+  (resolve-or relation branches))
+|}
+  in
+  List.iter
+    (fun target ->
+      let _, compilation =
+        Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+          ~check_ocaml:false ~filename:"test/call_result_scc.cljc"
+          (stdlib_state target) source
+        |> expect_ok
+      in
+      if string_contains_substring compilation.ocaml_source "Runtime_dynamic"
+      then failwith "recursive call result constraints must remain static")
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
 let test_polymorphic_recursion_requires_explicit_interface () =
   Lg.Compiler.compile_string
     {|
@@ -16281,6 +16368,65 @@ let test_reduce_infers_callback_from_initializer_and_collection () =
     failwith "reduce callback inference must remain static";
   assert_ocaml_runs "reduce_infers_callback_from_initializer_and_collection"
     "8\n" ocaml_source
+
+let test_reduce_infers_map_accumulator_from_operations_and_caller () =
+  let state, provider =
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native)
+    {|
+(defn product-attrs [left right]
+  (reduce
+    (fn [attrs variable]
+      (if (contains? attrs variable)
+        (Stdlib.invalid_arg "duplicate attribute")
+        (assoc attrs variable (count attrs))))
+    left
+    (keys right)))
+|}
+    |> expect_ok
+  in
+  let cached = Lg.Compiler.cacheable_state state in
+  let serialized = Marshal.to_string cached [] in
+  let state : Lg.Compiler.state = Marshal.from_string serialized 0 in
+  let state =
+    Lg.Compiler.restore_ocaml_environment ~target:Lg.Target.Native ~packages:[]
+      state []
+    |> expect_ok
+  in
+  let _, consumer =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~target:Lg.Target.Native ~filename:"test/map_accumulator_consumer.cljc"
+      state
+      {|
+(println
+  (get
+    (product-attrs {"left" 0} {"right" 0})
+    "right"))
+|}
+    |> expect_ok
+  in
+  let ocaml_source = provider ^ consumer.ocaml_source in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "map reducer inference must not erase the accumulator";
+  assert_ocaml_runs
+    "reduce_infers_map_accumulator_from_operations_and_caller"
+    "1\n" ocaml_source
+
+let test_merge_infers_map_parameters_from_caller () =
+  let source =
+    {|
+(defn merge-maps [left right]
+  (merge left right))
+(println
+  (get
+    (merge-maps {"left" 1} {"right" 2})
+    "right"))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "merge caller inference must keep both maps static";
+  assert_ocaml_runs "merge_infers_map_parameters_from_caller" "2\n"
+    ocaml_source
 
 let test_mapv_infers_callback_from_caller_collection_evidence () =
   let source =
@@ -48141,12 +48287,20 @@ let tests =
       test_forward_optional_result_is_narrowed_before_closed_record_call );
     ( "mutual recursion keeps different arities separate",
       test_mutual_recursion_keeps_different_arities_separate );
+    ( "mutual recursion propagates parameterized record results",
+      test_mutual_recursion_propagates_parameterized_record_results );
+    ( "mutual recursion propagates call result constraints",
+      test_mutual_recursion_propagates_call_result_constraints );
     ( "polymorphic recursion requires explicit interface",
       test_polymorphic_recursion_requires_explicit_interface );
     ( "polymorphic recursion accepts explicit interface",
       test_polymorphic_recursion_accepts_explicit_interface );
     ( "reduce infers callback from initializer and collection",
       test_reduce_infers_callback_from_initializer_and_collection );
+    ( "reduce infers map accumulator from operations and caller",
+      test_reduce_infers_map_accumulator_from_operations_and_caller );
+    ( "merge infers map parameters from caller",
+      test_merge_infers_map_parameters_from_caller );
     ( "mapv infers callback from caller collection evidence",
       test_mapv_infers_callback_from_caller_collection_evidence );
     ( "unannotated defrecord fields are statically polymorphic",

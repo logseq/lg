@@ -748,7 +748,8 @@ let lexical_parameter_names specs =
          spec.source_name :: Destructure.pattern_names spec.pattern)
   |> List.sort_uniq String.compare
 
-let prepare ?(param_type_overrides = []) ?preferred_record ?variadic_rest_index
+let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
+    ?refine_inferred_env ?preferred_record ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
     ?compile_function_body ?compile_default
     ~lookup_function_ty ~compile_body scope env params body_forms =
@@ -804,6 +805,11 @@ let prepare ?(param_type_overrides = []) ?preferred_record ?variadic_rest_index
                in
                (spec.source_name, param_ty) :: destructured)
         |> List.concat
+        |> fun params ->
+        params
+        @ List.filter
+            (fun (name, _) -> not (List.mem_assoc name params))
+            additional_inference_params
       in
       let lookup_protocol_constraint = Protocol.constraint_type scope env in
       let lookup_dynamic_key_record_type =
@@ -837,6 +843,11 @@ let prepare ?(param_type_overrides = []) ?preferred_record ?variadic_rest_index
       with
       | Error _ as err -> err
       | Ok inferred -> (
+          let env =
+            match refine_inferred_env with
+            | Some refine -> refine inferred env
+            | None -> env
+          in
           let rec matches_parameter_as_option name = function
             | Ast.FList
                 (Ast.FSymbol "match" :: Ast.FSymbol target :: clauses)

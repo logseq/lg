@@ -2687,7 +2687,7 @@ and compile_resolved scope env next_type form =
                          when not
                                 (Types.equal binding.ty
                                    (TOcaml "__declared_fn")) ->
-                           env
+                           Env.add key (Types.instantiate_binding binding) env
                        | Some _ | None ->
                            Env.add key
                              (Types.binding ocaml_name
@@ -2715,6 +2715,277 @@ and compile_resolved scope env next_type form =
             | FList (FSymbol "deftype-methods" :: _) -> true
             | _ -> false)
           definitions
+      in
+      let generalize_function_bindings env =
+        List.fold_left
+          (fun env -> function
+            | FList
+                (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
+                let key = Names.scoped_key scope name in
+                (match Env.find_opt key env with
+                | Some binding ->
+                    Env.add key (Types.generalize_binding binding) env
+                | None -> env)
+            | _ -> env)
+          env function_definitions
+      in
+      let scc_inference_params env =
+        function_definitions
+        |> List.filter_map (function
+             | FList
+                 (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
+                 Env.find_opt (Names.scoped_key scope name) env
+                 |> Option.map (fun (binding : binding) -> (name, binding.ty))
+             | _ -> None)
+      in
+      let scc_requires_inference env =
+        scc_inference_params env
+        |> List.exists (fun (_, ty) ->
+               Type_solver.variables ty
+               |> List.exists (function
+                    | Type_solver.Metavariable _ -> true
+                    | Type_solver.Declared _ -> false))
+      in
+      let requires_scc_inference = scc_requires_inference env in
+      let active_scc_inference_params env =
+        if requires_scc_inference then scc_inference_params env else []
+      in
+      let apply_scc_substitutions substitutions env =
+        Env.fold
+          (fun key (binding : binding) env ->
+            Env.add key
+              {
+                binding with
+                ty = Type_solver.apply substitutions binding.ty;
+              }
+              env)
+          env env
+      in
+      let refine_scc_inference inferred env =
+        let substitutions =
+          scc_inference_params env
+          |> List.fold_left
+               (fun substitutions (name, ty) ->
+                 Result.bind substitutions (fun substitutions ->
+                     match List.assoc_opt name inferred with
+                     | Some inferred_ty ->
+                         Type_solver.unify substitutions ty inferred_ty
+                     | None -> Ok substitutions))
+               (Ok Type_solver.empty)
+        in
+        match substitutions with
+        | Error _ -> env
+        | Ok substitutions -> apply_scc_substitutions substitutions env
+      in
+      let link_scc_forwarded_parameters env =
+        let function_types = scc_inference_params env in
+        let rec symbol_occurrences name = function
+          | FSymbol candidate when String.equal name candidate -> 1
+          | FList forms | FVector forms ->
+              List.fold_left
+                (fun count form -> count + symbol_occurrences name form)
+                0 forms
+          | FMap entries ->
+              List.fold_left
+                (fun count (key, value) ->
+                  count + symbol_occurrences name key
+                  + symbol_occurrences name value)
+                0 entries
+          | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
+          | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
+              0
+        in
+        let rec forwarded_occurrences name = function
+          | FList (FSymbol function_name :: arguments) ->
+              let direct =
+                if List.mem_assoc function_name function_types then
+                  List.fold_left
+                    (fun count -> function
+                      | FSymbol candidate when String.equal name candidate ->
+                          count + 1
+                      | _ -> count)
+                    0 arguments
+                else 0
+              in
+              List.fold_left
+                (fun count form -> count + forwarded_occurrences name form)
+                direct arguments
+          | FList forms | FVector forms ->
+              List.fold_left
+                (fun count form -> count + forwarded_occurrences name form)
+                0 forms
+          | FMap entries ->
+              List.fold_left
+                (fun count (key, value) ->
+                  count + forwarded_occurrences name key
+                  + forwarded_occurrences name value)
+                0 entries
+          | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
+          | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
+              0
+        in
+        let rec walk bound local_params substitutions = function
+          | FList (FSymbol "quote" :: _) -> substitutions
+          | FList
+              (FSymbol "fn" :: FVector parameters :: body_forms)
+          | FList
+              (FSymbol "fn" :: FSymbol _ :: FVector parameters :: body_forms)
+            ->
+              let bound =
+                Destructure.pattern_names (FVector parameters) @ bound
+              in
+              List.fold_left (walk bound local_params) substitutions body_forms
+          | FList
+              (FSymbol ("let" | "let*" | "loop")
+              :: FVector bindings :: body_forms) ->
+              let rec walk_bindings bound substitutions = function
+                | pattern :: value :: rest ->
+                    let substitutions =
+                      walk bound local_params substitutions value
+                    in
+                    walk_bindings
+                      (Destructure.pattern_names pattern @ bound)
+                      substitutions rest
+                | _ -> (bound, substitutions)
+              in
+              let bound, substitutions =
+                walk_bindings bound substitutions bindings
+              in
+              List.fold_left (walk bound local_params) substitutions body_forms
+          | FList (FSymbol name :: arguments) as form ->
+              let substitutions =
+                if List.mem name bound then substitutions
+                else
+                  match List.assoc_opt name function_types with
+                  | Some (TFn (parameter_tys, _))
+                    when List.length parameter_tys = List.length arguments ->
+                      List.fold_left2
+                        (fun substitutions parameter_ty argument ->
+                          match argument with
+                          | FSymbol argument_name -> (
+                              match List.assoc_opt argument_name local_params with
+                              | Some argument_ty ->
+                                  Type_solver.unify substitutions parameter_ty
+                                    argument_ty
+                                  |> Result.value ~default:substitutions
+                              | None -> substitutions)
+                          | _ -> substitutions)
+                        substitutions parameter_tys arguments
+                  | Some _ | None -> substitutions
+              in
+              (match form with
+              | FList (_ :: arguments) ->
+                  List.fold_left (walk bound local_params) substitutions arguments
+              | _ -> assert false)
+          | FList forms | FVector forms ->
+              List.fold_left (walk bound local_params) substitutions forms
+          | FMap entries ->
+              List.fold_left
+                (fun substitutions (key, value) ->
+                  walk bound local_params
+                    (walk bound local_params substitutions key)
+                    value)
+                substitutions entries
+          | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
+          | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
+              substitutions
+        in
+        let substitutions =
+          List.fold_left
+            (fun substitutions -> function
+              | FList
+                  (FSymbol ("defn" | "defn-") :: FSymbol name
+                  :: params :: body_forms) -> (
+                  match
+                    ( Env.find_opt (Names.scoped_key scope name) env,
+                      Destructure.parse_param_specs params )
+                  with
+                  | Some { ty = TFn (parameter_tys, _); _ }, Ok specs
+                    when List.length parameter_tys = List.length specs ->
+                      let local_params =
+                        List.map2
+                          (fun (spec : Destructure.param_spec) ty ->
+                            (spec.source_name, ty))
+                          specs parameter_tys
+                        |> List.filter (fun (parameter_name, _) ->
+                               let total =
+                                 List.fold_left
+                                   (fun count form ->
+                                     count
+                                     + symbol_occurrences parameter_name form)
+                                   0 body_forms
+                               in
+                               total > 0
+                               && total
+                                  = List.fold_left
+                                      (fun count form ->
+                                        count
+                                        + forwarded_occurrences parameter_name
+                                            form)
+                                      0 body_forms)
+                      in
+                      List.fold_left (walk [] local_params) substitutions
+                        body_forms
+                  | _ -> substitutions)
+              | _ -> substitutions)
+            Type_solver.empty function_definitions
+        in
+        apply_scc_substitutions substitutions env
+      in
+      let infer_scc_parameters env =
+        if not requires_scc_inference then Ok env
+        else
+        let rec infer env = function
+          | [] -> Ok env
+          | FList
+              (FSymbol ("defn" | "defn-") :: FSymbol name
+              :: (FVector _ as params) :: body_forms)
+            :: rest ->
+              let key = Names.scoped_key scope name in
+              let predeclared_param_tys =
+                match Env.find_opt key env with
+                | Some { ty = TFn (parameter_tys, _); _ } -> parameter_tys
+                | Some _ | None -> []
+              in
+              let inferred_env = ref env in
+              let refine_inferred_env inferred env =
+                let env = refine_scc_inference inferred env in
+                inferred_env := env;
+                env
+              in
+              Result.bind
+                (prepare_fn
+                   ~param_type_overrides:
+                     (List.map Option.some predeclared_param_tys)
+                   ~additional_inference_params:
+                     (active_scc_inference_params env)
+                   ~refine_inferred_env ~infer_parameters_only:true
+                   ~refine_open_overrides:true scope env params body_forms)
+                (fun parts ->
+                  let env = !inferred_env in
+                  match Env.find_opt key env with
+                  | Some (binding : binding) -> (
+                      match binding.ty with
+                      | TFn (_, return_ty) ->
+                          let parameter_tys =
+                            parts.param_bindings
+                            |> List.map (fun (_key, (binding : binding)) ->
+                                   binding.ty)
+                          in
+                          (match
+                             Type_solver.unify Type_solver.empty binding.ty
+                               (TFn (parameter_tys, return_ty))
+                           with
+                          | Ok substitutions ->
+                              infer
+                                (apply_scc_substitutions substitutions env)
+                                rest
+                          | Error _ -> infer env rest)
+                      | _ -> infer env rest)
+                  | None -> infer env rest)
+          | _ :: rest -> infer env rest
+        in
+        infer env function_definitions
       in
       let recursive_bindings item =
         let items = match item with Group items -> items | item -> [ item ] in
@@ -2788,6 +3059,7 @@ and compile_resolved scope env next_type form =
       in
       let rec compile_definitions env next_type row_items bindings = function
         | [] ->
+            let env = generalize_function_bindings env in
             Ok
               ( scope,
                 env,
@@ -2845,6 +3117,12 @@ and compile_resolved scope env next_type form =
             :: params :: body_forms)
           :: rest -> (
             let ocaml_name = Names.ocaml_binding_name scope name in
+            let inferred_scc_env = ref env in
+            let refine_inferred_env inferred env =
+              let env = refine_scc_inference inferred env in
+              inferred_scc_env := env;
+              env
+            in
             let recursive = function_is_recursive scope name body_forms in
             let predeclared_type =
               match sidecar_function_signature scope env name with
@@ -2897,8 +3175,12 @@ and compile_resolved scope env next_type form =
                                 | Type_solver.Metavariable _ -> true
                                 | Type_solver.Declared _ -> false))
                   in
-                  prepare_fn ~param_type_overrides ~refine_open_overrides
-                    ~materialize_open_equality:true ?expected_return_ty:declared_return_ty
+                  prepare_fn ~param_type_overrides
+                    ~additional_inference_params:
+                      (active_scc_inference_params env)
+                    ~refine_inferred_env ~refine_open_overrides
+                    ~materialize_open_equality:false
+                    ?expected_return_ty:declared_return_ty
                     scope env params body_forms
             in
             match prepared with
@@ -2907,6 +3189,7 @@ and compile_resolved scope env next_type form =
                   (Error.with_location_if_missing
                      (Source_context.find name_form) error)
             | Ok parts ->
+                let env = !inferred_scc_env in
                 let env, next_type, return_type_items, parts =
                   allocate_function_return_record env next_type parts
                 in
@@ -2967,6 +3250,11 @@ and compile_resolved scope env next_type form =
             Error.error
               "recursive definition groups only support functions and deftype methods"
       in
+      let env =
+        if requires_scc_inference then link_scc_forwarded_parameters env
+        else env
+      in
+      Result.bind (infer_scc_parameters env) (fun env ->
       Result.bind (compile_methods env next_type [] method_definitions)
         (fun (env, next_type, method_bindings) ->
           let rec try_definition_orders first_error prefix = function
@@ -2986,7 +3274,7 @@ and compile_resolved scope env next_type form =
                       (Option.value first_error ~default:error |> Option.some)
                       (definition :: prefix) rest)
           in
-          try_definition_orders None [] function_definitions)
+          try_definition_orders None [] function_definitions))
   | FList
       [
         FSymbol "defn-signature";

@@ -847,7 +847,8 @@ and compile_letfn scope env bindings body_forms =
   | _, [] -> Error.error "letfn requires a body"
   | _ -> Error.error "letfn expects a vector of local function bindings"
 
-and prepare_fn ?(param_type_overrides = []) ?preferred_record
+and prepare_fn ?(param_type_overrides = []) ?(additional_inference_params = [])
+    ?refine_inferred_env ?preferred_record ?(infer_parameters_only = false)
     ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
     ?recur_target ?expected_return_ty scope env params body_forms =
@@ -856,6 +857,8 @@ and prepare_fn ?(param_type_overrides = []) ?preferred_record
     Env.with_expected_type expected_return_ty env
   in
   let compile_function_body =
+    if infer_parameters_only then None
+    else
     match recur_target with
     | None -> None
     | Some target_name ->
@@ -865,15 +868,17 @@ and prepare_fn ?(param_type_overrides = []) ?preferred_record
               target_name param_tys forms)
   in
   let compile_body scope body_env empty_error forms =
-    Result.bind
-      (compile_body scope (with_expected_return body_env) empty_error forms)
-      (fun body ->
-        match expected_return_ty with
-        | None -> Ok body
-        | Some expected ->
-            Result.map
-              (fun semantic_expr -> typed_ir expected semantic_expr)
-              (Call_elaborator.plan_and_emit_argument env ~expected body))
+    if infer_parameters_only then Ok (typed_ir TUnknown Semantic_ir.Unit)
+    else
+      Result.bind
+        (compile_body scope (with_expected_return body_env) empty_error forms)
+        (fun body ->
+          match expected_return_ty with
+          | None -> Ok body
+          | Some expected ->
+              Result.map
+                (fun semantic_expr -> typed_ir expected semantic_expr)
+                (Call_elaborator.plan_and_emit_argument env ~expected body))
   in
   let prepare param_type_overrides =
     let compile_default expected form =
@@ -922,7 +927,8 @@ and prepare_fn ?(param_type_overrides = []) ?preferred_record
             (compile_expr scope (Env.with_expected_type (Some expected) env) form)
             adapt
     in
-    Function_elaborator.prepare ~param_type_overrides ?preferred_record
+    Function_elaborator.prepare ~param_type_overrides
+      ~additional_inference_params ?refine_inferred_env ?preferred_record
       ?variadic_rest_index
       ~materialize_open_equality ~refine_open_overrides ?compile_function_body
       ~lookup_function_ty ~compile_default ~compile_body scope env params
