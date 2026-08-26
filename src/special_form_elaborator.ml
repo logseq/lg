@@ -1933,6 +1933,89 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 compile_bindings env bindings))
     | _ -> Error.error "let-some bindings must be a vector"
   and compile_if scope env condition then_form else_form =
+    let then_source_form = then_form in
+    let else_source_form = else_form in
+    let incompatible_branches_error ~nominal ~expected ~actual then_type else_type =
+      let related =
+        Source_context.find then_source_form
+        |> Option.to_list
+        |> List.map (fun location ->
+               ({
+                  Error.location;
+                  message = "The previous branch produces " ^ then_type ^ ".";
+                }
+                 : Error.related))
+      in
+      let kind =
+        if nominal then "incompatible nominal record types ("
+        else "incompatible types: "
+      in
+      let type_pair =
+        if nominal then then_type ^ " and " ^ else_type ^ ")"
+        else then_type ^ " and " ^ else_type
+      in
+      Error.error ~title:"TYPE MISMATCH"
+        ?location:(Source_context.find else_source_form) ~related
+        ~type_mismatch:
+          (Error.type_mismatch ~context:Error.Conditional_branch
+             ~expected:(Types.diagnostic_type_term expected)
+             ~actual:(Types.diagnostic_type_term actual))
+        ~hints:[ "Define a closed sum type containing every branch type." ]
+        ("conditional branches have " ^ kind ^ type_pair
+        ^ ". This branch produces " ^ else_type
+        ^ ", but the previous branch produces " ^ then_type
+        ^ ". To fix this, define a closed sum type containing every branch type.")
+    in
+    let add_outer_expectation_context ~branch_name ~branch_form ~other_name
+        ~other_form ~other_result (error : Error.t) =
+      let nested_inside_branch =
+        match (error.location, Source_context.find branch_form) with
+        | Some error_location, Some branch_location ->
+            error.title = "TYPE MISMATCH"
+            && error_location.loc_start.pos_fname
+               = branch_location.loc_start.pos_fname
+            && error_location.loc_start.pos_cnum
+               >= branch_location.loc_start.pos_cnum
+            && error_location.loc_end.pos_cnum <= branch_location.loc_end.pos_cnum
+            && (error_location.loc_start.pos_cnum
+                <> branch_location.loc_start.pos_cnum
+               || error_location.loc_end.pos_cnum
+                  <> branch_location.loc_end.pos_cnum)
+        | _ -> false
+      in
+      if not nested_inside_branch then error
+      else
+        let branch_context =
+          Source_context.find branch_form
+          |> Option.map (fun location ->
+                 ({
+                    Error.location;
+                    message =
+                      Printf.sprintf
+                        "The mismatch occurs inside the %s branch of this outer conditional."
+                        branch_name;
+                  }
+                   : Error.related))
+        in
+        let other_context =
+          match (Source_context.find other_form, other_result) with
+          | Some location, Ok expression ->
+              Some
+                ({
+                   Error.location;
+                   message =
+                     Printf.sprintf "The outer %s branch produces %s." other_name
+                       (Types.source_name expression.ty);
+                 }
+                  : Error.related)
+          | Some _, Error _ | None, _ -> None
+        in
+        {
+          error with
+          related =
+            error.related @ List.filter_map Fun.id [ branch_context; other_context ];
+        }
+    in
     let literal_non_boolean_truthy =
       match condition with
       | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
@@ -2193,9 +2276,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         match compile_static_branch condition with
         | Some result -> result
         | None -> (
-    match (compile_expr scope env then_form, compile_expr scope env else_form) with
-    | (Error _ as err), _ -> err
-    | _, (Error _ as err) -> err
+    let then_result = compile_expr scope env then_form in
+    let else_result = compile_expr scope env else_form in
+    match (then_result, else_result) with
+    | Error error, _ ->
+        Error
+          (add_outer_expectation_context ~branch_name:"then" ~branch_form:then_form
+             ~other_name:"else" ~other_form:else_form ~other_result:else_result
+             error)
+    | _, Error error ->
+        Error
+          (add_outer_expectation_context ~branch_name:"else" ~branch_form:else_form
+             ~other_name:"then" ~other_form:then_form ~other_result:then_result
+             error)
     | Ok then_expr, Ok _ when literal_non_boolean_truthy -> Ok then_expr
     | Ok then_expr, Ok else_expr -> (
         let contextual_branches =
@@ -2353,11 +2446,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 | _ -> (
                     match (then_expr.ty, else_expr.ty) with
                     | TNamed_record _, _ | _, TNamed_record _ ->
-                        Error.error
-                          ("conditional branches have incompatible nominal record types ("
-                          ^ Types.source_name then_expr.ty ^ " and "
-                          ^ Types.source_name else_expr.ty
-                          ^ "); define a closed sum type containing every branch type")
+                        let then_type = Types.source_name then_expr.ty in
+                        let else_type = Types.source_name else_expr.ty in
+                        incompatible_branches_error ~nominal:true
+                          ~expected:then_expr.ty ~actual:else_expr.ty then_type
+                          else_type
                     | _ ->
                         let describe_type = function
                           | TRecord fields ->
@@ -2370,11 +2463,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           | TNamed_record record -> record.type_name
                           | ty -> Types.source_name ty
                         in
-                        Error.error
-                          ("conditional branches have incompatible types: "
-                          ^ describe_type then_expr.ty ^ " and "
-                          ^ describe_type else_expr.ty
-                          ^ "; define a closed sum type containing every branch type"))
+                        let then_type = describe_type then_expr.ty in
+                        let else_type = describe_type else_expr.ty in
+                        incompatible_branches_error ~nominal:false
+                          ~expected:then_expr.ty ~actual:else_expr.ty then_type
+                          else_type)
                 )
             )
         )
@@ -3571,7 +3664,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         | None -> compile_expr scope env form
         | Some definition ->
             Result.bind
-              (Macro_expander.expand ~scope ~compiler_env:env definition args)
+              (Macro_expander.expand ~call_site:form ~scope ~compiler_env:env
+                 definition args)
               (fun expanded ->
                 compile_loop_tail scope env loop_name param_tys expanded))
     | form -> compile_expr scope env form

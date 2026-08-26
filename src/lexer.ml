@@ -9,6 +9,34 @@ let is_delimiter ch =
   | '(' | ')' | '[' | ']' | '{' | '}' -> true
   | _ -> false
 
+let location start_offset end_offset =
+  let position pos_cnum =
+    { Lexing.pos_fname = ""; pos_lnum = 1; pos_bol = 0; pos_cnum }
+  in
+  {
+    Location.loc_start = position start_offset;
+    loc_end = position end_offset;
+    loc_ghost = false;
+  }
+
+let unfinished_literal_error ~source ~opening_offset ~name ~closing =
+  let eof = String.length source in
+  Error.error ~code:"LG1001" ~phase:`Lexing
+    ~title:("UNFINISHED " ^ String.uppercase_ascii name)
+    ~location:(location eof eof)
+    ~related:
+      [
+        {
+          Error.location = location opening_offset (opening_offset + 1);
+          message = Printf.sprintf "This %s starts here." name;
+        };
+      ]
+    ~hints:
+      [ Printf.sprintf "Add %c to close this %s." closing name ]
+    (Printf.sprintf
+       "I reached the end of input while looking for %c to close this %s."
+       closing name)
+
 let rec skip_ignored source i =
   if i >= String.length source then i
   else if is_space source.[i] then skip_ignored source (i + 1)
@@ -24,7 +52,8 @@ let read_string source start =
   let buffer = Buffer.create 16 in
   let rec loop i =
     if i >= String.length source then
-      Error.error ~code:"LG1001" ~phase:`Lexing "unterminated string"
+      unfinished_literal_error ~source ~opening_offset:(start - 1) ~name:"string"
+        ~closing:'"'
     else
       match source.[i] with
       | '"' -> Ok (Buffer.contents buffer, i + 1)
@@ -55,7 +84,8 @@ let read_regex source start =
   let buffer = Buffer.create 16 in
   let rec loop i =
     if i >= String.length source then
-      Error.error ~code:"LG1001" ~phase:`Lexing "unterminated regex"
+      unfinished_literal_error ~source ~opening_offset:(start - 1) ~name:"regex"
+        ~closing:'"'
     else
       match source.[i] with
       | '"' -> Ok (Buffer.contents buffer, i + 1)

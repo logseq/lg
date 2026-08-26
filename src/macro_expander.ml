@@ -1448,7 +1448,7 @@ and select_arity (definition : Macro_definition.t) args :
         (definition.name ^ " called with unsupported macro arity "
        ^ string_of_int (List.length args))
 
-let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
+let expand ?call_site ~scope ~compiler_env (definition : Macro_definition.t) args =
   let direct_unary_expansion =
     match (definition.arities, args) with
     | ( [
@@ -1485,7 +1485,8 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
         Some (FList [ FSymbol callee; value ])
     | _ -> None
   in
-  match direct_unary_expansion with
+  let result =
+    match direct_unary_expansion with
   | Some expanded -> Ok expanded
   | None when definition.name = "defn+" -> (
       match args with
@@ -1522,6 +1523,17 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
                 error.message ^ " while expanding macro " ^ definition.name;
             }
       | Ok value -> form_of_value value)
+  in
+  Result.map
+    (fun expanded ->
+      Option.iter
+        (fun call_site ->
+          Source_context.register_macro_expansion ~call_site ~arguments:args
+            ~definition_provenance:definition.provenance
+            ~template_location:definition.template_location expanded)
+        call_site;
+      expanded)
+    result
 
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
@@ -1604,13 +1616,15 @@ let rec expand_all ~scope ~compiler_env = function
                   (expand_all_forms ~scope ~compiler_env:env body_forms))
       in
       expand_bindings compiler_env [] bindings
-  | FList (FSymbol name :: args) -> (
+  | (FList (FSymbol name :: args) as form) -> (
       match Env.find_macro ~scope name compiler_env with
       | Some definition
         when not
                (Env.source_callable_shadowed ~scope name definition compiler_env)
         ->
-          Result.bind (expand ~scope ~compiler_env definition args) (fun expanded ->
+          Result.bind
+            (expand ~call_site:form ~scope ~compiler_env definition args)
+            (fun expanded ->
               expand_all ~scope ~compiler_env expanded)
       | Some _ | None -> (
           match Env.find_inline_macro ~scope name compiler_env with
@@ -1618,7 +1632,8 @@ let rec expand_all ~scope ~compiler_env = function
             when not
                    (Env.source_callable_shadowed ~scope name definition
                       compiler_env) ->
-              Result.bind (expand ~scope ~compiler_env definition args)
+              Result.bind
+                (expand ~call_site:form ~scope ~compiler_env definition args)
                 (fun expanded -> expand_all ~scope ~compiler_env expanded)
           | Some _ | None ->
               Result.map

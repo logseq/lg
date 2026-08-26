@@ -46,12 +46,18 @@ type t = {
 }
 
 let infrastructure_error message =
-  {
-    Lg.Compiler.code = "LG9000";
-    phase = `Infrastructure;
-    message;
-    location = None;
-  }
+  ({
+     Lg.Compiler.code = "LG9000";
+     phase = `Infrastructure;
+     title = "INFRASTRUCTURE ERROR";
+     message;
+     location = None;
+     related = [];
+     hints = [];
+     fixes = [];
+     type_mismatch = None;
+   }
+    : Lg.Compiler.compile_error)
 
 let read_hash path =
   match In_channel.with_open_bin path In_channel.input_all with

@@ -3,8 +3,13 @@ type diagnostic_phase = Error.phase
 type compile_error = Error.t = {
   code : string;
   phase : diagnostic_phase;
+  title : string;
   message : string;
   location : Location.t option;
+  related : Error.related list;
+  hints : string list;
+  fixes : Error.fix list;
+  type_mismatch : Error.type_mismatch option;
 }
 
 type diagnostic_severity = [ `Warning ]
@@ -43,6 +48,8 @@ val empty_state : state
 val cacheable_state : state -> state
 val with_source_scope : string -> state -> state
 val source_scope : state -> string
+
+val render_error : source:string -> compile_error -> string
 
 val restore_ocaml_environment :
   ?target:Target.t ->

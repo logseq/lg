@@ -14,19 +14,127 @@ let spliced_reader_forms located =
 
 let located ?(children = []) form span = { form; span; children }
 
-let error_at span message =
+let eof_offset : int option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
+
+let current_eof_offset open_span =
+  Domain.DLS.get eof_offset |> Option.value ~default:open_span.end_offset
+
+let with_eof_offset offset f =
+  let previous = Domain.DLS.get eof_offset in
+  Domain.DLS.set eof_offset (Some offset);
+  Fun.protect ~finally:(fun () -> Domain.DLS.set eof_offset previous) f
+
+let location_of_span span =
   let position offset =
     { Lexing.pos_fname = ""; pos_lnum = 1; pos_bol = 0; pos_cnum = offset }
   in
+  {
+    Location.loc_start = position span.start_offset;
+    loc_end = position span.end_offset;
+    loc_ghost = false;
+  }
+
+let error_at span message =
   Error.error
     ~code:"LG1002" ~phase:`Parsing
-    ~location:
-      {
-        Location.loc_start = position span.start_offset;
-        loc_end = position span.end_offset;
-        loc_ghost = false;
-      }
+    ~location:(location_of_span span)
     message
+
+let delimiter_description closing description =
+  match (closing, description) with
+  | Rparen, "list; expected ')'" -> ("list", '(', ')')
+  | Rparen, "anonymous function; expected ')'" ->
+      ("anonymous function", '(', ')')
+  | Rparen, "reader conditional; expected ')'" ->
+      ("reader conditional", '(', ')')
+  | Rparen, "splicing reader conditional; expected ')'" ->
+      ("splicing reader conditional", '(', ')')
+  | Rbracket, "vector; expected ']'" -> ("vector", '[', ']')
+  | Rbrace, "map; expected '}'" -> ("map", '{', '}')
+  | Rbrace, "set; expected '}'" -> ("set", '{', '}')
+  | _ -> ("collection", '(', ')')
+
+let closing_character = function
+  | Rparen -> Some ')'
+  | Rbracket -> Some ']'
+  | Rbrace -> Some '}'
+  | _ -> None
+
+let unfinished_delimiter_error closing open_span description =
+  let name, _, expected = delimiter_description closing description in
+  let eof = current_eof_offset open_span in
+  let eof_location = location_of_span { start_offset = eof; end_offset = eof } in
+  Error.error ~code:"LG1002" ~phase:`Parsing
+    ~title:("UNFINISHED " ^ String.uppercase_ascii name)
+    ~location:eof_location
+    ~related:
+      [
+        {
+          Error.location = location_of_span open_span;
+          message = Printf.sprintf "This %s starts here." name;
+        };
+      ]
+    ~hints:
+      [
+        Printf.sprintf "Try adding a %c to close this %s." expected name;
+      ]
+    ~fixes:
+      [
+        {
+          Error.title = Printf.sprintf "Insert missing %c" expected;
+          edits = [ { Error.location = eof_location; replacement = String.make 1 expected } ];
+        };
+      ]
+    (Printf.sprintf
+       "I reached the end of input while looking for '%c' to close this %s."
+       expected name)
+
+let mismatched_delimiter_error closing open_span description actual_span actual =
+  let name, opening, expected = delimiter_description closing description in
+  let actual_location = location_of_span actual_span in
+  Error.error ~code:"LG1002" ~phase:`Parsing ~title:"MISMATCHED DELIMITER"
+    ~location:actual_location
+    ~related:
+      [
+        {
+          Error.location = location_of_span open_span;
+          message = Printf.sprintf "This %s starts here." name;
+        };
+      ]
+    ~hints:
+      [
+        Printf.sprintf "Replace %c with %c to close this %s." actual expected
+          name;
+      ]
+    ~fixes:
+      [
+        {
+          Error.title = Printf.sprintf "Replace %c with %c" actual expected;
+          edits =
+            [
+              {
+                Error.location = actual_location;
+                replacement = String.make 1 expected;
+              };
+            ];
+        };
+      ]
+    (Printf.sprintf "This %s starts with '%c' but closes with '%c'." name
+       opening actual)
+
+let missing_reader_form_error prefix_span name =
+  let eof = current_eof_offset prefix_span in
+  Error.error ~code:"LG1002" ~phase:`Parsing ~title:"MISSING FORM"
+    ~location:(location_of_span { start_offset = eof; end_offset = eof })
+    ~related:
+      [
+        {
+          Error.location = location_of_span prefix_span;
+          message = Printf.sprintf "This %s prefix is here." name;
+        };
+      ]
+    ~hints:[ Printf.sprintf "Add a form after the %s prefix." name ]
+    (Printf.sprintf "This %s needs a form after it." name)
 
 let rec parse_one ~target ~reader_features = function
   | { desc = Symbol "#_"; span = reader_span } :: rest -> (
@@ -214,7 +322,10 @@ let rec parse_one ~target ~reader_features = function
   | { desc = Rbrace; span } :: _ -> error_at span "unexpected '}'"
 
 and parse_reader_prefix ~target ~reader_features prefix_span name tokens =
-  match parse_one ~target ~reader_features tokens with
+  match tokens with
+  | [] -> missing_reader_form_error prefix_span name
+  | _ -> (
+      match parse_one ~target ~reader_features tokens with
   | Error _ as err -> err
   | Ok (value, rest) ->
       let head = located (FSymbol name) prefix_span in
@@ -229,7 +340,7 @@ and parse_reader_prefix ~target ~reader_features prefix_span name tokens =
         ( located ~children
             (FList (List.map (fun child -> child.form) children))
             span,
-          rest )
+          rest ))
 
 and anonymous_function open_span close_span forms =
   let span =
@@ -290,21 +401,25 @@ and anonymous_function open_span close_span forms =
   Ok (located ~children (FList (List.map (fun form -> form.form) children)) span)
 
 and parse_until ~target ~reader_features closing open_span description acc = function
-  | [] -> error_at open_span ("unterminated " ^ description)
+  | [] -> unfinished_delimiter_error closing open_span description
   | { desc; span } :: rest when desc = closing -> Ok (List.rev acc, span, rest)
-  | tokens -> (
-      match parse_one ~target ~reader_features tokens with
-      | Ok (form, rest) when is_omitted_reader_form form ->
-          parse_until ~target ~reader_features closing open_span description acc rest
-      | Ok (form, rest) -> (
-          match spliced_reader_forms form with
-          | Some forms ->
-              parse_until ~target ~reader_features closing open_span description
-                (List.rev_append forms acc) rest
-          | None ->
-              parse_until ~target ~reader_features closing open_span description (form :: acc)
-                rest)
-      | Error _ as err -> err)
+  | ({ desc; span } :: _ as tokens) -> (
+      match closing_character desc with
+      | Some actual ->
+          mismatched_delimiter_error closing open_span description span actual
+      | None -> (
+          match parse_one ~target ~reader_features tokens with
+          | Ok (form, rest) when is_omitted_reader_form form ->
+              parse_until ~target ~reader_features closing open_span description acc rest
+          | Ok (form, rest) -> (
+              match spliced_reader_forms form with
+              | Some forms ->
+                  parse_until ~target ~reader_features closing open_span description
+                    (List.rev_append forms acc) rest
+              | None ->
+                  parse_until ~target ~reader_features closing open_span description
+                    (form :: acc) rest)
+          | Error _ as err -> err))
 
 and map_of_forms open_span close_span forms =
   let rec remove_metadata acc = function
@@ -342,9 +457,18 @@ and map_of_forms open_span close_span forms =
   let rec pairs acc = function
     | [] -> Ok (List.rev acc)
     | key :: value :: rest -> pairs ((key, value) :: acc) rest
-    | [ _ ] ->
-        Error.error ~code:"LG1002" ~phase:`Parsing
-          "map literal requires an even number of forms"
+    | [ key ] ->
+        Error.error ~code:"LG1002" ~phase:`Parsing ~title:"INCOMPLETE MAP"
+          ~location:(location_of_span key.span)
+          ~related:
+            [
+              {
+                Error.location = location_of_span open_span;
+                message = "This map starts here.";
+              };
+            ]
+          ~hints:[ "Add a value after this key, or remove the key." ]
+          "This map has a key with no value."
   in
   Result.bind (remove_metadata [] forms) (fun forms ->
       Result.map
@@ -400,9 +524,25 @@ and select_reader_conditional reader_features reader_span close_span forms =
   in
   let rec collect seen branches = function
     | [] -> Ok (List.rev branches)
-    | [ _ ] ->
-        error_at conditional_span
-          "reader conditional requires feature/form pairs"
+    | [ feature ] -> (
+        match feature.form with
+        | FKeyword name ->
+            Error.error ~code:"LG1002" ~phase:`Parsing
+              ~title:"INCOMPLETE READER CONDITIONAL"
+              ~location:(location_of_span feature.span)
+              ~related:
+                [
+                  {
+                    Error.location = location_of_span reader_span;
+                    message = "This reader conditional starts here.";
+                  };
+                ]
+              ~hints:[ "Add a form after this feature, or remove the feature." ]
+              (Printf.sprintf
+                 "The %s feature in this reader conditional has no form." name)
+        | _ ->
+            error_at feature.span
+              "reader conditional feature must be a keyword")
     | feature :: value :: rest -> (
         match feature.form with
         | FKeyword name when List.mem name seen ->
@@ -438,7 +578,8 @@ and select_reader_conditional reader_features reader_span close_span forms =
           | Some selected -> selected_form selected
           | None -> Ok (located (FSymbol omitted_reader_form) conditional_span)))
 
-let parse_located ?(target = Target.default) ?reader_features tokens =
+let parse_located ?(target = Target.default) ?reader_features ?eof_offset
+    (tokens : token list) =
   let reader_features =
     Option.value reader_features ~default:(Target.reader_features target)
   in
@@ -450,9 +591,17 @@ let parse_located ?(target = Target.default) ?reader_features tokens =
         | Ok (form, rest) -> loop (form :: forms) rest
         | Error _ as err -> err)
   in
-  loop [] tokens
+  let eof_offset =
+    Option.value eof_offset
+      ~default:
+        (match List.rev tokens with
+        | token :: _ -> token.span.end_offset
+        | [] -> 0)
+  in
+  with_eof_offset eof_offset (fun () -> loop [] tokens)
 
-let parse_located_recovering ?(target = Target.default) ?reader_features tokens =
+let parse_located_recovering ?(target = Target.default) ?reader_features
+    ?eof_offset (tokens : token list) =
   let reader_features =
     Option.value reader_features ~default:(Target.reader_features target)
   in
@@ -464,8 +613,15 @@ let parse_located_recovering ?(target = Target.default) ?reader_features tokens 
         | Ok (form, rest) -> loop (form :: forms) rest
         | Error error -> (List.rev forms, Some error))
   in
-  loop [] tokens
+  let eof_offset =
+    Option.value eof_offset
+      ~default:
+        (match List.rev tokens with
+        | token :: _ -> token.span.end_offset
+        | [] -> 0)
+  in
+  with_eof_offset eof_offset (fun () -> loop [] tokens)
 
-let parse ?(target = Target.default) ?reader_features tokens =
-  parse_located ~target ?reader_features tokens
+let parse ?(target = Target.default) ?reader_features ?eof_offset tokens =
+  parse_located ~target ?reader_features ?eof_offset tokens
   |> Result.map (List.map (fun located -> located.form))

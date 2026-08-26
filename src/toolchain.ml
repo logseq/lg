@@ -110,23 +110,24 @@ module Lg_frontend : FRONTEND = struct
     }
 
   let normalize_error_location filename line_starts (error : Error.t) =
-    match error.location with
-    | None -> error
-    | Some location ->
-        {
-          error with
-          location =
-            Some
-              {
-                location with
-                loc_start =
-                  position filename line_starts
-                    location.loc_start.Lexing.pos_cnum;
-                loc_end =
-                  position filename line_starts
-                    location.loc_end.Lexing.pos_cnum;
-              };
-        }
+    let normalize (location : Location.t) =
+      {
+        location with
+        Location.loc_start =
+          position filename line_starts location.loc_start.Lexing.pos_cnum;
+        loc_end =
+          position filename line_starts location.loc_end.Lexing.pos_cnum;
+      }
+    in
+    {
+      error with
+      location = Option.map normalize error.location;
+      related =
+        List.map
+          (fun (related : Error.related) ->
+            { related with location = normalize related.location })
+          error.related;
+    }
 
   let namespace_scope_form span namespace_name =
     {
@@ -776,7 +777,10 @@ module Lg_frontend : FRONTEND = struct
       | (Target.Native, true)
       | (Target.Melange, _)
       | (Target.Js_of_ocaml, _) -> (
-          match Parser.parse_located ~target:Target.Native tokens with
+          match
+            Parser.parse_located ~target:Target.Native
+              ~eof_offset:(String.length source) tokens
+          with
           | Error _ as error -> error
           | Ok native_original -> (
               match lower_namespace native_original with
@@ -810,7 +814,10 @@ module Lg_frontend : FRONTEND = struct
     match Lexer.tokenize source with
     | Error _ as err -> err
     | Ok tokens -> (
-        match Parser.parse_located ~target ?reader_features tokens with
+        match
+          Parser.parse_located ~target ?reader_features
+            ~eof_offset:(String.length source) tokens
+        with
         | Error error ->
             Error (normalize_error_location filename line_starts error)
         | Ok original_located_ast -> (
@@ -970,11 +977,79 @@ module Ocaml_typechecker = struct
   let exception_message exn =
     Format.asprintf "%a" Location.report_exception exn |> String.trim
 
-  let exception_location exn =
+  let raw_exception_location exn =
     match Location.error_of_exn exn with
-    | Some (`Ok report) when not report.Location.main.loc.loc_ghost ->
-        Some report.main.loc
-    | Some (`Ok _) | Some `Already_displayed | None -> None
+    | Some (`Ok report) -> Some report.Location.main.loc
+    | Some `Already_displayed | None -> None
+
+  let origin_of_attribute
+      ({ Parsetree.attr_name = { txt; _ }; attr_payload; _ } :
+        Parsetree.attribute) =
+    if txt <> "lg.origin" then None
+    else
+      match attr_payload with
+      | PStr
+          [
+            {
+              pstr_desc =
+                Pstr_eval
+                  ( {
+                      pexp_desc =
+                        Pexp_constant
+                          { pconst_desc = Pconst_string (origin, _, _); _ };
+                      _;
+                    },
+                    _ );
+              _;
+            };
+          ] ->
+          Source_node_id.origin_of_string origin
+      | _ -> None
+
+  let origins_of_attributes attributes =
+    attributes
+    |> List.filter_map origin_of_attribute
+
+  let related_origins structure error_location =
+    let contains (candidate : Location.t) =
+      String.equal candidate.loc_start.pos_fname
+        error_location.Location.loc_start.pos_fname
+      && candidate.loc_start.pos_cnum <= error_location.loc_start.pos_cnum
+      && candidate.loc_end.pos_cnum >= error_location.loc_end.pos_cnum
+    in
+    let best = ref None in
+    let consider (expression : Parsetree.expression) =
+      if contains expression.pexp_loc then
+        let origins = origins_of_attributes expression.pexp_attributes in
+        if origins <> [] then
+          let width =
+            expression.pexp_loc.loc_end.pos_cnum
+            - expression.pexp_loc.loc_start.pos_cnum
+          in
+          match !best with
+          | Some (best_width, _) when best_width <= width -> ()
+          | Some _ | None -> best := Some (width, origins)
+    in
+    let base = Ast_iterator.default_iterator in
+    let iterator =
+      {
+        base with
+        expr =
+          (fun self expression ->
+            consider expression;
+            base.expr self expression);
+      }
+    in
+    iterator.structure iterator structure;
+    match !best with
+    | None -> []
+    | Some (_, origins) ->
+        origins
+        |> List.map (fun (origin : Source_node_id.origin) ->
+               {
+                 Error.location = origin.location;
+                 message = origin.message;
+               })
 
   let initial_env_cache = ref None
 
@@ -1029,7 +1104,17 @@ module Ocaml_typechecker = struct
       in
       Ok { typed_structure; compiler_env; diagnostics = List.rev !diagnostics }
     with exn ->
-      Error.error ?location:(exception_location exn) ~code:"LG4000"
+      let raw_location = raw_exception_location exn in
+      let location =
+        match raw_location with
+        | Some location when not location.Location.loc_ghost -> Some location
+        | Some _ | None -> None
+      in
+      let related =
+        Option.fold ~none:[] ~some:(related_origins structure)
+          raw_location
+      in
+      Error.error ?location ~related ~code:"LG4000"
         ~phase:`Ocaml
         ("OCaml typecheck failed: " ^ exception_message exn)
 

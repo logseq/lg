@@ -38,7 +38,8 @@ let compile_source_expr scope env form =
         | None -> compile_expr scope env form
         | Some definition ->
             Result.bind
-              (Macro_expander.expand ~scope ~compiler_env:env definition args)
+              (Macro_expander.expand ~call_site:form ~scope ~compiler_env:env
+                 definition args)
               compile)
     | form -> compile_expr scope env form
   in
@@ -808,10 +809,9 @@ let preserves_required_seqable_protocol_result (expr : Types.typed_expr) =
   contains_required_result expr.ty
 
 let located_value_pattern form pattern =
-  match Source_context.find form with
+  match Source_context.find_identity form with
   | None -> pattern
-  | Some location ->
-      Located_value (Source_node_id.of_location location, location, pattern)
+  | Some (node_id, location) -> Located_value (node_id, location, pattern)
 
 let compile_module_alias = Module_elaborator.compile_module_alias
 let compile_module_signature = Module_signature_elaborator.compile
@@ -1739,12 +1739,15 @@ and compile_resolved scope env next_type form =
                     (predeclare_protocol_groups scope env receiver_form groups)
                     (fun env ->
                       compile_groups env next_type (items_of type_item) groups)))
-  | FList (FSymbol "deftype" :: args)
+  | (FList (FSymbol "deftype" :: args) as form)
     when Option.is_some (Env.find_macro ~scope "deftype" env) -> (
       match Env.find_macro ~scope "deftype" env with
       | None -> assert false
       | Some definition -> (
-          match Macro_expander.expand ~scope ~compiler_env:env definition args with
+          match
+            Macro_expander.expand ~call_site:form ~scope ~compiler_env:env
+              definition args
+          with
           | Error _ as error -> error
           | Ok expanded -> compile scope env next_type expanded))
   | FList
@@ -3099,9 +3102,7 @@ and compile_resolved scope env next_type form =
                   {
                     name = ocaml_name;
                     identity =
-                      Source_context.find name_form
-                      |> Option.map (fun location ->
-                             (Source_node_id.of_location location, location));
+                      Source_context.find_identity name_form;
                     type_annotation = None;
                     expression = prepared.expr.semantic_expr;
                   }
@@ -3233,10 +3234,7 @@ and compile_resolved scope env next_type form =
                       {
                         name = ocaml_name;
                         identity =
-                          Source_context.find name_form
-                          |> Option.map (fun location ->
-                                 ( Source_node_id.of_location location,
-                                   location ));
+                          Source_context.find_identity name_form;
                         type_annotation =
                           type_annotation;
                         expression = expr.semantic_expr;
@@ -3966,6 +3964,38 @@ and compile_resolved scope env next_type form =
                 Ok { expr with ty = Option.get protocol_alias_binding_ty }
             | Some expected when Types.equal expected expr.ty ->
                 Ok { expr with ty = expected }
+            | Some expected
+              when (not (Type_solver.is_open expected))
+                   && not
+                        (Call_elaborator.argument_compatible expected expr.ty) ->
+                let related =
+                  Source_context.find name_form
+                  |> Option.to_list
+                  |> List.map (fun location ->
+                         ({
+                            Error.location;
+                            message =
+                              Printf.sprintf
+                                "The annotation on %s requires %s."
+                                name (Types.source_name expected);
+                          }
+                           : Error.related))
+                in
+                Error.error ~title:"ANNOTATION TYPE MISMATCH"
+                  ?location:(Source_context.find expr_form) ~related
+                  ~type_mismatch:
+                    (Error.type_mismatch ~context:Error.Annotation
+                       ~expected:(Types.diagnostic_type_term expected)
+                       ~actual:(Types.diagnostic_type_term expr.ty))
+                  ~hints:
+                    [
+                      Printf.sprintf
+                        "Change this expression to %s, or update the annotation on %s."
+                        (Types.source_name expected) name;
+                    ]
+                  (Printf.sprintf
+                     "The annotation on %s expects %s, but this expression produces %s."
+                     name (Types.source_name expected) (Types.source_name expr.ty))
             | Some expected ->
                 Result.map
                   (fun semantic_expr -> typed_ir expected semantic_expr)
@@ -3991,9 +4021,7 @@ and compile_resolved scope env next_type form =
                   in
                   let fields = nested.nested_fields in
               let identity =
-                Source_context.find name_form
-                |> Option.map (fun location ->
-                       (Source_node_id.of_location location, location))
+                Source_context.find_identity name_form
               in
               let allocation =
                     allocate_anonymous_record ~owner:"" nested.env
@@ -4411,9 +4439,7 @@ and compile_resolved scope env next_type form =
                           {
                             name = ocaml_name;
                             identity =
-                              Source_context.find name_form
-                              |> Option.map (fun location ->
-                                     (Source_node_id.of_location location, location));
+                              Source_context.find_identity name_form;
                             type_annotation = None;
                             expression = expr.semantic_expr;
                           } )
@@ -4495,9 +4521,7 @@ and compile_resolved scope env next_type form =
                       {
                         name = ocaml_name;
                         identity =
-                          Source_context.find name_form
-                          |> Option.map (fun location ->
-                                 (Source_node_id.of_location location, location));
+                          Source_context.find_identity name_form;
                         type_annotation =
                           recursive_type_annotation scope env name;
                         expression = expr.semantic_expr;
@@ -5018,7 +5042,10 @@ and compile_resolved scope env next_type form =
                           expression = expr.semantic_expr;
                         } )))
       | Some definition -> (
-          match Macro_expander.expand ~scope ~compiler_env:env definition args with
+          match
+            Macro_expander.expand ~call_site:form ~scope ~compiler_env:env
+              definition args
+          with
           | Error _ as error -> error
           | Ok expanded -> compile scope env next_type expanded))
   | form -> (

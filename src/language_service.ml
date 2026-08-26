@@ -73,7 +73,7 @@ let analyze ~filename source =
       match Lexer.tokenize source with
       | Error _ as err -> err
       | Ok tokens -> (
-          match Parser.parse_located tokens with
+          match Parser.parse_located ~eof_offset:(String.length source) tokens with
           | Error _ as err -> err
           | Ok forms -> Ok { source; tokens; forms; compiler }))
 
@@ -87,7 +87,7 @@ let analyze_from_state ?(target = Target.default) ~filename state source =
       match Lexer.tokenize source with
       | Error _ as err -> err
       | Ok tokens -> (
-          match Parser.parse_located tokens with
+          match Parser.parse_located ~eof_offset:(String.length source) tokens with
           | Error _ as err -> err
           | Ok forms -> Ok { source; tokens; forms; compiler }))
 
@@ -95,7 +95,9 @@ let recover_completed_prefix ~filename source =
   match Lexer.tokenize source with
   | Error _ -> None
   | Ok tokens -> (
-      let forms, error = Parser.parse_located_recovering tokens in
+      let forms, error =
+        Parser.parse_located_recovering ~eof_offset:(String.length source) tokens
+      in
       match (List.rev forms, error) with
       | last :: _, Some _ ->
           let prefix = String.sub source 0 last.Ast.span.end_offset in
@@ -109,7 +111,9 @@ let analyze_workspace_with_errors_using analyze_compiler sources =
         match Lexer.tokenize source with
         | Error _ -> parse acc rest
         | Ok tokens -> (
-            match Parser.parse_located tokens with
+            match
+              Parser.parse_located ~eof_offset:(String.length source) tokens
+            with
             | Error _ -> parse acc rest
             | Ok forms -> parse ((filename, source, tokens, forms) :: acc) rest))
   in

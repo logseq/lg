@@ -15,12 +15,18 @@ let _stdlib_anchor = Lg_stdlib_native.clojure_core_inc 0
 
 let infrastructure_error message =
   Error
-    {
-      Lg.Compiler.code = "LG9000";
-      phase = `Infrastructure;
-      message;
-      location = None;
-    }
+    ({
+       Lg.Compiler.code = "LG9000";
+       phase = `Infrastructure;
+       title = "INFRASTRUCTURE ERROR";
+       message;
+       location = None;
+       related = [];
+       hints = [];
+       fixes = [];
+       type_mismatch = None;
+     }
+      : Lg.Compiler.compile_error)
 
 let prepare_toplevel () =
   let output = Buffer.create 128 in

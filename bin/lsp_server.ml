@@ -218,6 +218,32 @@ let diagnostic_range text = function
   | Some location -> range_of_location text location
   | None -> range_of_offsets text 0 (min 1 (String.length text))
 
+let source_text_for_uri uri =
+  match find_document uri with
+  | Some document -> Some document.text
+  | None -> (
+      match Hashtbl.find_opt workspace_sources uri with
+      | Some source -> Some source
+      | None ->
+          let path = path_of_file_uri uri in
+          if Sys.file_exists path && not (Sys.is_directory path) then
+            try Some (read_file path) with Sys_error _ -> None
+          else None)
+
+let line_start_range (location : Location.t) =
+  let line = max 0 (location.loc_start.Lexing.pos_lnum - 1) in
+  `Assoc [ ("start", position line 0); ("end", position line 0) ]
+
+let related_range location =
+  let uri = location.Location.loc_start.Lexing.pos_fname in
+  match source_text_for_uri uri with
+  | Some source -> range_of_location source location
+  | None ->
+      (* A byte column is not a valid LSP UTF-16 column. If the originating
+         source is unavailable, preserve the exact line without inventing a
+         misleading character range. *)
+      line_start_range location
+
 let diagnostic_phase = function
   | `Lexing -> "lexing"
   | `Parsing -> "parsing"
@@ -226,20 +252,131 @@ let diagnostic_phase = function
   | `Ocaml -> "ocaml"
   | `Infrastructure -> "infrastructure"
 
-let diagnostic text ?(severity = 1) ?location ?code ?phase message =
+let rec type_term_json = function
+  | Lg.Error.Type_atom name ->
+      `Assoc [ ("kind", `String "atom"); ("name", `String name) ]
+  | Type_application (name, arguments) ->
+      `Assoc
+        [ ("kind", `String "application");
+          ("name", `String name);
+          ("arguments", `List (List.map type_term_json arguments)) ]
+  | Type_function (parameters, return_type) ->
+      `Assoc
+        [ ("kind", `String "function");
+          ("parameters", `List (List.map type_term_json parameters));
+          ("returnType", type_term_json return_type) ]
+  | Type_tuple items ->
+      `Assoc
+        [ ("kind", `String "tuple");
+          ("items", `List (List.map type_term_json items)) ]
+  | Type_record fields ->
+      `Assoc
+        [ ("kind", `String "record");
+          ( "fields",
+            `List
+              (List.map
+                 (fun (name, ty) ->
+                   `Assoc [ ("name", `String name); ("type", type_term_json ty) ])
+                 fields) ) ]
+
+let type_path_json = function
+  | Lg.Error.Type_argument index ->
+      `Assoc [ ("kind", `String "typeArgument"); ("index", `Int index) ]
+  | Function_parameter index ->
+      `Assoc [ ("kind", `String "functionParameter"); ("index", `Int index) ]
+  | Function_return -> `Assoc [ ("kind", `String "functionReturn") ]
+  | Tuple_item index ->
+      `Assoc [ ("kind", `String "tupleItem"); ("index", `Int index) ]
+  | Record_field name ->
+      `Assoc [ ("kind", `String "recordField"); ("name", `String name) ]
+
+let type_context_json = function
+  | Lg.Error.Conditional_branch ->
+      `Assoc [ ("kind", `String "conditionalBranch") ]
+  | Record_property { record_name; property_name } ->
+      `Assoc
+        [ ("kind", `String "recordProperty");
+          ("record", `String record_name);
+          ("property", `String property_name) ]
+  | Call_argument { callee; index } ->
+      `Assoc
+        [ ("kind", `String "callArgument");
+          ("callee", `String callee);
+          ("index", `Int index) ]
+  | Protocol_argument { protocol; method_name; index } ->
+      `Assoc
+        [ ("kind", `String "protocolArgument");
+          ("protocol", `String protocol);
+          ("method", `String method_name);
+          ("index", `Int index) ]
+  | Annotation -> `Assoc [ ("kind", `String "annotation") ]
+  | Host_boundary { callee; index } ->
+      `Assoc
+        [ ("kind", `String "hostBoundary");
+          ("callee", `String callee);
+          ("index", `Int index) ]
+
+let type_mismatch_json (mismatch : Lg.Error.type_mismatch) =
+  `Assoc
+    [ ("context", type_context_json mismatch.context);
+      ("expected", type_term_json mismatch.expected);
+      ("actual", type_term_json mismatch.actual);
+      ( "difference",
+        `Assoc
+          [ ("path", `List (List.map type_path_json mismatch.difference.path));
+            ("expected", type_term_json mismatch.difference.expected);
+            ("actual", type_term_json mismatch.difference.actual) ] ) ]
+
+let diagnostic text ?(severity = 1) ?location ?code ?phase ?title
+    ?(related = []) ?(hints = []) ?type_mismatch message =
   let identity =
     match (code, phase) with
     | Some code, Some phase ->
+        let data =
+          [ ("phase", `String (diagnostic_phase phase)) ]
+          @ Option.fold ~none:[]
+              ~some:(fun mismatch ->
+                [ ("typeMismatch", type_mismatch_json mismatch) ])
+              type_mismatch
+        in
         [ ("code", `String code);
-          ("data", `Assoc [ ("phase", `String (diagnostic_phase phase)) ]) ]
+          ("data", `Assoc data) ]
     | _ -> []
+  in
+  let message =
+    String.concat "\n\n"
+      (Option.to_list title @ [ message ]
+      @ List.map (fun hint -> "Hint: " ^ hint) hints)
+  in
+  let related_information =
+    match related with
+    | [] -> []
+    | related ->
+        [
+          ( "relatedInformation",
+            `List
+              (List.map
+                 (fun (related : Lg.Error.related) ->
+                   let uri = related.location.Location.loc_start.Lexing.pos_fname in
+                   `Assoc
+                     [
+                       ( "location",
+                         `Assoc
+                           [
+                             ("uri", `String uri);
+                             ("range", related_range related.location);
+                           ] );
+                       ("message", `String related.message);
+                     ])
+                 related) );
+        ]
   in
   `Assoc
     ([ ("range", diagnostic_range text location);
        ("severity", `Int severity);
        ("source", `String "lg");
        ("message", `String message) ]
-    @ identity)
+    @ identity @ related_information)
 
 let diagnostics document =
   match document.analysis with
@@ -253,7 +390,8 @@ let diagnostics document =
         (Lg.Language_service.diagnostics analysis)
   | Error err ->
       [ diagnostic document.text ?location:err.location ~code:err.code
-          ~phase:err.phase err.message ]
+          ~phase:err.phase ~title:err.title ~related:err.related ~hints:err.hints
+          ?type_mismatch:err.type_mismatch err.message ]
 
 let write_packet json =
   let body = Yojson.Safe.to_string json in
@@ -280,6 +418,7 @@ let rebuild_and_publish uri =
       rebuild_workspace ~changed_uri:uri ()
     else [ uri ]
   in
+  let affected = if List.mem uri affected then affected else uri :: affected in
   List.iter publish_current_diagnostics affected
 
 let read_packet () =
@@ -508,36 +647,31 @@ let formatting_result document =
               ("newText", `String formatted) ];
         ]
 
-let missing_closing_delimiter = function
-  | "unterminated list; expected ')'" -> Some ")"
-  | "unterminated vector; expected ']'" -> Some "]"
-  | "unterminated map; expected '}'" -> Some "}"
-  | _ -> None
-
 let code_actions_result uri document =
   match document.analysis with
   | Ok _ -> `List []
-  | Error error -> (
-      match missing_closing_delimiter error.message with
-      | None -> `List []
-      | Some delimiter ->
-          let insertion = String.length document.text in
-          `List
-            [ `Assoc
-                [ ("title", `String ("Insert missing " ^ delimiter));
-                  ("kind", `String "quickfix");
-                  ("isPreferred", `Bool true);
-                  ( "edit",
-                    `Assoc
-                      [ ( "changes",
-                          `Assoc
-                            [ ( uri,
-                                `List
-                                  [ `Assoc
-                                      [ ( "range",
-                                          range_of_offsets document.text insertion
-                                            insertion );
-                                        ("newText", `String delimiter) ] ] ) ] ) ] ) ] ] )
+  | Error error ->
+      error.fixes
+      |> List.map (fun (fix : Lg.Error.fix) ->
+             `Assoc
+               [ ("title", `String fix.title);
+                 ("kind", `String "quickfix");
+                 ("isPreferred", `Bool true);
+                 ( "edit",
+                   `Assoc
+                     [ ( "changes",
+                         `Assoc
+                           [ ( uri,
+                               `List
+                                 (List.map
+                                    (fun (edit : Lg.Error.text_edit) ->
+                                      `Assoc
+                                        [ ( "range",
+                                            range_of_location document.text
+                                              edit.location );
+                                          ("newText", `String edit.replacement) ])
+                                    fix.edits) ) ] ) ] ) ])
+      |> fun actions -> `List actions
 
 let location_json uri text (range : Lg.Ast.source_span) =
   `Assoc

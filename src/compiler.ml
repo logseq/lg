@@ -1,8 +1,13 @@
 type compile_error = Error.t = {
   code : string;
   phase : Error.phase;
+  title : string;
   message : string;
   location : Location.t option;
+  related : Error.related list;
+  hints : string list;
+  fixes : Error.fix list;
+  type_mismatch : Error.type_mismatch option;
 }
 
 type diagnostic_phase = Error.phase
@@ -43,6 +48,7 @@ let empty_state = Toolchain.empty_state
 let cacheable_state = Toolchain.cacheable_state
 let with_source_scope = Toolchain.with_source_scope
 let source_scope = Toolchain.source_scope
+let render_error = Error.render
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =

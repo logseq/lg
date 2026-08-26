@@ -41,8 +41,9 @@ if "$cli" "$invalid_source" >"$invalid_stdout" 2>"$invalid_stderr"; then
   exit 1
 fi
 
-grep -q "lg: OCaml argument type mismatch" "$invalid_stderr"
-grep -q "File \"$invalid_source\", line 3" "$invalid_stderr"
+grep -q "Argument 1 to Stdlib.abs expects int" "$invalid_stderr"
+grep -Fq -- "-- ARGUMENT TYPE MISMATCH [LG2000] -- $invalid_source" "$invalid_stderr"
+grep -Fq '3| (def answer (Stdlib.abs "bad"))' "$invalid_stderr"
 
 printf '%s\n' \
   '(type-variant status Active Inactive)' \
@@ -205,7 +206,8 @@ if "$cli" --compile-files-from "$stdlib_state" "$math_source" "$bad_source" -o "
   exit 1
 fi
 
-grep -q "File \"$bad_source\", line 1" "$bad_stderr"
+grep -Fq -- "-- ARGUMENT TYPE MISMATCH [LG2000] -- $bad_source" "$bad_stderr"
+grep -Fq '1| (def bad (Stdlib.abs "bad"))' "$bad_stderr"
 
 lsp_output="$multi_dir/lsp.output"
 lsp_math_source="$multi_dir/lsp-math.cljc"
@@ -225,6 +227,7 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/editor.cljc","languageId":"lg","version":1,"text":"(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/editor.cljc","version":2},"contentChanges":[{"text":"(def ok 1)\n(def good (Stdlib.abs -42))"}]}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/semantic-error.cljc","languageId":"lg","version":1,"text":"(def ok 1)\n(def bad\n  (+ 1 \"x\"))"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/utf16-error.cljc","languageId":"lg","version":1,"text":"(def 😀 (Stdlib.abs \"bad\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/warning.cljc","languageId":"lg","version":1,"text":"(type-variant status Active Inactive)\n(defn describe [^:status status]\n  (match status Active \"active\"))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/service.cljc","languageId":"lg","version":1,"text":"(def answer 41)\n(defn add-one [^:int x] x)\n(def result (add-one answer))"}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/format.cljc","languageId":"lg","version":1,"text":"(def   answer  41)"}}}'
@@ -279,8 +282,10 @@ grep -q '"code":"LG2000"' "$lsp_output"
 grep -q '"code":"OCAML-WARNING"' "$lsp_output"
 grep -q '"phase":"semantic"' "$lsp_output"
 grep -q '"phase":"ocaml"' "$lsp_output"
+grep -q '"typeMismatch"' "$lsp_output"
 grep -q 'not exhaustive' "$lsp_output"
 grep -Fq '"uri":"file:///tmp/semantic-error.cljc","diagnostics":[{"range"' "$lsp_output"
+grep -Fq '"uri":"file:///tmp/utf16-error.cljc","diagnostics":[{"range":{"start":{"line":0,"character":20}' "$lsp_output"
 grep -Fq '"uri":"file:///tmp/warning.cljc","diagnostics":[{"range"' "$lsp_output"
 grep -q '"line":3' "$lsp_output"
 grep -q '"character":6' "$lsp_output"
@@ -319,3 +324,32 @@ grep -q '"newText":"distance-plus-two"' "$lsp_output"
 grep -q '"name":"magnitude-plus-two"' "$lsp_output"
 grep -Fq "\"uri\":\"file://$main_source\",\"diagnostics\":[]" "$lsp_output"
 grep -Fq "\"uri\":\"file://$main_source\",\"diagnostics\":[{\"range\"" "$lsp_output"
+
+related_workspace="$multi_dir/related-workspace"
+related_lsp_output="$multi_dir/related-lsp.output"
+record_definition="$related_workspace/a-definition.cljc"
+record_use="$related_workspace/z-use.cljc"
+mkdir -p "$related_workspace"
+printf '%s\n' \
+  '(module User' \
+  '  (type-record user (age :int)))' > "$record_definition"
+printf '%s\n' '(def bad (record User.user (age "old")))' > "$record_use"
+
+{
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootUri\":\"file://$related_workspace\",\"capabilities\":{\"workspace\":{\"didChangeWatchedFiles\":{\"dynamicRegistration\":false}}}}}"
+  send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$record_use\",\"languageId\":\"lg\",\"version\":1,\"text\":\"(def bad (record User.user (age \\\"old\\\")))\\n\"}}}"
+  send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
+} | "$cli" --lsp > "$related_lsp_output"
+
+if ! grep -Fq "\"uri\":\"file://$record_use\",\"diagnostics\":[{\"range\"" "$related_lsp_output"; then
+  echo "expected cross-file record diagnostics from LSP" >&2
+  cat "$related_lsp_output" >&2
+  exit 1
+fi
+if ! grep -Fq "\"uri\":\"file://$record_definition\",\"range\":{\"start\":{\"line\":1" "$related_lsp_output"; then
+  echo "expected record declaration related information from LSP" >&2
+  cat "$related_lsp_output" >&2
+  exit 1
+fi

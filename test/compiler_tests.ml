@@ -2429,12 +2429,12 @@ let test_subs_core_api () =
 let test_subs_rejects_non_string_sources () =
   compile_string_with_stdlib {|(def x (subs 123 1))|}
   |> expect_error_contains
-       "subs called with incompatible arguments: expected (string, int)"
+       "Argument 1 to subs expects string, but this expression produces int."
 
 let test_subs_rejects_non_int_indexes () =
   compile_string_with_stdlib {|(def x (subs "abc" "1"))|}
   |> expect_error_contains
-       "subs called with incompatible arguments: expected (string, int)"
+       "Argument 2 to subs expects int, but this expression produces string."
 
 let test_type_relations_are_explicit_and_strict () =
   if Lg.Types.equal Lg.Types.TUnknown Lg.Types.TInt then
@@ -6485,6 +6485,175 @@ let test_source_node_identity_reaches_parsetree () =
       | Some id when String.starts_with ~prefix:"identity.cljc:" id -> ()
       | Some id -> failwith ("unexpected source node identity " ^ id)
       | None -> failwith "expected LSP lookup to return a source node identity")
+
+let last_substring_index text expected =
+  let expected_length = String.length expected in
+  let rec loop last index =
+    if index + expected_length > String.length text then last
+    else
+      let last =
+        if String.sub text index expected_length = expected then Some index
+        else last
+      in
+      loop last (index + 1)
+  in
+  if expected_length = 0 then Some (String.length text) else loop None 0
+
+let test_source_node_identity_distinguishes_source_revisions () =
+  let filename = "revision-identity.cljc" in
+  let first_source = "(def answer 1)" in
+  let second_source = "(def answer 2)" in
+  let identity source marker =
+    let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
+    let offset = expect_substring_index source marker in
+    Lg.Language_service.source_node_id_at analysis ~offset
+    |> Option.value ~default:"<missing>"
+  in
+  let first = identity first_source "1" in
+  let second = identity second_source "2" in
+  if first = second then
+    failwith
+      ("source node identity must include the source revision, but both were "
+      ^ first);
+  if
+    Lg.Language_service.source_node_id_range first
+    <> Lg.Language_service.source_node_id_range second
+  then failwith "equal source spans in different revisions should retain equal ranges"
+
+let test_repeated_equal_forms_have_distinct_source_node_identities () =
+  let filename = "repeated-identity.cljc" in
+  let source = "(def values [1 1])" in
+  let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
+  let first_offset = expect_substring_index source "1" in
+  let second_offset =
+    last_substring_index source "1" |> Option.value ~default:(-1)
+  in
+  let identity offset =
+    Lg.Language_service.source_node_id_at analysis ~offset
+    |> Option.value ~default:"<missing>"
+  in
+  let first = identity first_offset in
+  let second = identity second_offset in
+  if first = second then
+    failwith "equal forms at different spans must have distinct identities";
+  if
+    Lg.Language_service.source_node_id_range first
+    <> Some (first_offset, first_offset + 1)
+  then failwith "the first repeated form must retain its exact source span";
+  if
+    Lg.Language_service.source_node_id_range second
+    <> Some (second_offset, second_offset + 1)
+  then failwith "the second repeated form must retain its exact source span"
+
+let test_macro_generated_nodes_use_call_site_identity () =
+  let filename = "macro-call-identity.cljc" in
+  let source =
+    "(defmacro forty-two []\n  `(__lg_add 40 2))\n\n(def result\n  (forty-two))"
+  in
+  let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
+  let symbol_offset =
+    last_substring_index source "forty-two" |> Option.value ~default:(-1)
+  in
+  let call_start = symbol_offset - 1 in
+  let call_end = symbol_offset + String.length "forty-two" + 1 in
+  match Lg.Language_service.source_node_id_at analysis ~offset:symbol_offset with
+  | Some id
+    when Lg.Language_service.source_node_id_range id
+         = Some (call_start, call_end) ->
+      if String.length id > 160 then
+        failwith "source node identity must not embed diagnostic origin payloads"
+  | Some id -> failwith ("macro output has the wrong call-site identity: " ^ id)
+  | None -> failwith "macro output must retain the macro call-site identity"
+
+let test_macro_generated_error_reports_call_and_definition_origins () =
+  let filename = "macro-origin.cljc" in
+  let source =
+    "(defmacro bad []\n  `(Stdlib.abs \"bad\"))\n\n(def result\n  (bad))"
+  in
+  match Lg.Compiler.compile_string_with_filename ~filename source with
+  | Ok _ -> failwith "expected the generated host call to fail"
+  | Error error ->
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_lnum = 5
+             && location.loc_start.pos_cnum - location.loc_start.pos_bol = 2 ->
+          ()
+      | Some location ->
+          failwith
+            (Printf.sprintf "macro error points to %d:%d instead of the call"
+               location.Location.loc_start.Lexing.pos_lnum
+               (location.loc_start.pos_cnum - location.loc_start.pos_bol))
+      | None -> failwith "macro-generated error must point to its call site");
+      if
+        not
+          (List.exists
+             (fun (related : Lg.Error.related) ->
+               related.location.Location.loc_start.Lexing.pos_lnum = 2
+               && string_contains_substring related.message
+                    "generated from this macro template")
+             error.related)
+      then failwith "macro-generated error must retain its definition origin"
+
+let test_macro_unquoted_argument_keeps_its_exact_source_identity () =
+  let filename = "macro-argument-origin.cljc" in
+  let source =
+    "(defmacro bad [value]\n  `(Stdlib.abs ~value))\n\n(def result\n  (bad \"bad\"))"
+  in
+  let argument_start =
+    last_substring_index source "\"bad\"" |> Option.value ~default:(-1)
+  in
+  match Lg.Compiler.compile_string_with_filename ~filename source with
+  | Ok _ -> failwith "expected the unquoted macro argument to fail"
+  | Error error ->
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = argument_start
+             && location.loc_end.pos_cnum = argument_start + 5 ->
+          ()
+      | Some location ->
+          failwith
+            (Printf.sprintf
+               "unquoted macro argument mapped to %d-%d instead of %d-%d"
+               location.Location.loc_start.Lexing.pos_cnum
+               location.loc_end.pos_cnum argument_start (argument_start + 5))
+      | None -> failwith "unquoted macro argument must retain a source span");
+      if error.related <> [] then
+        failwith
+          "an unquoted source argument must not be reported as generated template code"
+
+let test_restored_incremental_macro_preserves_origin_chain () =
+  let definition_source =
+    "(defmacro bad []\n  `(Stdlib.abs \"bad\"))"
+  in
+  let state, _ =
+    Lg.Compiler.compile_chunk_with_filename ~filename:"macro-definition.cljc"
+      Lg.Compiler.empty_state definition_source
+    |> expect_ok
+  in
+  let state = Lg.Compiler.cacheable_state state in
+  let state : Lg.Compiler.state =
+    Marshal.from_string (Marshal.to_string state []) 0
+  in
+  let call_source = "(def result (bad))" in
+  match
+    Lg.Compiler.compile_chunk_with_filename ~filename:"macro-call.cljc" state
+      call_source
+  with
+  | Ok _ -> failwith "expected the restored generated host call to fail"
+  | Error error ->
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_fname = "macro-call.cljc" ->
+          ()
+      | _ -> failwith "restored macro error must point to the new call chunk");
+      if
+        not
+          (List.exists
+             (fun (related : Lg.Error.related) ->
+               related.location.Location.loc_start.Lexing.pos_fname
+               = "macro-definition.cljc")
+             error.related)
+      then failwith "restored macro must retain its definition origin"
 
 let test_source_node_identity_covers_value_bindings () =
   let source = "(def answer 42)" in
@@ -25321,7 +25490,7 @@ let test_batched_numeric_scalar_core_functions_reject_non_int_bit_args () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_bit_arg.cljc"
     {|(def x (bit-set 1 "2"))|}
   |> expect_error
-       "bit-set called with incompatible arguments: expected (int, int), got (int, string)"
+       "bit-set called with incompatible arguments. Argument 2 to bit-set expects int, but this expression produces string."
 
 let test_hash_combine_matches_clojure_32_bit_overflow () =
   let source =
@@ -43327,17 +43496,497 @@ let test_parser_diagnostics_locate_unterminated_delimiters () =
   with
   | Ok _ -> failwith "expected an unterminated vector error"
   | Error error -> (
-      if error.message <> "unterminated vector; expected ']'" then
+      if
+        error.message
+        <> "I reached the end of input while looking for ']' to close this vector."
+      then
         failwith ("unexpected parser error: " ^ error.message);
       match error.location with
       | Some location ->
           if location.loc_start.Lexing.pos_fname <> "broken.cljc" then
             failwith "parser error should preserve the source filename";
-          if location.loc_start.Lexing.pos_lnum <> 2 then
-            failwith "parser error should point to the opening delimiter line";
-          if location.loc_start.Lexing.pos_cnum <> 23 then
-            failwith "parser error should point to the opening delimiter"
-      | None -> failwith "parser error should include a location")
+          if location.loc_start.Lexing.pos_cnum <> String.length source then
+            failwith "parser error should point to the exact end-of-input cursor";
+          if location.loc_end.pos_cnum <> String.length source then
+            failwith "end-of-input location should be zero-width"
+      | None -> failwith "parser error should include a location");
+      match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_cnum = 23 -> (
+          match error.fixes with
+          | [ fix ] -> (
+              match fix.edits with
+              | [ edit ]
+                when edit.replacement = "]"
+                     && edit.location.Location.loc_start.Lexing.pos_cnum
+                        = String.length source ->
+                  ()
+              | _ -> failwith "unfinished vector fix should insert ] at EOF")
+          | _ -> failwith "unfinished vector should expose one structured fix")
+      | _ -> failwith "unfinished vector should label its opening delimiter"
+
+let test_parser_diagnostics_explain_mismatched_delimiters () =
+  let source = "(def broken [1 2)" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"mismatch.cljc" source
+  with
+  | Ok _ -> failwith "expected a mismatched delimiter error"
+  | Error error ->
+      if error.title <> "MISMATCHED DELIMITER" then
+        failwith ("unexpected diagnostic title: " ^ error.title);
+      if error.message <> "This vector starts with '[' but closes with ')'." then
+        failwith ("unexpected parser error: " ^ error.message);
+      (match error.location with
+      | Some location ->
+          if location.loc_start.Lexing.pos_fname <> "mismatch.cljc" then
+            failwith "mismatched delimiter should preserve the source filename";
+          if location.loc_start.Lexing.pos_cnum <> 16 then
+            failwith "primary location should point to the incorrect delimiter"
+      | None -> failwith "mismatched delimiter should have a primary location");
+      match error.related with
+      | [ related ] ->
+          if related.message <> "This vector starts here." then
+            failwith ("unexpected related label: " ^ related.message);
+          if related.location.Location.loc_start.Lexing.pos_cnum <> 12 then
+            failwith "related location should point to the opening delimiter"
+      | _ -> failwith "mismatched delimiter should have one related location"
+
+let test_parser_diagnostics_explain_missing_reader_form () =
+  let source = "'" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"reader-prefix.cljc" source
+  with
+  | Ok _ -> failwith "expected quote without a form to fail"
+  | Error error ->
+      if error.title <> "MISSING FORM" then
+        failwith ("unexpected reader-prefix title: " ^ error.title);
+      if error.message <> "This quote needs a form after it." then
+        failwith ("unexpected reader-prefix error: " ^ error.message);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = String.length source
+             && location.loc_end.pos_cnum = String.length source ->
+          ()
+      | _ -> failwith "missing form should point to the end-of-input cursor");
+      match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_cnum = 0 -> ()
+      | _ -> failwith "missing form should label the reader prefix"
+
+let test_parser_diagnostics_explain_map_key_without_value () =
+  let source = "{:name \"Ada\" :age}" in
+  let missing_value_key = expect_substring_index source ":age" in
+  match Lg.Compiler.compile_string_with_filename ~filename:"map-pair.cljc" source with
+  | Ok _ -> failwith "expected map key without a value to fail"
+  | Error error ->
+      if error.title <> "INCOMPLETE MAP" then
+        failwith ("unexpected map diagnostic title: " ^ error.title);
+      if error.message <> "This map has a key with no value." then
+        failwith ("unexpected map diagnostic: " ^ error.message);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = missing_value_key -> ()
+      | _ -> failwith "incomplete map should point to the unmatched key");
+      match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_cnum = 0 -> ()
+      | _ -> failwith "incomplete map should label its opening delimiter"
+
+let test_lexer_diagnostics_locate_unfinished_string () =
+  let source = "(def message \"unfinished" in
+  let quote_offset = expect_substring_index source "\"" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"string.cljc" source
+  with
+  | Ok _ -> failwith "expected an unfinished string to fail"
+  | Error error ->
+      if error.title <> "UNFINISHED STRING" then
+        failwith ("unexpected lexer diagnostic title: " ^ error.title);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = String.length source
+             && location.loc_end.pos_cnum = String.length source ->
+          ()
+      | _ -> failwith "unfinished string should point to the end-of-input cursor");
+      match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_cnum = quote_offset ->
+          ()
+      | _ -> failwith "unfinished string should label its opening quote"
+
+let test_parser_diagnostics_explain_incomplete_reader_conditional () =
+  let source = "#?(:native)" in
+  let feature_offset = expect_substring_index source ":native" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"reader.cljc" source
+  with
+  | Ok _ -> failwith "expected an incomplete reader conditional to fail"
+  | Error error ->
+      if error.title <> "INCOMPLETE READER CONDITIONAL" then
+        failwith ("unexpected reader conditional title: " ^ error.title);
+      if
+        error.message
+        <> "The :native feature in this reader conditional has no form."
+      then failwith ("unexpected reader conditional error: " ^ error.message);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = feature_offset -> ()
+      | _ -> failwith "reader conditional should point to the unmatched feature");
+      match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_cnum = 0 -> ()
+      | _ -> failwith "reader conditional should label its prefix"
+
+let test_conditional_type_diagnostics_point_to_both_branches () =
+  let source =
+    "(def value\n  (if true\n    1\n    \"one\"))"
+  in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"branches.cljc" source
+  with
+  | Ok _ -> failwith "expected incompatible conditional branches"
+  | Error error ->
+      if error.title <> "TYPE MISMATCH" then
+        failwith ("unexpected diagnostic title: " ^ error.title);
+      if
+        not
+          (string_contains_substring error.message
+             "This branch produces string, but the previous branch produces int.")
+      then failwith ("unexpected conditional error: " ^ error.message);
+      (match error.location with
+      | Some location when location.Location.loc_start.Lexing.pos_lnum = 4 -> ()
+      | Some _ -> failwith "primary location should point to the conflicting branch"
+      | None -> failwith "conditional mismatch should have a primary location");
+      (match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_lnum = 3 -> ()
+      | _ -> failwith "the previous branch should be a related location");
+      (match error.type_mismatch with
+      | Some
+          {
+            context = Lg.Error.Conditional_branch;
+            expected = Lg.Error.Type_atom "int";
+            actual = Lg.Error.Type_atom "string";
+            _;
+          } ->
+          ()
+      | _ -> failwith "conditional mismatch should expose structured type facts");
+      if
+        not
+          (List.exists
+             (fun hint ->
+               string_contains_substring hint "closed sum type")
+             error.hints)
+      then failwith "conditional mismatch should explain the closed-sum solution"
+
+let test_nested_conditional_diagnostics_preserve_expectation_chain () =
+  let source =
+    "(def value\n  (if true\n    (if false\n      1\n      \"one\")\n    2))"
+  in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"nested-branches.cljc"
+      source
+  with
+  | Ok _ -> failwith "expected nested incompatible conditional branches"
+  | Error error ->
+      (match error.location with
+      | Some location when location.Location.loc_start.Lexing.pos_lnum = 5 -> ()
+      | _ -> failwith "nested mismatch should point to the innermost bad branch");
+      let related_lines =
+        error.related
+        |> List.map (fun (related : Lg.Error.related) ->
+               ( related.location.Location.loc_start.Lexing.pos_lnum,
+                 related.message ))
+      in
+      List.iter
+        (fun (line, message_fragment) ->
+          if
+            not
+              (List.exists
+                 (fun (actual_line, message) ->
+                   actual_line = line
+                   && string_contains_substring message message_fragment)
+                 related_lines)
+          then
+            failwith
+              (Printf.sprintf
+                 "nested conditional diagnostic lost line %d context %S" line
+                 message_fragment))
+        [
+          (4, "previous branch produces int");
+          (3, "inside the then branch of this outer conditional");
+          (6, "outer else branch produces int");
+        ]
+
+let test_record_property_type_diagnostic_links_value_and_declaration () =
+  let source =
+    "(type-record user (name :string) (age :int))\n\n(def bad\n  (record user (name \"Ada\") (age \"old\")))"
+  in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"property-type.cljc" source
+  with
+  | Ok _ -> failwith "expected record property type mismatch"
+  | Error error ->
+      if error.title <> "PROPERTY TYPE MISMATCH" then
+        failwith ("unexpected property diagnostic title: " ^ error.title);
+      if
+        not
+          (string_contains_substring error.message
+             "The age property of user expects int, but this expression produces string.")
+      then failwith ("unexpected property diagnostic: " ^ error.message);
+      (match error.location with
+      | Some location when location.Location.loc_start.Lexing.pos_lnum = 4 -> ()
+      | _ -> failwith "property mismatch should point to its value expression");
+      (match error.type_mismatch with
+      | Some
+          {
+            context =
+              Lg.Error.Record_property
+                { record_name = "user"; property_name = "age" };
+            expected = Lg.Error.Type_atom "int";
+            actual = Lg.Error.Type_atom "string";
+            _;
+          } ->
+          ()
+      | _ -> failwith "property mismatch should expose structured type facts");
+      match error.related with
+      | [ related ]
+        when related.location.Location.loc_start.Lexing.pos_lnum = 1
+             && string_contains_substring related.message
+                  "property is declared here" ->
+          ()
+      | _ -> failwith "property mismatch should link to its declaration"
+
+let test_property_diagnostic_origins_match_native_and_melange () =
+  let source =
+    "(type-record user (age :int))\n(def bad (record user (age \"old\")))"
+  in
+  let diagnostic target =
+    match
+      Lg.Compiler.compile_string_with_filename ~target
+        ~filename:"cross-target-property.cljc" source
+    with
+    | Ok _ -> failwith "expected cross-target property mismatch"
+    | Error error ->
+        let primary =
+          error.location
+          |> Option.map (fun location ->
+                 ( location.Location.loc_start.Lexing.pos_cnum,
+                   location.loc_end.pos_cnum ))
+        in
+        let related =
+          error.related
+          |> List.map (fun (related : Lg.Error.related) ->
+                 ( related.location.Location.loc_start.Lexing.pos_cnum,
+                   related.location.loc_end.pos_cnum ))
+        in
+        (primary, related, error.type_mismatch)
+  in
+  let native = diagnostic Lg.Target.Native in
+  let melange = diagnostic Lg.Target.Melange in
+  if native <> melange then
+    failwith "Native and Melange must report identical LG property origins"
+
+let test_host_argument_type_diagnostic_identifies_call_and_argument () =
+  let source = "(def bad (Stdlib.abs \"wrong\"))" in
+  let argument_offset = expect_substring_index source "\"wrong\"" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"host-argument.cljc" source
+  with
+  | Ok _ -> failwith "expected host argument type mismatch"
+  | Error error ->
+      if error.title <> "ARGUMENT TYPE MISMATCH" then
+        failwith ("unexpected host argument title: " ^ error.title);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = argument_offset -> ()
+      | _ -> failwith "host mismatch should point to the bad argument");
+      match error.type_mismatch with
+      | Some
+          {
+            context =
+              Lg.Error.Host_boundary { callee = "Stdlib.abs"; index = 1 };
+            expected = Lg.Error.Type_atom "int";
+            actual = Lg.Error.Type_atom "string";
+            _;
+          } ->
+          ()
+      | _ -> failwith "host mismatch should expose callee, index, and type facts"
+
+let test_structured_type_difference_finds_nested_mismatch () =
+  let expected =
+    Lg.Error.Type_application ("vector", [ Lg.Error.Type_atom "int" ])
+  in
+  let actual =
+    Lg.Error.Type_application ("vector", [ Lg.Error.Type_atom "string" ])
+  in
+  let mismatch =
+    Lg.Error.type_mismatch ~context:Lg.Error.Annotation ~expected ~actual
+  in
+  match mismatch.difference with
+  | {
+   path = [ Lg.Error.Type_argument 0 ];
+   expected = Lg.Error.Type_atom "int";
+   actual = Lg.Error.Type_atom "string";
+  } ->
+      ()
+  | _ -> failwith "type difference should isolate the nested vector element"
+
+let test_annotation_type_diagnostic_links_expression_and_annotation () =
+  let source = "(def ^:int answer \"wrong\")" in
+  let value_offset = expect_substring_index source "\"wrong\"" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"annotation.cljc" source
+  with
+  | Ok _ -> failwith "expected annotated value mismatch"
+  | Error error ->
+      if error.title <> "ANNOTATION TYPE MISMATCH" then
+        failwith ("unexpected annotation diagnostic title: " ^ error.title);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = value_offset -> ()
+      | _ -> failwith "annotation mismatch should point to the value expression");
+      match error.type_mismatch with
+      | Some
+          {
+            context = Lg.Error.Annotation;
+            expected = Lg.Error.Type_atom "int";
+            actual = Lg.Error.Type_atom "string";
+            _;
+          } ->
+          ()
+      | _ -> failwith "annotation mismatch should expose expected and actual types"
+
+let test_source_call_argument_diagnostic_identifies_bad_position () =
+  let source =
+    "(defn ^:int int-identity [^int value] value)\n(def bad (int-identity \"wrong\"))"
+  in
+  let argument_offset = expect_substring_index source "\"wrong\"" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"call-argument.cljc" source
+  with
+  | Ok _ -> failwith "expected source call argument mismatch"
+  | Error error ->
+      if error.title <> "ARGUMENT TYPE MISMATCH" then
+        failwith
+          ("unexpected source call title: " ^ error.title ^ ": " ^ error.message);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = argument_offset -> ()
+      | _ -> failwith "source call mismatch should point to argument 1");
+      match error.type_mismatch with
+      | Some
+          {
+            context = Lg.Error.Call_argument { callee; index = 1 };
+            expected = Lg.Error.Type_atom "int";
+            actual = Lg.Error.Type_atom "string";
+            _;
+          }
+        when string_contains_substring callee "int-identity" ->
+          ()
+      | _ -> failwith "source call mismatch should expose callee and argument 1"
+
+let test_protocol_argument_diagnostic_identifies_method_and_position () =
+  let source =
+    "(defprotocol Labelled\n  (^:string label [value ^string suffix]))\n\
+     (extend-type :int Labelled\n  (label [value suffix] suffix))\n\
+     (def bad (label 1 42))"
+  in
+  let argument_offset = expect_substring_index source "42" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"protocol-argument.cljc"
+      source
+  with
+  | Ok _ -> failwith "expected protocol argument type mismatch"
+  | Error error ->
+      if error.title <> "ARGUMENT TYPE MISMATCH" then
+        failwith ("unexpected protocol argument title: " ^ error.title);
+      (match error.location with
+      | Some location
+        when location.Location.loc_start.Lexing.pos_cnum = argument_offset -> ()
+      | _ -> failwith "protocol mismatch should point to argument 2");
+      match error.type_mismatch with
+      | Some
+          {
+            context =
+              Lg.Error.Protocol_argument
+                { protocol = "Labelled"; method_name = "label"; index = 2 };
+            expected = Lg.Error.Type_atom "string";
+            actual = Lg.Error.Type_atom "int";
+            _;
+          } ->
+          ()
+      | _ ->
+          failwith
+            "protocol mismatch should expose protocol, method, and argument 2"
+
+let test_error_renderer_uses_original_source_locations () =
+  let source = "(def ok 1)\n(def broken [1 2" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"render.cljc" source
+  with
+  | Ok _ -> failwith "expected an unterminated vector error"
+  | Error error ->
+      let rendered = Lg.Compiler.render_error ~source error in
+      let expected =
+        "-- UNFINISHED VECTOR [LG1002] -- render.cljc\n\n\
+         I reached the end of input while looking for ']' to close this vector.\n\n\
+         2| (def broken [1 2\n\
+         \                   ^\n\n\
+         This vector starts here.\n\
+         2| (def broken [1 2\n\
+         \               ^\n\n\
+         Hint: Try adding a ] to close this vector."
+      in
+      if rendered <> expected then
+        failwith
+          (Printf.sprintf "diagnostic golden changed:\nEXPECTED:\n%s\nACTUAL:\n%s"
+             expected rendered)
+
+let test_error_renderer_handles_utf8_before_the_error_span () =
+  let source = "; λ λ\n(def broken [1 2" in
+  match
+    Lg.Compiler.compile_string_with_filename ~filename:"utf8.cljc" source
+  with
+  | Ok _ -> failwith "expected an unterminated vector error"
+  | Error error ->
+      let rendered = Lg.Compiler.render_error ~source error in
+      if not (string_contains_substring rendered "2| (def broken [1 2") then
+        failwith ("renderer lost the original line after UTF-8 input:\n" ^ rendered)
+
+let test_error_renderer_does_not_use_primary_source_for_related_file () =
+  let position filename line bol offset =
+    {
+      Lexing.pos_fname = filename;
+      pos_lnum = line;
+      pos_bol = bol;
+      pos_cnum = offset;
+    }
+  in
+  let location filename line bol start_offset end_offset =
+    {
+      Location.loc_start = position filename line bol start_offset;
+      loc_end = position filename line bol end_offset;
+      loc_ghost = false;
+    }
+  in
+  let primary = location "call.cljc" 1 0 1 4 in
+  let origin = location "macro.cljc" 8 60 63 64 in
+  let error =
+    Lg.Error.error ~location:primary
+      ~related:[ { message = "Generated from this macro template."; location = origin } ]
+      "generated expression has the wrong type"
+    |> function Error error -> error | Ok _ -> assert false
+  in
+  let rendered = Lg.Compiler.render_error ~source:"(bad call)" error in
+  if
+    not
+      (string_contains_substring rendered
+         "File \"macro.cljc\", line 8, columns 3-4")
+  then
+    failwith
+      ("cross-file related location should use coordinates, not unrelated source:\n"
+      ^ rendered)
 
 let test_language_service_recovers_completed_prefix () =
   let source = "(def answer 41)\n(def broken (+ answer" in
@@ -47374,6 +48023,18 @@ let tests =
       test_semantic_ast_preserves_nested_types );
     ( "source node identity reaches parsetree",
       test_source_node_identity_reaches_parsetree );
+    ( "source node identity distinguishes source revisions",
+      test_source_node_identity_distinguishes_source_revisions );
+    ( "repeated equal forms have distinct source node identities",
+      test_repeated_equal_forms_have_distinct_source_node_identities );
+    ( "macro generated nodes use call site identity",
+      test_macro_generated_nodes_use_call_site_identity );
+    ( "macro generated error reports call and definition origins",
+      test_macro_generated_error_reports_call_and_definition_origins );
+    ( "macro unquoted argument keeps its exact source identity",
+      test_macro_unquoted_argument_keeps_its_exact_source_identity );
+    ( "restored incremental macro preserves origin chain",
+      test_restored_incremental_macro_preserves_origin_chain );
     ( "source node identity covers value bindings",
       test_source_node_identity_covers_value_bindings );
     ( "source node identity covers record value bindings",
@@ -50322,6 +50983,40 @@ let tests =
       test_compile_diagnostics_are_empty_for_inferred_record_parameters );
     ( "parser diagnostics locate unterminated delimiters",
       test_parser_diagnostics_locate_unterminated_delimiters );
+    ( "parser diagnostics explain mismatched delimiters",
+      test_parser_diagnostics_explain_mismatched_delimiters );
+    ( "parser diagnostics explain missing reader form",
+      test_parser_diagnostics_explain_missing_reader_form );
+    ( "parser diagnostics explain map key without value",
+      test_parser_diagnostics_explain_map_key_without_value );
+    ( "lexer diagnostics locate unfinished string",
+      test_lexer_diagnostics_locate_unfinished_string );
+    ( "parser diagnostics explain incomplete reader conditional",
+      test_parser_diagnostics_explain_incomplete_reader_conditional );
+    ( "conditional type diagnostics point to both branches",
+      test_conditional_type_diagnostics_point_to_both_branches );
+    ( "nested conditional diagnostics preserve expectation chain",
+      test_nested_conditional_diagnostics_preserve_expectation_chain );
+    ( "record property type diagnostic links value and declaration",
+      test_record_property_type_diagnostic_links_value_and_declaration );
+    ( "property diagnostic origins match Native and Melange",
+      test_property_diagnostic_origins_match_native_and_melange );
+    ( "host argument type diagnostic identifies call and argument",
+      test_host_argument_type_diagnostic_identifies_call_and_argument );
+    ( "structured type difference finds nested mismatch",
+      test_structured_type_difference_finds_nested_mismatch );
+    ( "annotation type diagnostic links expression and annotation",
+      test_annotation_type_diagnostic_links_expression_and_annotation );
+    ( "source call argument diagnostic identifies bad position",
+      test_source_call_argument_diagnostic_identifies_bad_position );
+    ( "protocol argument diagnostic identifies method and position",
+      test_protocol_argument_diagnostic_identifies_method_and_position );
+    ( "error renderer uses original source locations",
+      test_error_renderer_uses_original_source_locations );
+    ( "error renderer handles UTF-8 before the error span",
+      test_error_renderer_handles_utf8_before_the_error_span );
+    ( "error renderer does not use primary source for related file",
+      test_error_renderer_does_not_use_primary_source_for_related_file );
     ( "language service recovers completed prefix",
       test_language_service_recovers_completed_prefix );
     ( "language service hover uses OCaml types",

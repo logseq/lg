@@ -1717,6 +1717,31 @@ let rec semantic_expression_location = function
   | Semantic_ir.Typed (_, expression) -> semantic_expression_location expression
   | _ -> None
 
+let argument_type_mismatch_error ~context ~callee ~index ~expected argument =
+  let summary =
+    match context with
+    | Error.Call_argument _ | Protocol_argument _ ->
+        callee ^ " called with incompatible arguments. "
+    | Conditional_branch | Record_property _ | Annotation | Host_boundary _ ->
+        ""
+  in
+  Error.error ~title:"ARGUMENT TYPE MISMATCH"
+    ?location:(semantic_expression_location argument.semantic_expr)
+    ~type_mismatch:
+      (Error.type_mismatch ~context
+         ~expected:(Types.diagnostic_type_term expected)
+         ~actual:(Types.diagnostic_type_term argument.ty))
+    ~hints:
+      [
+        Printf.sprintf
+          "Change argument %d to %s, or update %s's parameter type." index
+          (Types.source_name expected) callee;
+      ]
+    (summary
+    ^ Printf.sprintf
+        "Argument %d to %s expects %s, but this expression produces %s." index
+        callee (Types.source_name expected) (Types.source_name argument.ty))
+
 let dynamic_unpack env ty expression =
   let ty = resolve_named_record_application env ty in
   match dynamic_boundary_error_message `Unpack ty with
@@ -9834,7 +9859,7 @@ let create ~compile_expr =
         | _ -> Error.error "satisfies? expects a protocol and value")
     | "__type-hint" -> (
         match arg_forms with
-        | [ FSymbol annotation; value_form ] -> (
+        | [ (FSymbol annotation as annotation_form); value_form ] -> (
             match Type_annotation.of_param_annotation annotation with
             | Error _ as error -> error
             | Ok hinted_type ->
@@ -9936,6 +9961,39 @@ let create ~compile_expr =
                               "a type hint cannot narrow a dynamic value; \
                                define a closed sum type and match its \
                                constructors"
+                          else if
+                            (not (Type_solver.is_open hinted_type))
+                            && not
+                                 (argument_compatible hinted_type value.ty)
+                          then
+                            let related =
+                              Source_context.find annotation_form
+                              |> Option.to_list
+                              |> List.map (fun location ->
+                                     ({
+                                        Error.location;
+                                        message =
+                                          "This annotation requires "
+                                          ^ Types.source_name hinted_type ^ ".";
+                                      }
+                                       : Error.related))
+                            in
+                            Error.error ~title:"ANNOTATION TYPE MISMATCH"
+                              ?location:(Source_context.find value_form) ~related
+                              ~type_mismatch:
+                                (Error.type_mismatch ~context:Error.Annotation
+                                   ~expected:
+                                     (Types.diagnostic_type_term hinted_type)
+                                   ~actual:
+                                     (Types.diagnostic_type_term value.ty))
+                              ~hints:
+                                [
+                                  "Change the expression to match the annotation, or update the annotation.";
+                                ]
+                              (Printf.sprintf
+                                 "This annotation expects %s, but the expression produces %s."
+                                 (Types.source_name hinted_type)
+                                 (Types.source_name value.ty))
                           else
                 Ok
                               {
@@ -11868,7 +11926,55 @@ let create ~compile_expr =
                       value_form
                   with
                   | Error _ as err -> err
-                  | Ok value -> Ok (field, value)))
+                  | Ok value ->
+                      if
+                        Type_solver.is_open field.ty
+                        || argument_compatible field.ty value.ty
+                      then Ok (field, value)
+                      else
+                        let property_name =
+                          if String.starts_with ~prefix:":" field.keyword then
+                            String.sub field.keyword 1
+                              (String.length field.keyword - 1)
+                          else field.keyword
+                        in
+                        let related =
+                          field.location
+                          |> Option.to_list
+                          |> List.map (fun location ->
+                                 ({
+                                    Error.location;
+                                    message =
+                                      Printf.sprintf
+                                        "The %s property is declared here with type %s."
+                                        property_name
+                                        (Types.source_name field.ty);
+                                  }
+                                   : Error.related))
+                        in
+                        Error.error ~title:"PROPERTY TYPE MISMATCH"
+                          ?location:(Source_context.find value_form) ~related
+                          ~type_mismatch:
+                            (Error.type_mismatch
+                               ~context:
+                                 (Error.Record_property
+                                    {
+                                      record_name = record.type_name;
+                                      property_name;
+                                    })
+                               ~expected:(Types.diagnostic_type_term field.ty)
+                               ~actual:(Types.diagnostic_type_term value.ty))
+                          ~hints:
+                            [
+                              Printf.sprintf
+                                "Change this value to %s, or update the %s property declaration."
+                                (Types.source_name field.ty) property_name;
+                            ]
+                          (Printf.sprintf
+                             "The %s property of %s expects %s, but this expression produces %s."
+                             property_name record.type_name
+                             (Types.source_name field.ty)
+                             (Types.source_name value.ty))))
           | _ -> Error.error "record fields must be (name value)"
         in
         let rec compile_fields record acc seen = function
@@ -15967,29 +16073,29 @@ let create ~compile_expr =
                      ~actuals:actual_types)
                   expected_types
               in
-              let rec adapt adapted expected_types arguments =
+              let rec adapt index adapted expected_types arguments =
                 match (expected_types, arguments) with
                 | [], [] -> Ok (List.rev adapted)
                 | expected :: expected_rest, (label, argument) :: rest ->
                     if Types.equal expected argument.ty then
-                      adapt ((label, argument) :: adapted) expected_rest rest
+                      adapt (index + 1) ((label, argument) :: adapted)
+                        expected_rest rest
                     else if argument_compatible expected argument.ty then
                       Result.bind
                         (plan_and_emit_argument env ~expected argument)
                         (fun expression ->
-                          adapt
+                          adapt (index + 1)
                             ((label, typed_ir expected expression) :: adapted)
                             expected_rest rest)
                     else
-                      Error.error
-                        ?location:
-                          (semantic_expression_location argument.semantic_expr)
-                        ("OCaml argument type mismatch: expected "
-                       ^ Types.source_name expected
-                       ^ ", got " ^ Types.source_name argument.ty)
+                      argument_type_mismatch_error
+                        ~context:
+                          (Error.Host_boundary
+                             { callee = function_name; index })
+                        ~callee:function_name ~index ~expected argument
                 | _ -> Error.error "internal OCaml argument mismatch"
               in
-              adapt [] expected_types arguments
+              adapt 1 [] expected_types arguments
             in
             let argument_types =
               List.map (fun (label, argument) -> (label, argument.ty)) arguments
@@ -18929,34 +19035,50 @@ let create ~compile_expr =
                       not
                         (fixed_compatible && rest_compatible)
                     then
-                      Error.error
-                        (name ^ " called with incompatible arguments: expected ("
-                       ^ String.concat ", "
-                           (List.map Types.source_name fixed_param_tys)
-                       ^ "), got ("
-                       ^ String.concat ", "
-                           (List.map
-                              (fun argument -> Types.source_name argument.ty)
-                              fixed_args)
-                       ^ "); incompatible positions: "
-                       ^ String.concat ", "
-                           (List.mapi
-                              (fun index compatible ->
-                                if compatible then None
-                                else Some (string_of_int (index + 1)))
-                              (List.map2
-                                 (fun expected arg ->
-                                   match expected with
-                                   | TNullable (TRecord fields) ->
-                                       row_argument_compatible fields arg.ty
-                                   | _ ->
-                                       compatible expected arg.ty)
-                                 fixed_param_tys fixed_args)
-                           |> List.filter_map Fun.id)
-                       ^ "; inference="
-                       ^ string_of_bool seqable_elements_compatible
-                       ^ ", fixed=" ^ string_of_bool fixed_compatible
-                       ^ ", rest=" ^ string_of_bool rest_compatible)
+                      let fixed_mismatch =
+                        fixed_param_tys
+                        |> List.mapi (fun index expected ->
+                               match List.nth_opt fixed_args index with
+                               | None -> None
+                               | Some argument ->
+                                   let compatible =
+                                     match expected with
+                                     | TNullable (TRecord fields) ->
+                                         row_argument_compatible fields
+                                           argument.ty
+                                     | _ -> compatible expected argument.ty
+                                   in
+                                   if compatible then None
+                                   else Some (index + 1, expected, argument))
+                        |> List.find_map Fun.id
+                      in
+                      let rest_mismatch =
+                        match rest_param_ty with
+                        | None -> None
+                        | Some expected ->
+                            extra_args
+                            |> List.mapi (fun offset argument ->
+                                   if compatible expected argument.ty then None
+                                   else
+                                     Some
+                                       ( List.length fixed_param_tys + offset + 1,
+                                         expected,
+                                         argument ))
+                            |> List.find_map Fun.id
+                      in
+                      (match
+                         Option.fold ~none:rest_mismatch ~some:Option.some
+                           fixed_mismatch
+                       with
+                      | Some (index, expected, argument) ->
+                          argument_type_mismatch_error
+                            ~context:
+                              (Error.Call_argument { callee = name; index })
+                            ~callee:name ~index ~expected argument
+                      | None ->
+                          Error.error
+                            (name
+                           ^ " called with incompatible arguments after type inference"))
                     else
                       let prepare_argument index expected argument =
                         let storage_expected =
@@ -19386,14 +19508,34 @@ let create ~compile_expr =
                       (name
                      ^ ": polymorphic recursion requires an explicit signature")
                 | Error _ ->
-                    Error.error
-                      (name ^ " called with incompatible arguments: expected ("
-                     ^ String.concat ", "
-                         (List.map Types.source_name param_tys)
-                     ^ "), got ("
-                     ^ String.concat ", "
-                         (List.map Types.source_name actual_tys)
-                     ^ ")")
+                    let mismatch =
+                      param_tys
+                      |> List.mapi (fun index expected ->
+                             match List.nth_opt args index with
+                             | Some argument
+                               when not
+                                      (inferred_argument_compatible expected
+                                         argument.ty) ->
+                                 Some (index + 1, expected, argument)
+                             | Some _ | None -> None)
+                      |> List.find_map Fun.id
+                    in
+                    (match mismatch with
+                    | Some (index, expected, argument) ->
+                        argument_type_mismatch_error
+                          ~context:
+                            (Error.Call_argument { callee = name; index })
+                          ~callee:name ~index ~expected argument
+                    | None ->
+                        Error.error
+                          (name
+                         ^ " called with incompatible arguments during type inference: expected ("
+                         ^ String.concat ", "
+                             (List.map Types.source_name param_tys)
+                         ^ "), got ("
+                         ^ String.concat ", "
+                             (List.map Types.source_name actual_tys)
+                         ^ ")"))
                 | Ok substitutions ->
                 let collection_element =
                   args
@@ -20867,16 +21009,36 @@ let create ~compile_expr =
                      ^ ": collection value is not seqable: "
                      ^ Types.source_name actual_return)
                 | None ->
-                    Error.error
-                      (name ^ " called with incompatible arguments: expected ("
-                     ^ String.concat ", "
-                         (List.map Types.source_name parameter_tys)
-                     ^ "), got ("
-                     ^ String.concat ", "
-                         (List.map
-                            (fun argument -> Types.source_name argument.ty)
-                            args)
-                     ^ ")"))
+                    let mismatch =
+                      parameter_tys
+                      |> List.mapi (fun index expected ->
+                             match List.nth_opt args index with
+                             | Some argument
+                               when not
+                                      (named_argument_compatible expected
+                                         argument.ty) ->
+                                 Some (index + 1, expected, argument)
+                             | Some _ | None -> None)
+                      |> List.find_map Fun.id
+                    in
+                    (match mismatch with
+                    | Some (index, expected, argument) ->
+                        argument_type_mismatch_error
+                          ~context:
+                            (Error.Call_argument { callee = name; index })
+                          ~callee:name ~index ~expected argument
+                    | None ->
+                        Error.error
+                          (name
+                         ^ " called with incompatible arguments: expected ("
+                         ^ String.concat ", "
+                             (List.map Types.source_name parameter_tys)
+                         ^ "), got ("
+                         ^ String.concat ", "
+                             (List.map
+                                (fun argument -> Types.source_name argument.ty)
+                                args)
+                         ^ ")")))
             | _ -> Error.error (name ^ " is not callable")))
   and compile_protocol_call scope env name arg_forms =
     let contextual_return_ty ty =
@@ -20951,7 +21113,45 @@ let create ~compile_expr =
                       form_rest)
             | _ -> Error.error (name ^ " called with incompatible arguments")
           in
-          match compile_protocol_args [] expected_params arg_forms with
+          let validate_protocol_arguments args =
+            let mismatch =
+              expected_params
+              |> List.mapi (fun offset expected ->
+                     let index = offset + 1 in
+                     match List.nth_opt args offset with
+                     | Some argument
+                       when index > 1
+                            && not
+                                 (match expected with
+                                 | TUnknown | TMeta _ | TVar _ -> true
+                                 | _ when has_capability_constraint expected ->
+                                     true
+                                 | _ ->
+                                     named_argument_compatible expected
+                                       argument.ty) ->
+                         Some (index, expected, argument)
+                     | Some _ | None -> None)
+              |> List.find_map Fun.id
+            in
+            match mismatch with
+            | None -> Ok args
+            | Some (index, expected, argument) ->
+                let protocol =
+                  marker.protocol_id
+                  |> Option.map Protocol_id.name
+                  |> Option.value ~default:"<unknown>"
+                in
+                let method_name = Protocol.method_basename name in
+                argument_type_mismatch_error
+                  ~context:
+                    (Error.Protocol_argument { protocol; method_name; index })
+                  ~callee:name ~index ~expected argument
+          in
+          match
+            Result.bind
+              (compile_protocol_args [] expected_params arg_forms)
+              validate_protocol_arguments
+          with
           | Error _ as err -> err
           | Ok args -> (
               let normalized_args =

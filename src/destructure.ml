@@ -19,9 +19,7 @@ type local_binding = {
 }
 
 let source_identity form =
-  Source_context.find form
-  |> Option.map (fun location ->
-      (Source_node_id.of_location location, location))
+  Source_context.find_identity form
 
 let is_type_annotation name = String.starts_with ~prefix:"^" name
 let keyword_for_local name = ":" ^ name

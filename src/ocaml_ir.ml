@@ -241,14 +241,20 @@ let core_type_of_source source =
   try Parse.core_type lexbuf
   with _ -> Ast_helper.Typ.constr ~loc (lid (longident_of_string source)) []
 
-let node_id_attribute node_id =
+let string_attribute name value =
   let payload =
     Parsetree.PStr
       [ Ast_helper.Str.eval
-          (Ast_helper.Exp.constant
-             (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
+          (Ast_helper.Exp.constant (Ast_helper.Const.string value)) ]
   in
-  Ast_helper.Attr.mk (str "lg.node_id") payload
+  Ast_helper.Attr.mk (str name) payload
+
+let source_attributes node_id =
+  string_attribute "lg.node_id" (Source_node_id.to_string node_id)
+  :: (Source_node_id.origins node_id
+     |> List.map (fun origin ->
+            string_attribute "lg.origin"
+              (Source_node_id.origin_to_string origin)))
 
 let rec pattern_node_ids = function
   | PLocated (node_id, _, pattern) -> node_id :: pattern_node_ids pattern
@@ -264,7 +270,7 @@ let rec pattern_node_ids = function
 
 let add_pattern_node_ids patterns (expression : Parsetree.expression) =
   let attributes =
-    patterns |> List.concat_map pattern_node_ids |> List.map node_id_attribute
+    patterns |> List.concat_map pattern_node_ids |> List.concat_map source_attributes
   in
   { expression with pexp_attributes = attributes @ expression.pexp_attributes }
 
@@ -274,7 +280,7 @@ let rec pattern_to_parsetree = function
       {
         pattern with
         ppat_loc = location;
-        ppat_attributes = node_id_attribute node_id :: pattern.ppat_attributes;
+        ppat_attributes = source_attributes node_id @ pattern.ppat_attributes;
       }
   | PVar name -> Ast_helper.Pat.var ~loc (str name)
   | PAny -> Ast_helper.Pat.any ~loc ()
@@ -386,19 +392,11 @@ and to_parsetree ~context = function
   | Located (node_id, location, expression) ->
       to_parsetree ~context expression
       |> Result.map (fun (expression : Parsetree.expression) ->
-             let payload =
-               Parsetree.PStr
-                 [ Ast_helper.Str.eval
-                     (Ast_helper.Exp.constant
-                        (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
-             in
-             let attribute =
-               Ast_helper.Attr.mk (str "lg.node_id") payload
-             in
              {
                expression with
                pexp_loc = location;
-               pexp_attributes = attribute :: expression.pexp_attributes;
+               pexp_attributes =
+                 source_attributes node_id @ expression.pexp_attributes;
              })
   | Int value ->
       Ok (Ast_helper.Exp.constant ~loc (Ast_helper.Const.int ~loc value))

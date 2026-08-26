@@ -89,10 +89,16 @@ type saved_compilation_state = {
 
 let compiler_error message =
   Error
-    { Lg.Compiler.code = "LG9000";
-      phase = `Infrastructure;
-      message;
-      location = None }
+    ({ Lg.Compiler.code = "LG9000";
+       phase = `Infrastructure;
+       title = "INFRASTRUCTURE ERROR";
+       message;
+       location = None;
+       related = [];
+       hints = [];
+       fixes = [];
+       type_mismatch = None }
+      : Lg.Compiler.compile_error)
 
 let write_saved_compilation_state path saved =
   Lg.Compiler_artifact.write ~kind:"saved-state" ~path saved
@@ -973,14 +979,15 @@ let report_diagnostics diagnostics =
     diagnostics
 
 let report_error (err : Lg.Compiler.compile_error) =
-  let location =
+  let source =
     match err.Lg.Compiler.location with
+    | Some location ->
+        let filename = location.Location.loc_start.Lexing.pos_fname in
+        if filename <> "" && Sys.file_exists filename then read_file filename
+        else ""
     | None -> ""
-    | Some location -> Format.asprintf "%a: " Location.print_loc location
   in
-  prerr_endline
-    (location ^ "lg: " ^ err.Lg.Compiler.message ^ " ["
-   ^ err.Lg.Compiler.code ^ "]");
+  prerr_endline (Lg.Compiler.render_error ~source err);
   exit 1
 
 let run_lsp () =

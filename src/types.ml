@@ -1105,6 +1105,50 @@ let rec source_name = function
       | arguments ->
           "<" ^ String.concat "," (List.map source_name arguments) ^ ">"
 
+let rec diagnostic_type_term = function
+  | TInt -> Error.Type_atom "int"
+  | TFloat -> Error.Type_atom "float"
+  | TChar -> Error.Type_atom "char"
+  | TString -> Error.Type_atom "string"
+  | TRegex -> Error.Type_atom "regex"
+  | TMap_keys -> Error.Type_atom "map"
+  | TSymbol -> Error.Type_atom "symbol"
+  | TKeyword -> Error.Type_atom "keyword"
+  | TBool -> Error.Type_atom "bool"
+  | TUnit -> Error.Type_atom "unit"
+  | TNil -> Error.Type_atom "nil"
+  | TUnknown -> Error.Type_atom "any"
+  | TMeta _ -> Error.Type_atom "inference-variable"
+  | TVar name -> Error.Type_atom ("param/" ^ name)
+  | TOcaml name -> Error.Type_atom name
+  | TNullable inner ->
+      Error.Type_application ("option", [ diagnostic_type_term inner ])
+  | TOcaml_app (name, arguments) ->
+      Error.Type_application (name, List.map diagnostic_type_term arguments)
+  | TTuple items -> Error.Type_tuple (List.map diagnostic_type_term items)
+  | TArray inner ->
+      Error.Type_application ("array", [ diagnostic_type_term inner ])
+  | TRef inner -> Error.Type_application ("ref", [ diagnostic_type_term inner ])
+  | TList inner ->
+      Error.Type_application ("list", [ diagnostic_type_term inner ])
+  | TVector inner ->
+      Error.Type_application ("vector", [ diagnostic_type_term inner ])
+  | TSet inner -> Error.Type_application ("set", [ diagnostic_type_term inner ])
+  | TSeq inner -> Error.Type_application ("seq", [ diagnostic_type_term inner ])
+  | TFn (parameters, return_type) ->
+      Error.Type_function
+        (List.map diagnostic_type_term parameters, diagnostic_type_term return_type)
+  | TRecord fields ->
+      Error.Type_record
+        (List.map
+           (fun (field : field) ->
+             (field.keyword, diagnostic_type_term field.ty))
+           fields)
+  | TNamed_record record ->
+      Error.Type_application
+        (record.type_name, List.map diagnostic_type_term record.type_arguments)
+  | (TConstraint _ | TOverloaded_fn _) as ty -> Error.Type_atom (source_name ty)
+
 let ocaml_record_type_name name =
   let local_name separator name =
     match String.rindex_opt name separator with

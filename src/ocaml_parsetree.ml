@@ -723,14 +723,20 @@ let rec collect_set_modules_from_items module_path modules items =
           modules)
     modules items
 
-let node_id_attribute node_id =
+let string_attribute name value =
   let payload =
     Parsetree.PStr
       [ Ast_helper.Str.eval
-          (Ast_helper.Exp.constant
-             (Ast_helper.Const.string (Source_node_id.to_string node_id))) ]
+          (Ast_helper.Exp.constant (Ast_helper.Const.string value)) ]
   in
-  Ast_helper.Attr.mk (str "lg.node_id") payload
+  Ast_helper.Attr.mk (str name) payload
+
+let source_attributes node_id =
+  string_attribute "lg.node_id" (Source_node_id.to_string node_id)
+  :: (Source_node_id.origins node_id
+     |> List.map (fun origin ->
+            string_attribute "lg.origin"
+              (Source_node_id.origin_to_string origin)))
 
 let record_definition ~emit_set ~emit_nullable_set var_name identity type_id
     type_name type_parameters set_module_name fields values =
@@ -772,7 +778,7 @@ let record_definition ~emit_set ~emit_nullable_set var_name identity type_id
               { pattern with
                 ppat_loc = location;
                 ppat_attributes =
-                  node_id_attribute node_id :: pattern.ppat_attributes;
+                  source_attributes node_id @ pattern.ppat_attributes;
               }
         in
         Ast_helper.Vb.mk ~loc
@@ -837,7 +843,7 @@ let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
         | Some (node_id, location) ->
             { pattern with
               ppat_loc = location;
-              ppat_attributes = node_id_attribute node_id :: pattern.ppat_attributes;
+              ppat_attributes = source_attributes node_id @ pattern.ppat_attributes;
             }
       in
       let value_binding = Ast_helper.Vb.mk ~loc pattern projected_expr in
@@ -853,7 +859,7 @@ let rec value_pattern = function
       {
         pattern with
         ppat_loc = location;
-        ppat_attributes = node_id_attribute node_id :: pattern.ppat_attributes;
+        ppat_attributes = source_attributes node_id @ pattern.ppat_attributes;
       }
 
 let rec value_pattern_context = function
@@ -1535,7 +1541,9 @@ let print_implementation structure =
       attributes =
         (fun _mapper attributes ->
           List.filter
-            (fun attribute -> attribute.Parsetree.attr_name.txt <> "lg.node_id")
+            (fun attribute ->
+              let name = attribute.Parsetree.attr_name.txt in
+              name <> "lg.node_id" && name <> "lg.origin")
             attributes);
     }
   in
