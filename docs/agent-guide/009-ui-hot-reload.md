@@ -1,6 +1,6 @@
 # ADR 009: Provide a Complete UI Hot Reload Experience
 
-- Status: Accepted; Phases 0 through 3 complete
+- Status: Accepted and implemented; Phases 0 through 4 complete
 - Date: 2026-08-26
 - Decision owners: LG compiler and LUI maintainers
 - Related: `docs/design.md`, `docs/architecture.md`, and
@@ -286,7 +286,7 @@ dynamic-library replacement is not the default reload mechanism.
 
 ## Implementation status
 
-The implementation now has three layers of evidence.
+The implementation now has four layers of evidence.
 
 The isolated LG prototype proves typed same-address replacement semantics in a
 persistent process. The production LUI runtime now provides:
@@ -359,20 +359,33 @@ persistent process. The production LUI runtime now provides:
   field contents or another universal snapshot value; and
 - an automatic capture, rebuild, launch, and restore coordinator with monotonic
   generations, stale-work rejection, closed fallback reasons, stage-specific
-  failures, and direct routing from `ReloadRestartRequired`.
+  failures, and direct routing from `ReloadRestartRequired`;
+- one closed developer event session shared by change detection, compilation,
+  structured source diagnostics, reload results, migration, restart, target
+  connection status, and protocol negotiation;
+- deduplicated editor diagnostics and a collapsible native `Toast` overlay that
+  stays non-modal, preserves the last-known-good app, and disappears on the next
+  successful generation;
+- reload latency samples and nearest-rank p50/p95/max summaries, plus affected
+  root, invalidated node, and retained-state inspection data for developer
+  dashboards;
+- a canonical function-free render-tree snapshot and an acceptance gate proving
+  a clean View build and the equivalent hot-reloaded View produce equal trees;
+  and
+- a unit-returning typed root replacement helper that removes spurious OCaml
+  partial-application warnings from successful function reloads without changing
+  the public replacement operation.
 
-Phases 1 through 3 complete the in-process View, UI logic, subscription,
-resource, migration, and restart-control loops, not the complete ADR. The
-watcher accepts the
-transitive source closure from the development target and hashes every supplied
-path; automatic workspace closure discovery belongs in the developer tooling
-integration. Swift and Flutter retained-backend suites cover keyed moves,
-retained focus objects, draft/IME state, and atomic root replacement. A Web
-browser acceptance fixture for focus, selection, scroll, and window context is
-still part of Phase 4 tooling. A concrete development-target launcher supplies
-the coordinator's rebuild and launch callbacks; editor integration, the
-in-application diagnostic overlay, performance dashboards, and rendering parity
-gates remain in Phase 4.
+Phases 1 through 4 complete the in-process View, UI logic, subscription,
+resource, migration, restart-control, and developer-tooling loops. The watcher
+accepts the transitive source closure from the development target and hashes
+every supplied path; automatic workspace closure discovery belongs in the
+developer tooling integration. Swift and Flutter retained-backend suites cover
+keyed moves, retained focus objects, draft/IME state, and atomic root
+replacement. Typed restart context carries focus identity, text selection
+range, scroll offsets, and window geometry without sensitive text content. A
+concrete development target launcher supplies the coordinator's rebuild and
+launch callbacks.
 
 ## Prototype evidence
 
@@ -402,6 +415,8 @@ Phase 2 additionally proves attached asset replacement, same-signature update
 logic, subscription replacement, invalidation rollback, and bounded resource
 lifecycle behavior. Phase 3 proves typed snapshot migration, transactional soft
 restart, incompatible-message draining, and automatic explained fallback.
+Phase 4 proves shared diagnostics and overlay behavior, performance targets, and
+clean-build/hot-reload parity.
 
 ## Delivery phases
 
@@ -471,10 +486,24 @@ restart, incompatible-message draining, and automatic explained fallback.
 
 ### Phase 4: Tooling quality
 
-- Integrate reload status, timing, component invalidation, and retained-state
-  inspection with editor and UI developer tools.
-- Maintain p50/p95 latency dashboards and representative application fixtures.
-- Gate releases on clean-build/hot-reload rendering parity.
+- Complete: one closed developer event protocol feeds deduplicated editor
+  diagnostics and a collapsible non-modal native overlay for compile, reload,
+  migration, restart, disconnect, and protocol outcomes.
+- Complete: committed events expose elapsed time, affected roots, invalidated
+  node IDs, and retained widget, handler, subscription, resource, and state-scope
+  counts.
+- Complete: developer metrics calculate nearest-rank p50, p95, and max latency
+  from recorded samples.
+- Complete: the representative attached Native fixture measures 20 consecutive
+  warm single-file View redefinitions from `Session.eval` start through typed
+  root replacement and LUI commit. On 2026-08-26 it measured 0 ms change
+  acknowledgement, 251 ms p50, and 323 ms p95, passing the 100 ms acknowledgement
+  and 500 ms commit targets.
+- Complete: a canonical render-tree snapshot gates clean-build/hot-reload tree
+  parity while intentionally excluding handler closures and other non-rendering
+  runtime bookkeeping.
+- Complete: successful root replacement emits no spurious ignored-partial-
+  application warning, keeping real diagnostics readable.
 
 Stages that touch the compiler, runtime, LUI types, or host interop require an
 implementation review against `docs/design.md`.

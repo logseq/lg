@@ -30,7 +30,17 @@ let test_replacement_observer_can_be_disposed () =
   ignore (Lg_runtime.Runtime_reference.replace root 2);
   assert (Lg_runtime.Runtime_reference.deref root = 2)
 
+let test_redefinition_replacement_returns_unit_for_function_roots () =
+  let root = Lg_runtime.Runtime_reference.of_value (fun value -> value + 1) in
+  let result =
+    Lg_runtime.Runtime_reference.replace_for_redefinition root (fun value ->
+        value * 10)
+  in
+  assert (result = ());
+  assert (Lg_runtime.Runtime_reference.deref root 3 = 30)
+
 let () =
   test_replacement_observer_accepts_a_typed_root_update ();
   test_replacement_observer_failure_restores_last_known_good_value ();
-  test_replacement_observer_can_be_disposed ()
+  test_replacement_observer_can_be_disposed ();
+  test_redefinition_replacement_returns_unit_for_function_roots ()

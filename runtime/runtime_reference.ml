@@ -120,6 +120,10 @@ let replace reference value =
       reference.value <- old_value;
       raise exn
 
+let replace_for_redefinition reference value =
+  let _replacement = replace reference value in
+  ()
+
 let vreset reference value =
   reference.value <- value;
   value

@@ -708,12 +708,9 @@ let compatible_redefinition_root env env_key value_ty =
 
 let reset_runtime_root root_name expression =
   Semantic_ir.Apply
-    ( Semantic_ir.Ident "Stdlib.ignore",
-      [
-        Semantic_ir.Apply
-          ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.replace",
-            [ Semantic_ir.Ident root_name; expression ] );
-      ] )
+    ( Semantic_ir.Ident
+        "Lg_runtime.Runtime_reference.replace_for_redefinition",
+      [ Semantic_ir.Ident root_name; expression ] )
 
 let rec contains_unresolved_type = function
   | TUnknown | TMeta _ | TVar _ -> true
