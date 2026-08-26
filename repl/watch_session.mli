@@ -25,6 +25,16 @@ type event =
 
 type t
 
+val create_with_reload :
+  paths:string list ->
+  settle_seconds:float ->
+  now:(unit -> float) ->
+  reload:
+    (generation:int ->
+    string list ->
+    (unit, Lg.Compiler.compile_error) result) ->
+  (t, Lg.Compiler.compile_error) result
+
 val create :
   session:Session.t ->
   paths:string list ->

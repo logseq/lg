@@ -33,7 +33,10 @@ type pending = {
 }
 
 type t = {
-  session : Session.t;
+  reload :
+    generation:int ->
+    string list ->
+    (unit, Lg.Compiler.compile_error) result;
   paths : string list;
   settle_seconds : float;
   now : unit -> float;
@@ -81,7 +84,7 @@ let changed_paths baseline candidate =
 let elapsed_ms started finished =
   Float.to_int ((finished -. started) *. 1000.)
 
-let create ~session ~paths ~settle_seconds ~now =
+let create_with_reload ~paths ~settle_seconds ~now ~reload =
   if settle_seconds < 0. then
     Error (infrastructure_error "watch settle time cannot be negative")
   else
@@ -90,7 +93,7 @@ let create ~session ~paths ~settle_seconds ~now =
     | Ok baseline ->
         Ok
           {
-            session;
+            reload;
             paths;
             settle_seconds;
             now;
@@ -98,6 +101,11 @@ let create ~session ~paths ~settle_seconds ~now =
             pending = None;
             requested_generation = 0;
           }
+
+let create ~session ~paths ~settle_seconds ~now =
+  create_with_reload ~paths ~settle_seconds ~now
+    ~reload:(fun ~generation:_ paths ->
+      Session.eval_files session paths |> Result.map (fun _ -> ()))
 
 let detect_change watcher candidate =
   let paths = changed_paths watcher.baseline candidate in
@@ -128,7 +136,7 @@ let settle watcher pending =
   let started = watcher.now () in
   if started -. pending.detected_at < watcher.settle_seconds then None
   else
-    let result = Session.eval_files watcher.session pending.paths in
+    let result = watcher.reload ~generation:pending.generation pending.paths in
     let finished = watcher.now () in
     watcher.baseline <- pending.snapshot;
     watcher.pending <- None;

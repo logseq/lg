@@ -1,6 +1,6 @@
 # ADR 009: Provide a Complete UI Hot Reload Experience
 
-- Status: Accepted; Phases 0 and 1 complete
+- Status: Accepted; Phases 0 through 2 complete
 - Date: 2026-08-26
 - Decision owners: LG compiler and LUI maintainers
 - Related: `docs/design.md`, `docs/architecture.md`, and
@@ -331,17 +331,31 @@ persistent process. The production LUI runtime now provides:
 - explicit string reload keys whose identities survive sibling insertion and
   reordering; and
 - active component-path tracking that retains compatible local state, prunes
-  removed state scopes, and restores the registry after candidate failure.
+  removed state scopes, and restores the registry after candidate failure;
+- a reloadable application update slot whose existing dispatch closure observes
+  same-signature reducer replacement;
+- a typed subscription coordinator that preserves compatible identities,
+  starts replacements before publication, cancels replaced subscriptions after
+  commit, and rolls back a partially started generation on failure;
+- a closed generic resource session that remains concrete for each image,
+  style, theme, font, shader, or other resource type, tracks dependent node IDs,
+  restores the last-known-good value after invalidation failure, and retires
+  superseded resources exactly once;
+- a callback-driven watch session shared by LG compilation and typed resource
+  adapters, retaining hashing, save-burst settling, monotonic generations, and
+  structured failures; and
+- an attached save-to-resource end-to-end test plus repeated 100-generation
+  subscription and resource tests that prove bounded lifecycle behavior.
 
-Phase 1 is the complete View loop, not the complete ADR. The watcher accepts the
+Phases 1 and 2 complete the in-process View, UI logic, subscription, and
+resource loops, not the complete ADR. The watcher accepts the
 transitive source closure from the development target and hashes every supplied
 path; automatic workspace closure discovery belongs in the developer tooling
 integration. Swift and Flutter retained-backend suites cover keyed moves,
 retained focus objects, draft/IME state, and atomic root replacement. A Web
 browser acceptance fixture for focus, selection, scroll, and window context is
-still part of Phase 4 tooling. The resource dependency graph, typed migrations,
-automatic target restart, and in-application diagnostic overlay remain in later
-phases.
+still part of Phase 4 tooling. Typed migrations, automatic target restart, and
+the in-application diagnostic overlay remain in later phases.
 
 ## Prototype evidence
 
@@ -367,7 +381,9 @@ dune runtest prototype/hot_reload
 Phase 0 by itself does not prove those behaviors. Phase 1 now proves real LG
 compilation, attached bytecode evaluation, LUI reconciliation, file watching,
 same-signature View and helper replacement, and retained model/widget state.
-Asset replacement, migration, and restart fallback remain later-phase work.
+Phase 2 additionally proves attached asset replacement, same-signature update
+logic, subscription replacement, invalidation rollback, and bounded resource
+lifecycle behavior. Migration and restart fallback remain later-phase work.
 
 ## Delivery phases
 
@@ -404,12 +420,18 @@ Asset replacement, migration, and restart fallback remain later-phase work.
 
 ### Phase 2: UI code and resources
 
-- Add typed slots for event handlers, UI helpers, compatible update logic, and
-  subscriptions.
-- Reload styles, themes, images, fonts, and shaders with dependency-based cache
-  invalidation.
-- Add cancellation, stale-generation tests, rollback tests, and long-running
-  resource-leak tests.
+- Complete: typed root replacement covers retained event handlers, UI helpers,
+  compatible update logic, and subscription definitions.
+- Complete: compatible subscription identities remain live while changed
+  fingerprints restart through a transactional typed coordinator.
+- Complete: concrete style, theme, image, font, shader, and other resource
+  adapters use one closed generic resource session with dependency-based node
+  invalidation; a failed decode or invalidation keeps the old resource active.
+- Complete: the shared watcher can drive either LG compilation or a typed
+  resource adapter automatically after a settled save.
+- Complete: cancellation, stale-generation, partial-start rollback,
+  invalidation rollback, last-known-good, and repeated 100-generation lifecycle
+  tests cover subscriptions and resources.
 
 ### Phase 3: Migration and seamless fallback
 
