@@ -45,6 +45,25 @@
 
 (println (= [2 4] (vec (filter even? [1 2 3 4]))))
 (println (= [1 3] (vec (remove even? [1 2 3 4]))))
+(def rejected-filter-calls (atom 0))
+(def rejected-filter-values
+  (filter
+    (fn [_value]
+      (swap! rejected-filter-calls inc)
+      false)
+    (range 20000)))
+(println (= 0 @rejected-filter-calls))
+(println (empty? rejected-filter-values))
+(println (= 20000 @rejected-filter-calls))
+(def long-prefix-filter-calls (atom 0))
+(def long-prefix-filter-values
+  (filter
+    (fn [value]
+      (swap! long-prefix-filter-calls inc)
+      (= value 15000))
+    (range 20000)))
+(println (= 15000 (first long-prefix-filter-values)))
+(println (= 15001 @long-prefix-filter-calls))
 (println (= [1 2] (vec (take 2 [1 2 3 4]))))
 (println (= [3 4] (vec (drop 2 [1 2 3 4]))))
 (println (= [1 2] (vec (take-while #(< % 3) [1 2 3 1]))))

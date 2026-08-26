@@ -2084,13 +2084,14 @@
 
 (defn- filter-seq [pred coll]
   (lazy-seq
-   (if coll
-     (let [item (nth coll 0)
-           tail (rest coll)]
-       (if (pred item)
-         (cons item (filter-seq pred tail))
-         (filter-seq pred tail)))
-     nil)))
+   (loop [remaining coll]
+     (if remaining
+       (let [item (nth remaining 0)
+             tail (rest remaining)]
+         (if (pred item)
+           (cons item (filter-seq pred tail))
+           (recur tail)))
+       nil))))
 
 (defn filter
   ([pred]
