@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mobile="$repo_root/scripts/lg-mobile"
 android_setup="$repo_root/scripts/mobile/bootstrap_android_ocaml.sh"
+dependency_builder="$repo_root/scripts/mobile/build_lg_dependencies.sh"
 
 if grep -Fq 'ANDROID_NDK_HOME does not contain a complete NDK toolchain' "$android_setup"; then
   echo "Android setup does not fall back from an incomplete NDK override" >&2
@@ -38,6 +39,7 @@ grep -Fq 'lg mobile build' <<<"$help"
 grep -Fq -- '--object-mode complete|partial' <<<"$help"
 grep -Fq -- '--target-prefix DIR' <<<"$help"
 grep -Fq -- '--ocaml-object PATH' <<<"$help"
+grep -Fq -- '--ocaml-include DIR' <<<"$help"
 if grep -Eq -- '--profile|--target([[:space:]]|$)' <<<"$help"; then
   echo "mobile help still exposes platform selection as profiles" >&2
   exit 1
@@ -54,5 +56,12 @@ if $mobile build android --target-prefix --dry-run >/dev/null 2>&1; then
 fi
 
 grep -Fq -- '-output-obj' "$mobile"
+grep -Fq -- '-open Re__' "$dependency_builder"
+grep -Fq 'host_object_count=0' "$mobile"
+grep -Fq 'input_count=0' "$mobile"
+grep -Fq 'dirname "$host_object"' "$mobile"
+grep -Fq 'host_include_count=0' "$mobile"
+grep -Fq 'host_includes+=("$2")' "$mobile"
+grep -Fq 'if [[ -f "$re_source/re.mli" ]]' "$dependency_builder"
 
 echo "ok - LG mobile CLI requires an explicit platform and iOS environment"

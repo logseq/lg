@@ -24,6 +24,7 @@ Build options:
                                Include the OCaml runtime or defer it to the host
   --target-prefix DIR          Use an existing target OCaml compiler
   --ocaml-object PATH          Link an additional host object (repeatable)
+  --ocaml-include DIR          Add a host interface directory (repeatable)
   --dry-run                    Print resolved targets without building
 
 Environment:
@@ -76,8 +77,12 @@ output_dir=_build/lg-mobile
 object_mode=complete
 target_prefix_override=
 host_objects=()
+host_object_count=0
+host_includes=()
+host_include_count=0
 dry_run=0
 inputs=()
+input_count=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -113,6 +118,14 @@ while [[ $# -gt 0 ]]; do
       [[ $command == build ]] || die "--ocaml-object is valid only for build"
       [[ $# -ge 2 && $2 != --* ]] || die "--ocaml-object requires a path"
       host_objects+=("$2")
+      ((host_object_count += 1))
+      shift 2
+      ;;
+    --ocaml-include)
+      [[ $command == build ]] || die "--ocaml-include is valid only for build"
+      [[ $# -ge 2 && $2 != --* ]] || die "--ocaml-include requires a directory"
+      host_includes+=("$2")
+      ((host_include_count += 1))
       shift 2
       ;;
     --dry-run)
@@ -127,6 +140,7 @@ while [[ $# -gt 0 ]]; do
     *)
       [[ $command == build ]] || die "setup does not accept source paths"
       inputs+=("$1")
+      ((input_count += 1))
       shift
       ;;
   esac
@@ -208,7 +222,10 @@ if [[ -n $state_path ]]; then
 else
   compile_args+=(--compile-files)
 fi
-compile_args+=("${inputs[@]}" -o "$generated_ml")
+if [[ $input_count -gt 0 ]]; then
+  compile_args+=("${inputs[@]}")
+fi
+compile_args+=(-o "$generated_ml")
 lg "${compile_args[@]}"
 
 opam_root=$(opam var root --safe)
@@ -228,9 +245,17 @@ build_object() {
 
   [[ -x $ocamlopt ]] || die "shared OCaml toolchain is missing: $prefix; run the matching 'lg mobile setup' command"
   local host_object
-  for host_object in "${host_objects[@]}"; do
-    [[ -f $host_object ]] || die "host OCaml object is missing: $host_object"
-  done
+  if [[ $host_object_count -gt 0 ]]; then
+    for host_object in "${host_objects[@]}"; do
+      [[ -f $host_object ]] || die "host OCaml object is missing: $host_object"
+    done
+  fi
+  local host_include
+  if [[ $host_include_count -gt 0 ]]; then
+    for host_include in "${host_includes[@]}"; do
+      [[ -d $host_include ]] || die "host OCaml include directory is missing: $host_include"
+    done
+  fi
   mkdir -p "$target_dir"
   "$build_dependencies" "$prefix" "$target_dir/dependencies" >/dev/null
 
@@ -238,6 +263,16 @@ build_object() {
   while IFS= read -r directory; do
     include_args+=(-I "$directory")
   done <"$target_dir/dependencies/include-directories.txt"
+  if [[ $host_object_count -gt 0 ]]; then
+    for host_object in "${host_objects[@]}"; do
+      include_args+=(-I "$(dirname "$host_object")")
+    done
+  fi
+  if [[ $host_include_count -gt 0 ]]; then
+    for host_include in "${host_includes[@]}"; do
+      include_args+=(-I "$host_include")
+    done
+  fi
 
   "$ocamlopt" "${include_args[@]}" -c "$generated_ml" \
     -o "$target_dir/mobile_app.cmx"
@@ -246,6 +281,10 @@ build_object() {
   while IFS= read -r object; do
     dependency_objects+=("$object")
   done <"$target_dir/dependencies/link-objects.txt"
+  local link_objects=("${dependency_objects[@]}")
+  if [[ $host_object_count -gt 0 ]]; then
+    link_objects+=("${host_objects[@]}")
+  fi
 
   local output_name=mobile_app_complete.o
   local link_args=(-output-complete-obj -linkall)
@@ -256,8 +295,7 @@ build_object() {
   [[ $runtime_variant != pic ]] || link_args+=(-runtime-variant _pic)
   "$ocamlopt" "${include_args[@]}" "${link_args[@]}" \
     -o "$target_dir/$output_name" \
-    "${dependency_objects[@]}" \
-    "${host_objects[@]}" \
+    "${link_objects[@]}" \
     "$target_dir/mobile_app.cmx"
   echo "$target_dir/$output_name"
 }

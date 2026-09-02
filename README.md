@@ -452,6 +452,7 @@ single final link, including its existing OCaml modules:
 ```sh
 lg mobile build ios simulator \
   --target-prefix path/to/ocaml-target \
+  --ocaml-include path/to/application-interfaces \
   --ocaml-object path/to/application.cmx
 ```
 

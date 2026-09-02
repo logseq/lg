@@ -94,7 +94,41 @@ compile_sources "$edn_native_source" "$edn_native_objects" \
 re_source="$source_root/re"
 re_objects="$object_root/re"
 copy_sources re "$re_source"
-compile_sources "$re_source" "$re_objects"
+cp "$(ocamlfind query re)/re__.ml" "$re_source/re__.ml"
+mkdir -p "$re_objects"
+"$ocamlopt" -I "$re_objects" -no-alias-deps -opaque -w -49 -c \
+  "$re_source/re__.ml" -o "$re_objects/re__.cmx"
+re_internal_sources=()
+for source in "$re_source"/*.ml "$re_source"/*.mli; do
+  case "$(basename "$source")" in
+    re.ml|re.mli|re__.ml) ;;
+    *) re_internal_sources+=("$source") ;;
+  esac
+done
+re_ordered_sources=$("$ocamldep" -I "$re_objects" -open Re__ -sort \
+  "${re_internal_sources[@]}")
+printf '%s\n' "$re_objects/re__.cmx" >"$re_objects/link-objects.txt"
+for source in $re_ordered_sources; do
+  source_file=$(basename "$source")
+  source_name=${source_file%.*}
+  module_name="${source_name^}"
+  case "$source" in
+    *.mli) output="$re_objects/re__${module_name}.cmi" ;;
+    *.ml)
+      output="$re_objects/re__${module_name}.cmx"
+      printf '%s\n' "$output" >>"$re_objects/link-objects.txt"
+      ;;
+    *) continue ;;
+  esac
+  "$ocamlopt" -I "$re_objects" -open Re__ -c "$source" -o "$output"
+done
+if [[ -f "$re_source/re.mli" ]]; then
+  "$ocamlopt" -I "$re_objects" -open Re__ -c "$re_source/re.mli" \
+    -o "$re_objects/re.cmi"
+fi
+"$ocamlopt" -I "$re_objects" -open Re__ -c "$re_source/re.ml" \
+  -o "$re_objects/re.cmx"
+printf '%s\n' "$re_objects/re.cmx" >>"$re_objects/link-objects.txt"
 
 rrbvec_source="$source_root/rrbvec"
 rrbvec_objects="$object_root/rrbvec"
