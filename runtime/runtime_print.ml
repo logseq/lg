@@ -76,7 +76,7 @@ let render_strings separator print_length values =
 
 let render printer =
   let writer = Buffer.create 64 in
-  printer writer;
+  ignore (printer writer);
   Buffer.contents writer
 
 let render_values select_printer separator print_length values =

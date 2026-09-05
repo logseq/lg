@@ -40,42 +40,8 @@ let prepare_toplevel () =
        if String.equal message "" then "failed to prepare the OCaml toplevel"
        else message)
 
-let read_saved_state path =
-  let truncated () = Error "truncated compiler state artifact" in
-  try
-    let input = open_in_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr input)
-      (fun () ->
-        let line () = try Some (input_line input) with End_of_file -> None in
-        match (line (), line (), line (), line (), line ()) with
-        | ( Some "LG-COMPILER-STATE",
-            Some "11",
-            Some "saved-state",
-            Some length_text,
-            Some expected_digest ) -> (
-            match int_of_string_opt length_text with
-            | None -> Error "invalid compiler state artifact length"
-            | Some length when length < 0 ->
-                Error "invalid compiler state artifact length"
-            | Some length ->
-                let payload_start = pos_in input in
-                let remaining = in_channel_length input - payload_start in
-                if remaining <> length then
-                  Error "invalid compiler state artifact length"
-                else
-                  let digest = Digest.channel input length |> Digest.to_hex in
-                  if not (String.equal digest expected_digest) then
-                    Error "compiler state artifact checksum mismatch"
-                  else (
-                    seek_in input payload_start;
-                    try Ok (Marshal.from_channel input : saved_compilation_state)
-                    with _ -> Error "invalid compiler state artifact payload"))
-        | None, _, _, _, _ | _, None, _, _, _ | _, _, None, _, _
-        | _, _, _, None, _ | _, _, _, _, None ->
-            truncated ()
-        | _ -> Error "unsupported compiler state artifact")
-  with Sys_error message -> Error message
+let read_saved_state path : (saved_compilation_state, string) result =
+  Lg.Compiler_artifact.read ~kind:"saved-state" ~path
 
 let open_precompiled_stdlib () =
   let lexbuf = Lexing.from_string "open Lg_stdlib_native;;" in

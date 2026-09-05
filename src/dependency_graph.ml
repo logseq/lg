@@ -75,6 +75,7 @@ let rec symbols form =
 
 let rec value_symbols form =
   match form with
+  | FList (FSymbol "ffi" :: _) -> []
   | FList (FSymbol "record" :: FSymbol _ :: fields) ->
       fields
       |> List.concat_map (function
@@ -225,6 +226,8 @@ let require_referred_symbols entries =
        | _ -> [])
 
 let dependency_symbols = function
+  | FList [ FSymbol "ffi"; _; FVector parameters; result; _ ] ->
+      List.concat_map type_annotation_symbols (result :: parameters)
   | FList (FSymbol "require" :: entries) -> require_referred_symbols entries
   | FList
       (FSymbol ("optional-sequential-adapter" | "optional-map-adapter") :: _)
@@ -438,7 +441,7 @@ let rec provided_names = function
       in
       name :: constructors
   | FList
-      (FSymbol ("type-alias" | "type-record" | "external-record")
+      (FSymbol ("extern-type" | "type-alias" | "type-record" | "external-record")
       :: FSymbol name :: _) ->
       [ name ]
   | FList
@@ -450,7 +453,7 @@ let rec provided_names = function
       :: _) ->
       [ name ]
   | FList
-      (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
+      (FSymbol ("def" | "defonce" | "defn" | "defn-" | "ffi") :: FSymbol name :: _)
     ->
       [ name ]
   | FList
@@ -533,7 +536,7 @@ let type_provider_indices indexed =
         match form with
         | FList
             (FSymbol
-              ( "type-variant" | "type-alias" | "type-record"
+              ( "extern-type" | "type-variant" | "type-alias" | "type-record"
               | "external-record" | "deftype" | "defrecord" | "defprotocol" )
             :: FSymbol name :: _) ->
             [ name ]

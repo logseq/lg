@@ -13964,6 +13964,49 @@ let create ~compile_expr =
                             rendered;
                           ] ))))
         | _ -> Error.error "internal REPL result expects one argument")
+    | "__lg_format" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok (format :: values) when Types.equal format.ty TString ->
+            let rec encode index bindings encoded = function
+              | [] ->
+                  let expression = Semantic_ir.Apply
+                    (Semantic_ir.Ident "Lg_runtime.Runtime_format.format",
+                     [Semantic_ir.Ident "__lg_format_string"; Semantic_ir.List (List.rev encoded)]) in
+                  let bindings = (Semantic_ir.PVar "__lg_format_string", format.semantic_expr)
+                    :: List.rev bindings in
+                  Ok (typed_ir TString (List.fold_right (fun binding body ->
+                    Semantic_ir.Let ([binding], body)) bindings expression))
+              | value :: rest ->
+                  if contains_unresolved_type value.ty then
+                    Error.error "format arguments require concrete static types"
+                  else
+                    let name = "__lg_format_value_" ^ string_of_int index in
+                    let expression = Semantic_ir.Ident name in
+                    let rec convert depth ty expression =
+                      match ty with
+                      | TNullable inner | TOcaml_app ("option", [inner]) ->
+                          let parameter = "__lg_format_option_" ^ string_of_int depth in
+                          Semantic_ir.Apply (Semantic_ir.Ident "Lg_runtime.Runtime_format.option",
+                            [Semantic_ir.Fun ([Semantic_ir.PVar parameter],
+                               convert (depth + 1) inner (Semantic_ir.Ident parameter)); expression])
+                      | _ ->
+                          let constructor, payload = match ty with
+                            | TInt -> "Integer", Some expression
+                            | TFloat -> "Decimal", Some expression
+                            | TBool -> "Boolean", Some expression
+                            | TChar -> "Character", Some expression
+                            | TNil -> "Nil", None
+                            | _ -> "Text", Some (stringify_value scope env ~pr:false
+                                ~print_context:false {value with ty; semantic_expr = expression}) in
+                          Semantic_ir.Constructor
+                            ("Lg_runtime.Runtime_format." ^ constructor, payload)
+                    in
+                    let argument = convert 0 value.ty expression in
+                    encode (index + 1) ((Semantic_ir.PVar name, value.semantic_expr) :: bindings)
+                      (argument :: encoded) rest
+            in encode 0 [] [] values
+        | Ok _ -> Error.error "format requires a string followed by statically typed arguments")
     | ("__lg_str" | "__lg_print_str" | "__lg_pr_str") as render_name -> (
         let readable = render_name = "__lg_pr_str" in
         let separator = if render_name = "__lg_str" then "" else " " in
@@ -15271,6 +15314,16 @@ let create ~compile_expr =
               | Error _ -> apply "print_string" [ text ]
             in
             Ok (typed_ir TUnit output))
+    | "__lg_flush_output" -> (
+        match arg_forms with
+        | [] ->
+            let output =
+              match lookup_binding scope env "*out*" with
+              | Ok _ -> Semantic_ir.Unit
+              | Error _ -> apply "Stdlib.flush" [Semantic_ir.Ident "Stdlib.stdout"]
+            in
+            Ok (typed_ir TUnit output)
+        | _ -> Error.error "flush expects no arguments")
     | "__lg_print_output" -> (
         match compile_args () with
         | Error _ as err -> err

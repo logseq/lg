@@ -1,7 +1,15 @@
+(foreign_library
+ (archive_name lg_time)
+ (language c)
+ (names runtime_time_stubs))
+
 (library
  (name lg_runtime)
  (public_name lg.runtime)
  (modes native byte melange)
+ (foreign_archives lg_time)
+ (js_of_ocaml
+  (javascript_files runtime_time_stubs.js))
  (ocamlopt_flags :standard -no-g)
  (preprocess
   (per_module

@@ -14,7 +14,15 @@ let incomplete_message message =
   || String.ends_with ~suffix:"expects a form" message
 
 let classify_error (error : Lg.Compiler.compile_error) =
-  if incomplete_message error.message then Incomplete else Invalid error
+  let unfinished_syntax =
+    match error.phase with
+    | `Lexing | `Parsing ->
+        String.starts_with ~prefix:"UNFINISHED " error.title
+        || error.title = "MISSING FORM"
+    | _ -> false
+  in
+  if unfinished_syntax || incomplete_message error.message then Incomplete
+  else Invalid error
 
 let read source =
   match Lg.Lexer.tokenize source with

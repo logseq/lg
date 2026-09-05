@@ -20,6 +20,7 @@
   (dune (>= 3.17))
   (melange (>= 6.0))
   (js_of_ocaml (>= 6.0))
+  ctypes-foreign
   re
   melange-edn-core
   melange-edn-native

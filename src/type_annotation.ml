@@ -175,6 +175,18 @@ let rec parse_ocaml_type source =
                       | [ inner ] -> Ok (TNullable inner)
                       | _ -> assert false
                     else if name = "tuple" then Ok (TTuple args)
+                    else if name = "callback" then
+                      match args with
+                      | [ inner ] -> Ok (TOcaml_app ("Lg_ffi.Callback.t", [inner]))
+                      | _ -> Error.error "callback expects one function type argument"
+                    else if name = "owned-pointer" then
+                      match args with
+                      | [ inner ] -> Ok (TOcaml_app ("Lg_ffi.Owned_pointer.t", [inner]))
+                      | _ -> Error.error "owned-pointer expects one type argument"
+                    else if name = "pointer" then
+                      match args with
+                      | [ inner ] -> Ok (TOcaml_app ("Ctypes.ptr", [inner]))
+                      | _ -> Error.error "pointer expects one type argument"
                     else if name = "array" then
                       match args with
                       | [ inner ] -> Ok (TArray inner)

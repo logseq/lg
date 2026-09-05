@@ -1445,6 +1445,24 @@ and compile_resolved scope env next_type form =
   in
   let env = refine_mutable_bindings scope env form in
   match form with
+  | FList [ FSymbol "ffi"; (FSymbol name as name_form);
+            FVector parameters; result; options ] ->
+      let ocaml_name = Names.ocaml_binding_name scope name in
+      Result.map
+        (fun (foreign : Foreign_binding.t) ->
+          let binding = Types.binding ocaml_name foreign.value_type in
+          scope, Env.add (Names.scoped_key scope name) binding env,
+          next_type, Foreign_binding foreign)
+        (Foreign_binding.parse ~target:(Env.target env)
+             ~is_opaque:(function
+               | TOcaml name -> (match Resolver.lookup_type_declaration scope env name with
+                   | Some { kind = Opaque; _ } -> true | _ -> false)
+               | _ -> false)
+           ~resolve_type:(Function_elaborator.infer_named_record scope env)
+           ~name:ocaml_name ~location:(Source_context.find name_form)
+           parameters result options)
+  | FList (FSymbol "ffi" :: _) ->
+      Error.error "ffi expects a name, argument type vector, result type, and options map"
   | FList
       (FSymbol ("defn" | "defn-")
       :: FSymbol "^:dynamic"
@@ -3659,6 +3677,11 @@ and compile_resolved scope env next_type form =
   | FList (FSymbol "dynamic-codec" :: _) ->
       Error.error
         "dynamic-codec is not supported; use explicit sum constructors"
+  | FList [ FSymbol "extern-type"; (FSymbol name as name_form) ] ->
+      Type_definition_elaborator.compile_opaque_type
+        ?location:(Source_context.find name_form) scope env next_type name
+  | FList (FSymbol "extern-type" :: _) ->
+      Error.error "extern-type expects one type name"
   | FList [ FSymbol "type-alias"; (FSymbol name as name_form); manifest_form ]
     ->
       compile_type_alias

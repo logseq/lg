@@ -1029,7 +1029,7 @@ let run_repl argv =
   let executable_directory = Filename.dirname Sys.executable_name in
   let candidates =
     [
-      Filename.concat executable_directory "lg_repl_worker.bc";
+      Filename.concat executable_directory "lg_repl_worker.bc.exe";
       Filename.concat executable_directory "lg-repl";
     ]
   in

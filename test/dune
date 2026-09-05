@@ -8,17 +8,38 @@
   (melange.compile_flags
    (:standard \ -g))))
 
+(test
+ (name ffi_tests)
+ (modules ffi_tests)
+ (deps (package lg))
+ (libraries lg lg.ffi unix))
+
+(test
+ (name ffi_lifetime_tests)
+ (modules ffi_lifetime_tests)
+ (libraries lg.ffi unix))
+
+(test
+ (name runtime_time_tests)
+ (modules runtime_time_tests)
+ (libraries lg.runtime lg.edn-backend.native unix))
+
+(test
+ (name runtime_format_tests)
+ (modules runtime_format_tests)
+ (libraries lg.runtime lg.edn-backend.native))
+
 (executable
  (name compiler_test_runner)
  (modules compiler_test_runner)
- (modes byte)
+ (modes byte_complete)
  (libraries dynlink lg lg.runtime lg.edn-backend.native unix re rrbvec))
 
 (test
  (name compiler_tests)
  (modules compiler_tests)
  (deps
-  compiler_test_runner.bc
+  compiler_test_runner.bc.exe
   ../stdlib/clojure/core.lgi
   ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.lgi
@@ -46,54 +67,58 @@
  (modules compiler_support_performance_tests)
  (libraries lg.compiler_support))
 
-(test
+(executable
  (name repl_session_tests)
  (modules repl_session_tests)
- (modes byte)
- (deps ../stdlib/lg_stdlib_native.state)
- (libraries lg.repl)
- (action
-  (run %{test} %{dep:../stdlib/lg_stdlib_native.state})))
+ (modes byte_complete)
+ (libraries lg.repl))
 
-(test
+(rule
+ (alias runtest)
+ (deps ../stdlib/lg_stdlib_native.state)
+ (action (run %{exe:repl_session_tests.bc.exe} %{dep:../stdlib/lg_stdlib_native.state})))
+
+(executable
  (name repl_protocol_tests)
  (modules repl_protocol_tests)
- (modes byte)
+ (modes byte_complete)
  (libraries lg.repl unix yojson))
 
-(test
+(rule (alias runtest) (action (run %{exe:repl_protocol_tests.bc.exe})))
+
+(executable
  (name repl_nrepl_protocol_tests)
  (modules repl_nrepl_protocol_tests)
- (modes byte)
+ (modes byte_complete)
  (libraries lg.repl unix))
 
-(test
+(rule (alias runtest) (action (run %{exe:repl_nrepl_protocol_tests.bc.exe})))
+
+(executable
  (name repl_nrepl_cli_tests)
  (modules repl_nrepl_cli_tests)
- (modes byte)
- (deps
-  ../bin/lg_repl_worker.bc
-  ../stdlib/lg_stdlib_native.state)
- (libraries lg.repl unix)
- (action
-  (run
-   %{test}
-   %{dep:../bin/lg_repl_worker.bc}
-   %{dep:../stdlib/lg_stdlib_native.state})))
+ (modes byte_complete)
+ (libraries lg.repl unix))
+
+(rule
+ (alias runtest)
+ (deps ../bin/lg_repl_worker.bc.exe ../stdlib/lg_stdlib_native.state)
+ (action (run %{exe:repl_nrepl_cli_tests.bc.exe}
+   %{dep:../bin/lg_repl_worker.bc.exe} %{dep:../stdlib/lg_stdlib_native.state})))
 
 (rule
  (alias runtest)
  (deps
   repl_cli_test.sh
   ../bin/lg_cli.exe
-  ../bin/lg_repl_worker.bc
+  ../bin/lg_repl_worker.bc.exe
   ../stdlib/lg_stdlib_native.state)
  (action
   (run
    bash
    %{dep:repl_cli_test.sh}
    %{exe:../bin/lg_cli.exe}
-   %{dep:../bin/lg_repl_worker.bc}
+   %{dep:../bin/lg_repl_worker.bc.exe}
    %{dep:../stdlib/lg_stdlib_native.state})))
 
 (rule
@@ -101,14 +126,14 @@
  (deps
   repl_socket_cli_test.sh
   ../bin/lg_cli.exe
-  ../bin/lg_repl_worker.bc
+  ../bin/lg_repl_worker.bc.exe
   ../stdlib/lg_stdlib_native.state)
  (action
   (run
    bash
    %{dep:repl_socket_cli_test.sh}
    %{exe:../bin/lg_cli.exe}
-   %{dep:../bin/lg_repl_worker.bc}
+   %{dep:../bin/lg_repl_worker.bc.exe}
    %{dep:../stdlib/lg_stdlib_native.state})))
 
 (test
@@ -352,7 +377,7 @@
    %{dep:cross_runtime_native_melange.expected})))
 
 (rule
- (aliases runtest jsoo-cross-runtime)
+ (alias jsoo-cross-runtime)
  (deps
   cross_runtime_smoke.sh
   cross_runtime.expected
@@ -495,3 +520,7 @@
  (deps no_datascript_implementation_test.sh)
  (action
   (run bash %{dep:no_datascript_implementation_test.sh} %{workspace_root})))
+
+(alias
+ (name runtest)
+ (deps (alias jsoo-cross-runtime)))

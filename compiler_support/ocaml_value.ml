@@ -26,17 +26,25 @@ let unique_directories directories =
       if List.mem directory unique then unique else unique @ [ directory ])
     [] directories
 
-let init include_dirs =
+let init ?melange include_dirs =
   let detected_melange =
     List.exists (fun path -> Filename.basename path = "melange") include_dirs
   in
   let uses_melange =
-    match !configured_melange with
-    | Some configured -> configured
-    | None ->
-        configured_melange := Some detected_melange;
-        detected_melange
+    match melange, !configured_melange with
+    | Some selected, _ -> selected
+    | None, Some configured -> configured
+    | None, None -> detected_melange
   in
+  if Option.is_some !configured_melange
+     && !configured_melange <> Some uses_melange then (
+    known_include_dirs := [];
+    Clflags.include_dirs := [];
+    initialized := false;
+    initial_env_cache := None;
+    Env.reset_cache ();
+    Envaux.reset_cache ());
+  configured_melange := Some uses_melange;
   let standard_include_dirs =
     if uses_melange then []
     else

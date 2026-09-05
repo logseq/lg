@@ -10,6 +10,13 @@ let declare_type ?(type_parameters = []) ?manifest scope env name kind =
     (Env.types env)
   |> Result.map (fun (type_id, types) -> (type_id, Env.with_types types env))
 
+let compile_opaque_type ?location scope env next_type name =
+  match declare_type scope env name Opaque with
+  | Error _ as error -> error
+  | Ok (_, env) ->
+      Ok (scope, env, next_type,
+          Opaque_type { type_name = Names.sanitize_name name; location })
+
 let compile_type_alias ?location scope env next_type name type_parameters
     manifest_form =
   match manifest_form with
@@ -150,7 +157,9 @@ let compile_type_record ?location ?(allow_empty = false) ?emitted_name
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
   match Env.find_opt key env with
-  | Some binding -> Ok (key, binding)
+  | Some binding ->
+      Ok (key, {binding with ty = Types.qualify_module_type
+        (Names.module_path_to_ocaml module_path) binding.ty})
   | None -> Error.error ("internal error: missing record metadata for " ^ name)
 
 let compile_type_variant ?location scope env next_type name type_parameters

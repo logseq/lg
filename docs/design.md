@@ -259,6 +259,117 @@ OCaml interop is allowed through declared package modules, signatures, concrete
 host types, and explicit constructors. It must preserve the declared OCaml type
 and must not pass through a universal boxed value.
 
+### Foreign declarations are typed
+
+`(ffi name [argument-types ...] result-type options)` declares an ordinary
+statically typed function backed by an explicit foreign ABI. The options select
+one backend: `:native` names a C function, and the `:js` backend names a
+JavaScript binding. Target-specific declarations use reader conditionals.
+The full decision and acceptance criteria are in
+[ADR 011](agent-guide/011-foreign-function-interface.md).
+
+Native bindings lower to ctypes descriptors. `:int` means C int, `:float` C
+double, `:bool` C bool, `:string` a temporary NUL-terminated input string, and
+`:unit` a void result. Empty argument vectors represent zero-argument calls.
+Explicit unit parameters and unsupported representations are errors. Returned
+strings require an ownership adapter; they cannot silently lose a required
+deallocation. Library paths and foreign symbols are literal data.
+
+Direct Native callback parameters require `:callbacks :call`. Their typed
+function-pointer descriptors preserve scalar argument/result types and source
+arity. C may invoke them only during the enclosing call, on the calling thread
+with the runtime lock held. Retained callbacks require an explicit managed
+handle and are not implied by a direct function parameter.
+
+Retained callbacks use `callback<fn<...>>` handles created by `:native :callback`
+and released by `:native :release`. `Foreign.dynamic_funptr` roots each closure
+until release. The runtime's typed static-function-pointer view uses the exact
+same C signature; it does not convert through a numeric address or erased value.
+The caller must unregister the callback from C before release. Released handles
+are rejected before C entry, and release clears the OCaml root. This API does
+not enable foreign-thread calls or runtime-lock release.
+
+Native `pointer<T>` annotations map to typed ctypes pointers. Nullable pointer
+parameters and results use `option<pointer<T>>` and the `ptr_opt` descriptor.
+Pointer results require an explicit borrowed-ownership contract; that contract
+does not allocate, free, or extend the lifetime of foreign storage. A plain
+pointer result declares non-NULL storage. Pointer pointees remain concrete
+scalar storage or recursively typed pointers; strings, functions, and LG
+collections are not inferred C storage layouts.
+
+Owned pointers use the abstract `Lg_ffi.Owned_pointer.t` handle and the source
+annotation `owned-pointer<T>`. A closed Live/Released state retains the exact
+pointee. The allocation declaration specifies `:ownership :owned` and a literal
+`:release` symbol resolved in the same library. Passing a handle into C checks
+that it is live. The `:native :release` operation releases once and invalidates
+the handle; repeated release is harmless. NULL cannot become a live owned
+handle. Explicit release and scoped cleanup determine lifetime, not GC timing.
+
+Every foreign parameter and result retains its declared static type. An FFI
+declaration is not permission to erase vectors, maps, records, options,
+callbacks, pointers, or type variables into a universal runtime value.
+Unknown options and incompatible targets must fail before host code generation.
+
+JavaScript bindings target Melange and lower to typed external declarations.
+`:module` imports a module and `:scope` traverses literal property names before
+calling the selected function. They retain fixed source arities and ordinary
+first-class function behavior. `(extern-type name)` declares a distinct opaque
+host identity without exposing its representation. Constructor, method, property,
+and indexed operations preserve that identity. Ordinary LG records and variants
+are not interchangeable with opaque foreign objects.
+
+JavaScript FFI accepts recursively typed homogeneous arrays and direct callback
+parameters. Callback arities are uncurried only at the foreign boundary; a
+zero-argument source callback stays zero-argument in JavaScript. Explicit return
+adapters map null/undefined to a statically typed option. A final array may be
+spread with `:variadic true`. Indexed array reads and writes retain the array's
+element type; an explicit nullable read may return `option<Element>`.
+
+JavaScript object builders use `:js :object`, one declared record argument,
+and an opaque result. Field projections feed a typed `mel.obj` external;
+the record is never cast to a host object. `:rename` selects property names,
+and `:optional` explicitly unwraps option fields and omits absent properties.
+Unknown fields, duplicate property names, and the special literal key
+`__proto__` are rejected. Each invocation creates a fresh object.
+
+The compiler keeps Native and Melange package search paths separate and resets
+OCaml interface caches when changing target. A previous Melange compilation
+must not make Native ctypes load JavaScript standard-library interfaces.
+
+### Timing and output
+
+`time` is a source macro that evaluates its expression once and returns that
+same static value after printing elapsed milliseconds through `prn`. Failed
+evaluation propagates the exception and does not print a success timing line.
+The output respects lexical capture through `with-out-str`.
+
+`system-time` measures monotonic elapsed milliseconds, including time spent
+waiting; process CPU time is not a valid implementation. Native uses a typed
+POSIX clock primitive, Melange uses `performance.now`, and js_of_ocaml provides
+the matching JavaScript clock primitive. Runtime-specific elapsed formatting
+lives in an ordinary source function because macro reading uses the host
+dialect: Native follows Clojure float display, JavaScript follows the six
+fractional digits in ClojureScript's `time` macro.
+
+Formatting arguments use a closed scalar sum with concrete payloads. Decimal
+formatting rounds decimal digits half-up, preserving Clojure results at values
+such as 1.005, rather than delegating rounding to the target's binary printf.
+Fixed, scientific, and significant-digit formatting share one digits/point
+representation. Width and precision on strings count UTF-16 units while
+preserving LG's byte-string representation.
+
+`print`, `println`, `pr`, `prn`, `newline`, and `flush` return `nil`.
+Output primitives may return OCaml unit internally; source functions must keep
+the Clojure return contract. String-producing variants return strings, including
+their zero-argument empty-string or newline cases. `flush` flushes standard
+output and is a no-op for a captured string buffer. Custom rendering consumes
+the writer's contents and ignores the printer callback's return value.
+
+Bytecode workers use Dune's `byte_complete` mode so the monotonic clock primitive
+is linked into their runtime. Dynamic compilation runners explicitly reference
+the clock module, ensuring newly loaded code can call the primitive without
+relying on a separately installed shared library.
+
 ### Truthiness remains static
 
 Clojure truthiness treats only `nil` and `false` as false. Conditions and

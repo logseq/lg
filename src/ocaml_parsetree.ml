@@ -677,10 +677,12 @@ let rec collect_set_modules_from_items module_path modules items =
             (fun modules (binding : recursive_value) ->
               collect_expression modules binding.expression)
             modules bindings
+      | Foreign_binding { value_type; _ }
       | Polymorphic_holder_type { value_type; _ } ->
           collect_set_modules_from_type module_path modules value_type
       | Type_def { fields; _ } ->
           List.fold_left collect_field modules fields
+      | Opaque_type _ -> modules
       | Type_alias { manifest; _ } ->
           collect_set_modules_from_type module_path modules manifest
       | Type_variant { constructors; _ } ->
@@ -1023,6 +1025,116 @@ let remove_unused_anonymous_types structure =
     structure
 
 let rec structure_of_item_with_sets requested_sets module_path = function
+  | Foreign_binding foreign ->
+      (match foreign.backend with
+       | Foreign_binding.Native_callback (arguments, result) ->
+           value_binding (Named foreign.name)
+             (Semantic_ir.Typed (foreign.value_type,
+               Semantic_ir.Apply (Semantic_ir.Ident "Lg_ffi.Callback.create",
+                 [Foreign_binding.native_signature arguments result])))
+       | Foreign_binding.Native_callback_release ->
+           value_binding (Named foreign.name)
+             (Semantic_ir.Typed (foreign.value_type,
+               Semantic_ir.Ident "Lg_ffi.Callback.release"))
+       | Foreign_binding.Native_release ->
+           value_binding (Named foreign.name)
+             (Semantic_ir.Typed (foreign.value_type,
+               Semantic_ir.Ident "Lg_ffi.Owned_pointer.release"))
+       | Foreign_binding.Native native ->
+           value_binding (Named foreign.name)
+             (Foreign_binding.native_expression foreign.value_type native)
+       | Foreign_binding.JavaScript_object builder ->
+           let loc = declaration_location foreign.location in
+           let fields = List.mapi (fun index field -> "field" ^ string_of_int index, field) builder.fields in
+           let signature = List.fold_right (fun (label, (field : Foreign_binding.object_field)) rest ->
+             let ty = core_type field.value_type in
+             let ty = {ty with ptyp_attributes = string_attribute "mel.as" field.property :: ty.ptyp_attributes} in
+             Ast_helper.Typ.arrow (if field.optional then Optional label else Labelled label) ty rest)
+             fields (Ast_helper.Typ.arrow Nolabel (core_type Types.TUnit) (core_type builder.result)) in
+           let primitive = Ast_helper.Str.primitive ~loc
+             (Ast_helper.Val.mk ~loc ~attrs:[Ast_helper.Attr.mk (str "mel.obj") (PStr [])]
+               ~prim:[""] (str "make") signature) in
+           let record = Ast_helper.Exp.ident ~loc (lid (Longident.Lident "input")) in
+           let arguments = List.map (fun (label, (field : Foreign_binding.object_field)) ->
+             (if field.optional then Optional label else Labelled label),
+             Ast_helper.Exp.field ~loc record (lid (Longident.Lident field.source.ocaml_name))) fields in
+           let body = Ast_helper.Exp.apply ~loc
+             (Ast_helper.Exp.ident ~loc (lid (longident_of_string "Builder.make")))
+             (arguments @ [Nolabel, Ast_helper.Exp.construct ~loc (lid (Longident.Lident "()")) None]) in
+           let parameter = Ast_helper.Pat.constraint_ ~loc
+             (Ast_helper.Pat.var ~loc (str "input")) (core_type builder.input) in
+           let fn = Ast_helper.Exp.function_ ~loc
+             [{pparam_loc = loc; pparam_desc = Pparam_val (Nolabel, None, parameter)}]
+             None (Pfunction_body body) in
+           let expression = Ast_helper.Exp.struct_item ~loc
+             (Ast_helper.Str.module_ ~loc (Ast_helper.Mb.mk ~loc {txt = Some "Builder"; loc}
+               (Ast_helper.Mod.structure ~loc [primitive]))) fn in
+           Ok [Ast_helper.Str.value ~loc Nonrecursive
+             [Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc (named_loc foreign.name loc)) expression]]
+       | Foreign_binding.JavaScript javascript ->
+           let location = declaration_location foreign.location in
+           let operation_attributes =
+             let attribute = match javascript.operation with
+               | Foreign_binding.Call -> None
+               | New -> Some "mel.new"
+               | Send -> Some "mel.send"
+               | Get -> Some "mel.get"
+               | Set -> Some "mel.set"
+               | Get_index -> Some "mel.get_index"
+               | Set_index -> Some "mel.set_index"
+             in
+             Option.to_list (Option.map (fun name -> Ast_helper.Attr.mk (str name) (PStr [])) attribute)
+           in
+           let adapter_attributes =
+             let return_attribute = match javascript.return_adapter with
+               | Foreign_binding.Direct -> []
+               | adapter ->
+                   let name = match adapter with
+                     | Nullable -> "nullable" | Null -> "null_to_opt"
+                     | Undefined -> "undefined_to_opt" | Direct -> assert false
+                   in
+                   [Ast_helper.Attr.mk (str "mel.return")
+                      (PStr [Ast_helper.Str.eval (Ast_helper.Exp.ident (lid (Longident.Lident name)))])]
+             in
+             if javascript.variadic then
+               Ast_helper.Attr.mk (str "mel.variadic") (PStr []) :: return_attribute
+             else return_attribute
+           in
+           let signature = match foreign.value_type with
+             | Types.TFn (arguments, result) ->
+                 let arguments = match arguments with [] -> [Types.TUnit] | arguments -> arguments in
+                 List.fold_right (fun argument result ->
+                   let ty = core_type argument in
+                   let ty = match argument with
+                     | Types.TFn _ ->
+                         { ty with ptyp_attributes = Ast_helper.Attr.mk (str "mel.uncurry") (PStr []) :: ty.ptyp_attributes }
+                     | _ -> ty
+                   in
+                   Ast_helper.Typ.arrow Nolabel ty result)
+                   arguments (core_type result)
+             | _ -> assert false
+           in
+           let module_attributes =
+             match javascript.module_name with
+             | None -> []
+             | Some name -> [string_attribute "mel.module" name]
+           in
+           let scope_attributes =
+             match javascript.scope with
+             | [] -> []
+             | names ->
+                 let names = List.map
+                   (fun name -> Ast_helper.Exp.constant (Ast_helper.Const.string name)) names in
+                 let payload = match names with
+                   | [name] -> name
+                   | names -> Ast_helper.Exp.tuple (List.map (fun name -> None, name) names)
+                 in
+                 [Ast_helper.Attr.mk (str "mel.scope") (PStr [Ast_helper.Str.eval payload])]
+           in
+           Ok [Ast_helper.Str.primitive ~loc:location
+             (Ast_helper.Val.mk ~loc:location ~attrs:(module_attributes @ scope_attributes @ operation_attributes @ adapter_attributes)
+                ~prim:[javascript.symbol] (named_loc foreign.name location)
+                signature)])
   | Value_binding { pattern; expression } ->
       value_binding pattern expression
   | Recursive_value_binding { name; identity; type_annotation; expression } ->
@@ -1074,6 +1186,10 @@ let rec structure_of_item_with_sets requested_sets module_path = function
         else []
       in
       Ok definitions
+  | Opaque_type { type_name; location } ->
+      let location = declaration_location location in
+      Ok [Ast_helper.Str.type_ ~loc:location Nonrecursive
+            [Ast_helper.Type.mk ~loc:location (named_loc type_name location)]]
   | Type_alias { type_name; type_parameters; manifest; location } ->
       Ok [ type_alias_definition type_name type_parameters manifest location ]
   | Type_variant { type_name; type_parameters; constructors; location } ->
@@ -1368,9 +1484,9 @@ let rec root_declared_set_modules modules items =
           |> String_map.add set_module_name ()
           |> String_map.add (set_module_name ^ "_nullable") ()
       | Group items -> root_declared_set_modules modules items
-      | Type_def _ | Value_binding _ | Recursive_value_binding _
+      | Foreign_binding _ | Type_def _ | Value_binding _ | Recursive_value_binding _
       | Recursive_value_bindings _ | Deferred_value_binding _
-      | Polymorphic_holder_type _ | Comment _ | Type_alias _ | Type_variant _
+      | Opaque_type _ | Polymorphic_holder_type _ | Comment _ | Type_alias _ | Type_variant _
       | Module_def _ | Module_alias _ | Module_functor _ | Module_apply _
       | Module_signature _ | Open_module _ | Include_module _ ->
           modules)
@@ -1443,7 +1559,7 @@ let structure_of_located_items_excluding excluded_sets items =
     | Recursive_value_binding _ | Recursive_value_bindings _
     | Deferred_value_binding _ | Comment _ ->
         true
-    | Polymorphic_holder_type _ | Type_alias _ | Record_def _
+    | Opaque_type _ | Foreign_binding _ | Polymorphic_holder_type _ | Type_alias _ | Record_def _
     | Projected_record_def _ | Module_def _ | Module_alias _
     | Module_functor _ | Module_apply _ | Module_signature _
     | Open_module _ | Include_module _ | Group _ ->

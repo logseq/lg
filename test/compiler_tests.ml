@@ -213,7 +213,7 @@ let lg_edn_backend_native_cmi_dir () =
     ".lg_edn_backend_native.objs/byte"
 
 let compiler_test_runner () =
-  Filename.concat (build_root ()) "test/compiler_test_runner.bc"
+  Filename.concat (build_root ()) "test/compiler_test_runner.bc.exe"
 
 type compile_job = { name : string; ocaml_source : string }
 
@@ -1846,6 +1846,90 @@ let test_with_out_str_captures_source_print_functions () =
     native_source;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_formatted_output_is_typed_and_captured () =
+  let source = {|
+(def fmt "%s:%04d:%.2f")
+(def captured (with-out-str (println (format fmt "item" 7 2.5))
+  (prn (printf "%s" "done"))))
+(println (= "item:0007:2.50\ndonenil\n" captured))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "formatted_output_is_typed_and_captured" "true\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_time_preserves_value_and_captures_output () =
+  let source = {|
+(def calls (volatile! 0))
+(def captured
+  (with-out-str
+    (let [result (time (do (vswap! calls inc) [1 2]))]
+      (prn result))))
+(println @calls)
+(println (boolean (re-find #"Elapsed time: " captured)))
+(println (boolean (re-find #"msecs" captured)))
+(println (boolean (re-find #"\[1 2\]" captured)))
+(def absence (with-out-str (println (nil? (time nil)))))
+(println (boolean (re-find #"true" absence)))
+(def falsity (with-out-str (println (false? (time false)))))
+(println (boolean (re-find #"true" falsity)))
+(def nested (with-out-str (time (time 42))))
+(println (= 2 (count (re-seq #"Elapsed time:" nested))))
+(def failed
+  (with-out-str
+    (try (time (raise (Failure "boom")))
+         (catch (Failure message) (print message)))))
+(println (= "boom" failed))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "time_preserves_value_and_captures_output"
+    "1\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_flush_delivers_buffered_output () =
+  let prefix = {|let saved_stdout = Unix.dup Unix.stdout
+let reader, writer = Unix.pipe ()
+let () = Stdlib.flush stdout; Unix.dup2 writer Unix.stdout; Unix.close writer
+|} in
+  let suffix = {|
+let () =
+  let ready, _, _ = Unix.select [reader] [] [] 0.0 in
+  Stdlib.flush stdout;
+  Unix.dup2 saved_stdout Unix.stdout;
+  Unix.close saved_stdout;
+  let bytes = Bytes.create 5 in
+  let count = Unix.read reader bytes 0 5 in
+  Unix.close reader;
+  print_endline (string_of_bool (ready <> [] && count = 5 && Bytes.to_string bytes = "ready"))
+|} in
+  assert_ocaml_runs "flush_delivers_buffered_output" "true\n"
+    (prefix ^ (compile_string_with_stdlib "(print \"ready\") (flush)" |> expect_ok) ^ suffix)
+
+let test_print_family_returns_nil () =
+  let source = {|
+(def captured
+  (with-out-str
+    (assert (nil? (print)))
+    (assert (nil? (pr)))
+    (assert (nil? (println)))
+    (assert (nil? (prn)))
+    (assert (nil? (print "a" 1)))
+    (assert (nil? (pr "b" :c)))
+    (assert (nil? (println "d" 2)))
+    (assert (nil? (prn "e" :f)))
+    (assert (nil? (newline)))
+    (assert (nil? (flush)))))
+(println (= "\n\na 1\"b\" :cd 2\n\"e\" :f\n\n" captured))
+(println (= "" (print-str)))
+(println (= "" (pr-str)))
+(println (= "\n" (println-str)))
+(println (= "\n" (prn-str)))
+|} in
+  assert_ocaml_runs "print_family_returns_nil" "true\ntrue\ntrue\ntrue\ntrue\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_core_api_nested_calls_maps_and_vectors () =
   let source =
     {|
@@ -2090,9 +2174,8 @@ let test_native_format_unary_passes_through_string () =
     failwith "native unary format must not use Runtime_dynamic";
   assert_ocaml_runs "native_format_unary_passes_through_string" "test\nplain\n"
     native_source;
-  compile_with_stdlib_result Lg.Target.Melange "test/melange_format.cljc"
-    source
-  |> expect_error_contains "cannot refer unknown symbol clojure.core/format"
+  ignore (compile_with_stdlib_result Lg.Target.Melange "test/melange_format.cljc"
+    source |> expect_ok)
 
 let test_nil_equality_accepts_annotated_options () =
   let source =
@@ -7948,9 +8031,12 @@ let test_melange_transit_api_compiles_for_native_and_melange () =
 (ns app.transit
   (:require
     [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]
-    [ocaml.Transit_core.Json :as transit-json]
-    [ocaml.melange-edn-native/Melange_edn_native :as target-edn]
-    [ocaml.melange-transit-native/Transit_native.Transit.Json :as transit]))
+    #?(:native [ocaml.Transit_core.Json :as transit-json]
+       :melange [ocaml.melange-transit-melange/Transit_melange.Transit.Json :as transit-json])
+    #?(:native [ocaml.melange-edn-native/Melange_edn_native :as target-edn]
+       :melange [ocaml.melange-edn-melange/Melange_edn_melange :as target-edn])
+    #?(:native [ocaml.melange-transit-native/Transit_native.Transit.Json :as transit]
+       :melange [ocaml.melange-transit-melange/Transit_melange.Transit.Json :as transit])))
 
 (def encoded
   (transit/to-string
@@ -46579,15 +46665,27 @@ let test_incremental_compilation_preserves_modules () =
 let test_incremental_compilation_preserves_modules_with_ocaml_packages () =
   let compile target =
     let stdlib = compiled_stdlib target in
-    let state, _provider =
-      Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-        ~filename:"math.cljc" stdlib.state
-        {|
+    let provider =
+      match target with
+      | Lg.Target.Native | Lg.Target.Js_of_ocaml ->
+          {|
 (require [ocaml.package/core]
          [ocaml.Core.Int :as int])
 (module Math
   (defn magnitude-plus-two [x] (+ (int/abs x) 2)))
 |}
+      | Lg.Target.Melange ->
+          (* Core is Native-only; use a package with actual Melange interfaces. *)
+          {|
+(require [ocaml.package/lg.runtime]
+         [ocaml.Lg_runtime.Runtime_int :as int])
+(module Math
+  (defn magnitude-plus-two [^:int x] (+ (int/int-max x (- x)) 2)))
+|}
+    in
+    let state, _provider =
+      Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+        ~filename:"math.cljc" stdlib.state provider
       |> expect_ok
     in
     ignore
@@ -47601,13 +47699,14 @@ let test_discarded_function_values_use_ignore () =
 let test_discarded_pure_values_are_elided () =
   let source =
     {|
-(println (do nil 2))
+(def result (do nil 2))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if string_contains_substring ocaml_source ".ignore" then
     failwith "discarded pure values should not generate effect scaffolding";
-  assert_ocaml_runs "discarded_pure_values_are_elided" "2\n" ocaml_source
+  assert_ocaml_runs "discarded_pure_values_are_elided" "2\n"
+    (ocaml_source ^ "\nlet () = print_endline (string_of_int result)\n")
 
 let tests =
   [
@@ -47725,6 +47824,11 @@ let tests =
       test_print_and_println_match_clojure_output );
     ( "with-out-str captures source print functions",
       test_with_out_str_captures_source_print_functions );
+    ( "flush delivers buffered output", test_flush_delivers_buffered_output );
+    ( "print family returns nil", test_print_family_returns_nil );
+    ( "formatted output is typed and captured", test_formatted_output_is_typed_and_captured );
+    ( "time preserves value and captures output",
+      test_time_preserves_value_and_captures_output );
     ( "core api supports nested calls, maps, and vectors",
       test_core_api_nested_calls_maps_and_vectors );
     ("core api supports if and vector ops", test_core_api_if_and_vector_ops);

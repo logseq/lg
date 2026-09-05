@@ -1,6 +1,6 @@
 module Emitted_map = Map.Make (String)
 
-type kind = Alias | Record | Variant
+type kind = Alias | Record | Variant | Opaque
 
 type declaration = {
   type_id : Type_id.t;

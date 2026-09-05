@@ -81,6 +81,10 @@ incremental compiler state instead of compiler-owned public-name dispatch.
 See [docs/stdlib.md](docs/stdlib.md) for the ClojureScript provenance policy,
 Native/Melange artifacts, and the Logseq-oriented namespace porting workflow.
 
+Native C functions can be declared with `ffi` and called as ordinary typed LG
+functions. See [foreign function bindings](docs/ffi.md) for syntax, ABI mappings,
+and current implementation status.
+
 Supported prototype forms:
 
 ```clojure

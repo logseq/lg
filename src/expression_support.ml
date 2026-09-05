@@ -1679,7 +1679,7 @@ let dynamic_key_record_type env expected_field_ty =
                (match Env.find_opt key env with
                | Some { ty = TNamed_record record; _ } -> Some record
                | Some _ | None -> None)
-           | Type_registry.Alias | Type_registry.Variant -> None)
+           | Type_registry.Alias | Type_registry.Variant | Type_registry.Opaque -> None)
   in
   let named_records =
     if registered_records <> [] then registered_records

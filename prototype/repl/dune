@@ -11,11 +11,14 @@
   rrbvec
   unix))
 
-(test
+(executable
  (name repl_prototype_test)
  (modules repl_prototype_test)
- (modes byte)
+ (modes byte_complete)
+ (libraries repl_prototype))
+
+(rule
+ (alias runtest)
  (deps ../../stdlib/lg_stdlib_native.state)
- (libraries repl_prototype)
  (action
-  (run %{test} %{dep:../../stdlib/lg_stdlib_native.state})))
+  (run %{exe:repl_prototype_test.bc.exe} %{dep:../../stdlib/lg_stdlib_native.state})))

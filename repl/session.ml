@@ -43,6 +43,7 @@ type saved_compilation_state = {
 }
 
 let _runtime_anchor = Lg_runtime.Runtime_reference.of_value ()
+let _clock_anchor = Lg_runtime.Runtime_time.now
 let _rrbvec_anchor = Rrbvec.empty
 let _stdlib_anchor = Lg_stdlib_native.clojure_core_inc 0
 

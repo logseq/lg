@@ -1648,6 +1648,7 @@ let type_completion_detail = function
   | Type_registry.Alias -> "type alias"
   | Record -> "record type"
   | Variant -> "variant type"
+  | Opaque -> "opaque foreign type"
 
 let completions analysis ~offset : completion_item list =
   let env =

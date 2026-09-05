@@ -418,6 +418,7 @@ let rec value_pattern_name = function
   | Lowered.Unit_pattern | Lowered.Ignore_pattern -> None
 
 let rec provided_value_names = function
+  | Lowered.Foreign_binding foreign -> [ foreign.name ]
   | Lowered.Value_binding { pattern; _ } ->
       Option.fold ~none:[] ~some:(fun name -> [ name ])
         (value_pattern_name pattern)
@@ -431,13 +432,14 @@ let rec provided_value_names = function
       [ var_name ]
   | Lowered.Group items -> List.concat_map provided_value_names items
   | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
-  | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+  | Lowered.Opaque_type _ | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
   | Lowered.Module_def _ | Lowered.Module_alias _ | Lowered.Module_functor _
   | Lowered.Module_apply _ | Lowered.Module_signature _
   | Lowered.Open_module _ | Lowered.Include_module _ ->
       []
 
 let rec item_references_identifier name = function
+  | Lowered.Foreign_binding _ -> false
   | Lowered.Value_binding { expression; _ }
   | Lowered.Recursive_value_binding { expression; _ }
   | Lowered.Deferred_value_binding { expression; _ } ->
@@ -458,7 +460,7 @@ let rec item_references_identifier name = function
   | Lowered.Module_def { items; _ } | Lowered.Module_functor { items; _ } ->
       List.exists (item_references_identifier name) items
   | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
-  | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+  | Lowered.Opaque_type _ | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
   | Lowered.Module_alias _ | Lowered.Module_apply _
   | Lowered.Module_signature _ | Lowered.Open_module _
   | Lowered.Include_module _ ->
@@ -466,7 +468,7 @@ let rec item_references_identifier name = function
 
 let insert_after_leading_types insertions item =
   let is_leading_type = function
-    | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+    | Lowered.Opaque_type _ | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
     | Lowered.Polymorphic_holder_type _ | Lowered.Comment _ ->
         true
     | _ -> false

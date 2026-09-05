@@ -880,13 +880,13 @@
 (signature clojure.core/prn-str [value]
   :variadic-fn<printable<value>;string>)
 (signature clojure.core/pr [value]
-  :variadic-fn<printable<value>;unit>)
+  :variadic-fn<printable<value>;nil>)
 (signature clojure.core/print [value]
-  :variadic-fn<printable<value>;unit>)
+  :variadic-fn<printable<value>;nil>)
 (signature clojure.core/println [value]
-  :variadic-fn<printable<value>;unit>)
+  :variadic-fn<printable<value>;nil>)
 (signature clojure.core/prn [value]
-  :variadic-fn<printable<value>;unit>)
+  :variadic-fn<printable<value>;nil>)
 
 (signature clojure.core/pr-writer [value]
   :fn<printable<value>;Buffer.t;nil;unit>)
@@ -905,4 +905,4 @@
 (signature clojure.core/string-print
   :fn<string;unit>)
 (signature clojure.core/newline
-  :overload<fn<unit>;fn<nil;unit>>)
+  :overload<fn<nil>;fn<nil;nil>>)

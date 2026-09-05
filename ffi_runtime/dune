@@ -1,0 +1,4 @@
+(library
+ (name lg_ffi)
+ (public_name lg.ffi)
+ (libraries ctypes-foreign))

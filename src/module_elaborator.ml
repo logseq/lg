@@ -200,6 +200,14 @@ let rec compile_module ?location ?signature_name ?signature_location
             Ok (env, public_bindings, next_type, item :: items))
     | FList (FSymbol "module-signature" :: _) ->
         Error.error "module-signature expects a name and signature items"
+    | FList [ FSymbol "extern-type"; ((FSymbol name) as name_form) ] -> (
+        match Type_definition_elaborator.compile_opaque_type
+          ?location:(Source_context.find name_form) module_path env next_type name with
+        | Error _ as error -> error
+        | Ok (_, env, next_type, item) ->
+            Ok (env, public_bindings, next_type, item :: items))
+    | FList (FSymbol "extern-type" :: _) ->
+        Error.error "extern-type expects one type name"
     | FList
         [ FSymbol "type-alias";
           ((FSymbol name) as name_form);
@@ -399,6 +407,30 @@ let rec compile_module ?location ?signature_name ?signature_location
                 public_bindings @ exported,
                 next_type,
                 item :: items ))
+    | FList [ FSymbol "ffi"; (FSymbol name as name_form);
+              FVector parameters; result; options ] ->
+        let local_name = Names.sanitize_name name in
+        Result.map
+          (fun (foreign : Foreign_binding.t) ->
+            let key = module_binding_key module_path name in
+            let local_binding = Types.binding local_name foreign.value_type in
+            let public_binding = Types.binding
+                (Names.module_path_to_ocaml module_path ^ "." ^ local_name)
+                (Types.qualify_module_type
+                   (Names.module_path_to_ocaml module_path) foreign.value_type) in
+            Env.add key local_binding env,
+            public_bindings @ [key, public_binding], next_type,
+            Foreign_binding foreign :: items)
+          (Foreign_binding.parse ~target:(Env.target env)
+             ~is_opaque:(function
+               | TOcaml name -> (match Resolver.lookup_type_declaration module_path env name with
+                   | Some { kind = Opaque; _ } -> true | _ -> false)
+               | _ -> false)
+             ~resolve_type:(Function_elaborator.infer_named_record module_path env)
+             ~name:local_name ~location:(Source_context.find name_form)
+             parameters result options)
+    | FList (FSymbol "ffi" :: _) ->
+        Error.error "ffi expects a name, argument type vector, result type, and options map"
     | FList
         [ FSymbol ("def" | "defonce"); ((FSymbol name) as name_form); expr_form ] -> (
         match compile_expr module_path env expr_form with

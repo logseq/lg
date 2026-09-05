@@ -10,7 +10,7 @@
  (name lg_repl_worker)
  (public_name lg-repl)
  (package lg)
- (modes byte)
+ (modes byte_complete)
  (libraries lg.repl unix))
 
 (executable

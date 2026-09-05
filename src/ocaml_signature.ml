@@ -38,8 +38,11 @@ let project_include_dirs () =
 
 let base_include_dirs = lazy (env_include_dirs () @ project_include_dirs ())
 let include_dirs () = Lazy.force base_include_dirs
-let package_include_dirs = ref []
+let native_package_include_dirs = ref []
+let melange_package_include_dirs = ref []
 let melange_target = ref false
+let package_include_dirs () =
+  if !melange_target then melange_package_include_dirs else native_package_include_dirs
 let initialized_include_dirs = ref None
 let active_include_dirs_cache = ref None
 let compiled_interfaces_cache = Hashtbl.create 32
@@ -83,11 +86,14 @@ let active_include_dirs () =
       let project_dirs =
         if !melange_target then
           include_dirs ()
-          |> List.filter (fun directory ->
-                 Filename.basename directory <> "byte")
+          |> List.filter_map (fun directory ->
+                 if Filename.basename directory = "byte" then
+                   let melange = Filename.concat (Filename.dirname directory) "melange" in
+                   if Sys.file_exists melange then Some melange else None
+                 else Some directory)
         else include_dirs ()
       in
-      let directories = project_dirs @ !package_include_dirs in
+      let directories = project_dirs @ !(package_include_dirs ()) in
       let directories =
         if !melange_target then unique_interface_directories directories
         else directories
@@ -104,10 +110,11 @@ let unique_directories directories =
 let ensure_initialized () =
   let dirs = active_include_dirs () in
   if !initialized_include_dirs <> Some dirs then (
-    ignore (Lg_compiler_support.Ocaml_value.init dirs);
+    ignore (Lg_compiler_support.Ocaml_value.init ~melange:!melange_target dirs);
     initialized_include_dirs := Some dirs)
 
 let add_include_dirs dirs =
+  let package_include_dirs = package_include_dirs () in
   let updated = unique_directories (dirs @ !package_include_dirs) in
   if updated <> !package_include_dirs then (
     package_include_dirs := updated;

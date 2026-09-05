@@ -168,7 +168,7 @@ let test_javascript_targets_preload_self_required_macros () =
 let test_rejects_invalid_reader_conditionals () =
   Lg.Compiler.compile_string ~target:Lg.Target.Native
     {|(def value #?(:native 1 :melange))|}
-  |> expect_error "reader conditional requires feature/form pairs";
+  |> expect_error "The :melange feature in this reader conditional has no form.";
   Lg.Compiler.compile_string ~target:Lg.Target.Native
     {|(def value #?(native 1 :default 2))|}
   |> expect_error "reader conditional feature must be a keyword";

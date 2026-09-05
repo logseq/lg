@@ -231,7 +231,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
             TOcaml_app (name, arguments)
           else infer_named_record ~allow_dynamic_fields scope env resolved
       | Some { kind = Alias; _ } -> TOcaml_app (name, arguments)
-      | Some { kind = (Record | Variant); _ } | None ->
+      | Some { kind = (Record | Variant | Opaque); _ } | None ->
       (match Resolver.lookup_record_type scope env record_name with
       | Ok record
         when List.length record.type_parameters = List.length arguments ->
@@ -259,7 +259,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
             when not (Types.equal manifest ty) ->
               infer_named_record ~allow_dynamic_fields scope env manifest
           | Some { kind = Alias; _ } -> ty
-          | Some { kind = Variant; type_id; _ } ->
+          | Some { kind = (Variant | Opaque); type_id; _ } ->
               let type_name = Names.sanitize_name (Type_id.name type_id) in
               let owner = Type_id.owner type_id |> String.concat "." in
               let owner_is_module =

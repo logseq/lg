@@ -1,5 +1,8 @@
 let _ensure_edn_backend_linked = Lg_edn_backend.of_edn_string
 
+(* Dynamically loaded programs may use this primitive in the complete runtime. *)
+let _ensure_clock_linked = Lg_runtime.Runtime_time.now
+
 let build_root () =
   Sys.executable_name |> Filename.dirname |> Filename.dirname
 

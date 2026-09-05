@@ -55,6 +55,7 @@ type module_reference = {
 }
 
 type compiled_item =
+  | Foreign_binding of Foreign_binding.t
   | Value_binding of {
       pattern : value_pattern;
       expression : Semantic_ir.t;
@@ -87,6 +88,7 @@ type compiled_item =
       nominal : bool;
       location : Location.t option;
     }
+  | Opaque_type of { type_name : string; location : Location.t option }
   | Type_alias of {
       type_name : string;
       type_parameters : string list;

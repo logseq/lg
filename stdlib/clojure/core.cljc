@@ -4116,7 +4116,10 @@
   (or (= value ##Inf)
       (= value ##-Inf)))
 
-(defn flush []
+(defn flush
+  {:inline (fn [] (list 'do (list '__lg_flush_output) nil))}
+  []
+  (__lg_flush_output)
   nil)
 
 (defn any? [x]
@@ -4518,6 +4521,20 @@
 (defn system-time []
   #?(:melange (runtime-time-melange/now)
      :default (runtime-time/now)))
+
+(defn- elapsed-time-string [^:float elapsed]
+  #?(:native (str elapsed)
+     :default (runtime-time-melange/format-elapsed elapsed)))
+
+(defmacro time
+  "Evaluates `expr` once, prints elapsed milliseconds with [[prn]], and returns its value."
+  [expr]
+  `(let [start# (system-time)
+         result# ~expr]
+     (prn (str "Elapsed time: "
+               (elapsed-time-string (- (system-time) start#))
+               " msecs"))
+     result#))
 
 (defn weak-deref
   {:inline (fn [reference]
@@ -5755,8 +5772,11 @@
   [& values]
   (__lg_render_display_values "" values))
 
-#?(:native
-   (defn format [^:string fmt] fmt))
+(defmacro format [fmt & args]
+  (cons '__lg_format (cons fmt args)))
+
+(defmacro printf [fmt & args]
+  (list 'print (cons 'format (cons fmt args))))
 
 (defn pr-str
   {:inline (fn [& values]
@@ -5805,48 +5825,58 @@
 
 (defn pr
   {:inline (fn [& values]
-             (list 'if '*print-readably*
-                   (cons '__lg_pr values)
-                   (cons '__lg_print_values values)))}
+             (list 'do
+                   (list 'if '*print-readably*
+                         (cons '__lg_pr values)
+                         (cons '__lg_print_values values))
+                   nil))}
   [& values]
   (__lg_print_output
    (if *print-readably*
      (__lg_render_readable_values " " values)
-     (__lg_render_display_values " " values))))
+     (__lg_render_display_values " " values)))
+  nil)
 
 (defn print
   {:inline (fn [& values]
-             (list '__lg_print_output (cons '__lg_print_str values)))}
+             (list 'do (list '__lg_print_output (cons '__lg_print_str values)) nil))}
   [& values]
-  (__lg_print_output (__lg_render_display_values " " values)))
+  (__lg_print_output (__lg_render_display_values " " values))
+  nil)
 
 (defn println
   {:inline (fn [& values]
-             (list '__lg_print_output_line
-                   (cons '__lg_print_str values)
-                   '*print-newline*
-                   '*flush-on-newline*))}
+             (list 'do
+                   (list '__lg_print_output_line
+                         (cons '__lg_print_str values)
+                         '*print-newline*
+                         '*flush-on-newline*)
+                   nil))}
   [& values]
   (__lg_print_output_line
    (__lg_render_display_values " " values)
    *print-newline*
-   *flush-on-newline*))
+   *flush-on-newline*)
+  nil)
 
 (defn prn
   {:inline (fn [& values]
-             (list '__lg_print_output_line
-                   (list 'if '*print-readably*
-                         (cons '__lg_pr_str values)
-                         (cons '__lg_print_str values))
-                   '*print-newline*
-                   '*flush-on-newline*))}
+             (list 'do
+                   (list '__lg_print_output_line
+                         (list 'if '*print-readably*
+                               (cons '__lg_pr_str values)
+                               (cons '__lg_print_str values))
+                         '*print-newline*
+                         '*flush-on-newline*)
+                   nil))}
   [& values]
   (__lg_print_output_line
    (if *print-readably*
      (__lg_render_readable_values " " values)
      (__lg_render_display_values " " values))
    *print-newline*
-   *flush-on-newline*))
+   *flush-on-newline*)
+  nil)
 
 (defprotocol IPrintWithWriter
   (-pr-writer [value writer options]))
@@ -5941,5 +5971,8 @@
   (__lg_print_output source))
 
 (defn newline
-  ([] (string-print "\n"))
-  ([_options] (string-print "\n")))
+  {:inline (fn
+             ([] (list 'do (list '__lg_print_output "\n") nil))
+             ([options] (list 'do options (list '__lg_print_output "\n") nil)))}
+  ([] (string-print "\n") nil)
+  ([_options] (string-print "\n") nil))

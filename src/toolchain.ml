@@ -1241,9 +1241,17 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
       in
       restore None 0 sources
 
-let required_packages_from_ast ast =
+let required_packages_from_ast ~target ast =
   let rec loop packages = function
     | [] -> Ok (List.sort_uniq String.compare packages)
+    | Ast.FList [ Ast.FSymbol "ffi"; _; _; _; options ] :: rest ->
+        Result.bind (Foreign_binding.options ~target options)
+          (function
+            | Foreign_binding.Native_symbol _ | Foreign_binding.Release_selection | Foreign_binding.Callback_selection ->
+                loop ("lg.ffi" :: "ctypes-foreign" :: packages) rest
+            | Foreign_binding.JavaScript_symbol _ | Foreign_binding.Object_selection _ -> loop packages rest)
+    | Ast.FList (Ast.FSymbol ("module" | "module-functor") :: _ :: forms) :: rest ->
+        Result.bind (loop packages forms) (fun packages -> loop packages rest)
     | Ast.FList (Ast.FSymbol "require" :: entries) :: rest -> (
         match Require.parse_entries entries with
         | Error _ as err -> err
@@ -1254,7 +1262,7 @@ let required_packages_from_ast ast =
 
 let prepare_packages target ast =
   Ocaml_signature.set_melange_target (target = Target.Melange);
-  match required_packages_from_ast ast with
+  match required_packages_from_ast ~target ast with
   | Error _ as err -> err
   | Ok packages -> (
       let packages =
@@ -2047,7 +2055,7 @@ let prepare_source ?(target = Target.default) ?reader_target
   with
   | Error _ as err -> err
   | Ok parsed ->
-      required_packages_from_ast parsed.ast
+      required_packages_from_ast ~target parsed.ast
       |> Result.map (fun required_packages -> { parsed; required_packages })
 
 let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
@@ -2430,7 +2438,7 @@ let classify_repl_form form =
   match form with
   | Ast.FList (Ast.FSymbol "ns" :: _) -> Ok Pending_namespace
   | Ast.FList
-      (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-") :: rest) -> (
+      (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-" | "ffi") :: rest) -> (
       match first_source_name rest with
       | Some name -> Ok (Pending_definition name)
       | None -> repl_form_error "REPL definition is missing its name")
@@ -2440,7 +2448,7 @@ let classify_repl_form form =
       | None -> repl_form_error "REPL macro definition is missing its name")
   | Ast.FList
       (Ast.FSymbol
-        (( "type" | "type-record" | "type-variant" | "defrecord"
+        (( "extern-type" | "type" | "type-record" | "type-variant" | "defrecord"
          | "deftype" | "defprotocol" | "module" | "module-signature" ) as
         head)
       :: rest) ->
@@ -2519,6 +2527,7 @@ let rec semantic_expression_type = function
   | _ -> None
 
 let rec repl_item_type = function
+  | Lowered.Foreign_binding foreign -> Some foreign.value_type
   | Lowered.Value_binding { expression; _ }
   | Lowered.Recursive_value_binding { expression; _ }
   | Lowered.Deferred_value_binding { expression; _ } ->
@@ -2530,7 +2539,7 @@ let rec repl_item_type = function
         (List.rev bindings)
   | Lowered.Group items -> List.find_map repl_item_type (List.rev items)
   | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
-  | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+  | Lowered.Opaque_type _ | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
   | Lowered.Module_def _ | Lowered.Module_alias _ | Lowered.Module_functor _
   | Lowered.Module_apply _ | Lowered.Module_signature _
   | Lowered.Open_module _ | Lowered.Include_module _ | Lowered.Record_def _
