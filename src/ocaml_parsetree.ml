@@ -46,7 +46,7 @@ let longident_of_string name =
 let type_constructor name args =
   Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) args
 
-let rec core_type ?(type_variables = []) = function
+let rec core_type ?(inference_variables = []) ?(type_variables = []) = function
   | Types.TInt -> type_constructor "int" []
   | Types.TFloat -> type_constructor "float" []
   | Types.TChar -> type_constructor "char" []
@@ -64,16 +64,19 @@ let rec core_type ?(type_variables = []) = function
       in
       type_constructor "option" [ payload ]
   | Types.TNullable inner ->
-      type_constructor "option" [ core_type ~type_variables inner ]
+      type_constructor "option" [ core_type ~inference_variables ~type_variables inner ]
   | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
-  | Types.TMeta _ -> Ast_helper.Typ.any ~loc ()
+  | Types.TMeta meta -> (
+      match List.assoc_opt meta.id inference_variables with
+      | Some name -> Ast_helper.Typ.var ~loc name
+      | None -> Ast_helper.Typ.any ~loc ())
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []
   | Types.TConstraint (Open_boundary_constraint _) ->
       type_constructor "Lg_runtime.Runtime_dynamic.t" []
   | Types.TConstraint (Truthy_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -81,7 +84,7 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Nil_predicate_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -89,7 +92,7 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Printable_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           ( None,
@@ -103,7 +106,7 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Exception_data_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -111,7 +114,7 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Hashable_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -119,7 +122,7 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Comparable_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       let compare_ty =
         Ast_helper.Typ.arrow ~loc Nolabel value_ty
           (Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -127,7 +130,7 @@ let rec core_type ?(type_variables = []) = function
       in
       Ast_helper.Typ.tuple ~loc [ (None, compare_ty); (None, value_ty) ]
   | Types.TConstraint (Array_index_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -135,7 +138,7 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Symbol_predicate_constraint value_ty) ->
-      let value_ty = core_type ~type_variables value_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -143,8 +146,8 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TConstraint (Contains_constraint { key = key_ty; storage = value_ty }) ->
-      let key_ty = core_type ~type_variables key_ty in
-      let value_ty = core_type ~type_variables value_ty in
+      let key_ty = core_type ~inference_variables ~type_variables key_ty in
+      let value_ty = core_type ~inference_variables ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
           (None,
@@ -155,11 +158,11 @@ let rec core_type ?(type_variables = []) = function
   | Types.TConstraint
       (Seqable_constraint
         { requirement = Required; element = inner; storage = container }) ->
-      let element = core_type ~type_variables inner in
+      let element = core_type ~inference_variables ~type_variables inner in
       let value =
-        core_type ~type_variables (Types.constraint_value_type container)
+        core_type ~inference_variables ~type_variables (Types.constraint_value_type container)
       in
-      let container = core_type ~type_variables container in
+      let container = core_type ~inference_variables ~type_variables container in
       let adapter =
         Ast_helper.Typ.arrow ~loc Nolabel value
           (type_constructor "Seq.t" [ element ])
@@ -172,11 +175,11 @@ let rec core_type ?(type_variables = []) = function
           element = inner;
           storage = container;
         }) ->
-      let element = core_type ~type_variables inner in
+      let element = core_type ~inference_variables ~type_variables inner in
       let value =
-        core_type ~type_variables (Types.constraint_value_type container)
+        core_type ~inference_variables ~type_variables (Types.constraint_value_type container)
       in
-      let container = core_type ~type_variables container in
+      let container = core_type ~inference_variables ~type_variables container in
       let adapter =
         Ast_helper.Typ.arrow ~loc Nolabel value
           (type_constructor "Seq.t" [ element ])
@@ -188,12 +191,12 @@ let rec core_type ?(type_variables = []) = function
       Ast_helper.Typ.tuple ~loc
         [ (None,
             type_constructor "option"
-              [ core_type ~type_variables witness_ty ]);
-          (None, core_type ~type_variables value_ty);
+              [ core_type ~inference_variables ~type_variables witness_ty ]);
+          (None, core_type ~inference_variables ~type_variables value_ty);
         ]
   | Types.TOcaml_app (name, [ method_ty ])
     when name = Types.reify_self_method_name ->
-      core_type ~type_variables method_ty
+      core_type ~inference_variables ~type_variables method_ty
   | (Types.TOcaml_app _ as ty)
     when Option.is_some (Types.reify_protocol_payload_info ty) ->
       let _, methods_ty, rest_ty =
@@ -201,37 +204,37 @@ let rec core_type ?(type_variables = []) = function
       in
       Ast_helper.Typ.tuple ~loc
         [
-          (None, core_type ~type_variables methods_ty);
-          (None, core_type ~type_variables rest_ty);
+          (None, core_type ~inference_variables ~type_variables methods_ty);
+          (None, core_type ~inference_variables ~type_variables rest_ty);
         ]
   | Types.TOcaml_app (name, [ inner ]) when Types.is_next_seq_type_name name ->
-      type_constructor "Seq.t" [ core_type ~type_variables inner ]
+      type_constructor "Seq.t" [ core_type ~inference_variables ~type_variables inner ]
   | Types.TOcaml_app (name, [ inner ])
     when name = Types.maybe_reduced_callback_type_name ->
       type_constructor Types.reduced_type_name
-        [ core_type ~type_variables inner ]
+        [ core_type ~inference_variables ~type_variables inner ]
   | Types.TOcaml_app (name, args) ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name))
-        (List.map (core_type ~type_variables) args)
+        (List.map (core_type ~inference_variables ~type_variables) args)
   | Types.TTuple args ->
       Ast_helper.Typ.tuple ~loc
         (List.map
-           (fun arg -> (None, core_type ~type_variables arg))
+           (fun arg -> (None, core_type ~inference_variables ~type_variables arg))
            args)
   | Types.TArray inner ->
-      type_constructor "array" [ core_type ~type_variables inner ]
+      type_constructor "array" [ core_type ~inference_variables ~type_variables inner ]
   | Types.TRef inner ->
       type_constructor "Lg_runtime.Runtime_reference.t"
-        [ core_type ~type_variables inner ]
+        [ core_type ~inference_variables ~type_variables inner ]
   | Types.TList inner ->
-      type_constructor "list" [ core_type ~type_variables inner ]
+      type_constructor "list" [ core_type ~inference_variables ~type_variables inner ]
   | Types.TSeq inner ->
-      type_constructor "Seq.t" [ core_type ~type_variables inner ]
+      type_constructor "Seq.t" [ core_type ~inference_variables ~type_variables inner ]
   | Types.TSet inner -> (
       match Types.set_module_name inner with
       | Ok "Lg_runtime.Runtime_poly_set" ->
           type_constructor "Lg_runtime.Runtime_poly_set.t"
-            [ core_type ~type_variables inner ]
+            [ core_type ~inference_variables ~type_variables inner ]
       | Ok "Lg_runtime.Runtime_map_set" -> (
           match (inner, Types.record_fields inner) with
           | Types.TOcaml_app
@@ -239,16 +242,16 @@ let rec core_type ?(type_variables = []) = function
             _ ->
               type_constructor "Lg_runtime.Runtime_map_set.t"
                 [
-                  core_type ~type_variables key_ty;
-                  core_type ~type_variables value_ty;
+                  core_type ~inference_variables ~type_variables key_ty;
+                  core_type ~inference_variables ~type_variables value_ty;
                 ]
           | Types.TRecord _, Some fields -> (
               match Types.homogeneous_record_value_type fields with
               | Some value_ty ->
                   type_constructor "Lg_runtime.Runtime_map_set.t"
                     [
-                      core_type ~type_variables Types.TKeyword;
-                      core_type ~type_variables value_ty;
+                      core_type ~inference_variables ~type_variables Types.TKeyword;
+                      core_type ~inference_variables ~type_variables value_ty;
                     ]
               | None -> assert false)
           | _ -> assert false)
@@ -257,32 +260,32 @@ let rec core_type ?(type_variables = []) = function
             (lid (longident_of_string (set_module ^ ".t"))) []
       | Error _ ->
           type_constructor "unsupported_set"
-            [ core_type ~type_variables inner ])
+            [ core_type ~inference_variables ~type_variables inner ])
   | Types.TVector inner ->
       Ast_helper.Typ.constr ~loc
         (lid
            (Longident.Ldot
               (lid (Longident.Lident "Rrbvec"), str "t")))
-        [ core_type ~type_variables inner ]
+        [ core_type ~inference_variables ~type_variables inner ]
   | Types.TFn (args, ret) ->
       let args = match args with [] -> [ Types.TUnit ] | _ -> args in
       List.fold_right
         (fun arg result ->
           Ast_helper.Typ.arrow ~loc Nolabel
-            (core_type ~type_variables arg)
+            (core_type ~inference_variables ~type_variables arg)
             result)
-        args (core_type ~type_variables ret)
+        args (core_type ~inference_variables ~type_variables ret)
   | Types.TOverloaded_fn arities ->
-      core_type ~type_variables (Types.overloaded_storage_type arities)
+      core_type ~inference_variables ~type_variables (Types.overloaded_storage_type arities)
   | Types.TRecord fields -> (
       match Types.homogeneous_record_value_type fields with
       | Some value_ty ->
-          core_type ~type_variables (Types.dynamic_map Types.TKeyword value_ty)
+          core_type ~inference_variables ~type_variables (Types.dynamic_map Types.TKeyword value_ty)
       | None -> type_constructor "record" [])
   | Types.TNamed_record record ->
       Ast_helper.Typ.constr ~loc
         (lid (longident_of_string record.type_name))
-        (List.map (core_type ~type_variables) record.type_arguments)
+        (List.map (core_type ~inference_variables ~type_variables) record.type_arguments)
 
 let record_values_to_parsetree var_name values =
   let rec loop acc = function
@@ -853,6 +856,7 @@ let projected_record_definition ~emit_set ~emit_nullable_set var_name identity
 
 let rec value_pattern = function
   | Named name -> Ast_helper.Pat.var ~loc (str name)
+  | Declared_value (pattern, _) -> value_pattern pattern
   | Unit_pattern ->
       Ast_helper.Pat.construct ~loc (lid (Longident.Lident "()")) None
   | Ignore_pattern -> Ast_helper.Pat.any ~loc ()
@@ -866,9 +870,42 @@ let rec value_pattern = function
 
 let rec value_pattern_context = function
   | Named name -> "value " ^ name
+  | Declared_value (pattern, _) -> value_pattern_context pattern
   | Unit_pattern -> "top-level effect"
   | Ignore_pattern -> "top-level expression"
   | Located_value (_, _, pattern) -> value_pattern_context pattern
+
+let declared_value_constraint ty =
+  let type_variables =
+    Type_solver.variables ty
+    |> List.filter_map (function
+         | Type_solver.Declared name -> Some name
+         | Type_solver.Metavariable _ -> None)
+    |> List.sort_uniq String.compare
+  in
+  (* Inferred holes are shared free variables, not explicit quantifiers.
+     OCaml generalizes them only when the value restriction allows it. *)
+  let inference_variables =
+    Type_solver.variables ty
+    |> List.filter_map (function
+         | Type_solver.Declared _ -> None
+         | Type_solver.Metavariable id ->
+             let rec available name =
+               if List.mem name type_variables then available (name ^ "_")
+               else name
+             in
+             Some (id, available ("lg_inferred_" ^ string_of_int id)))
+  in
+  let annotation =
+    core_type ~inference_variables ~type_variables ty
+    |> Ast_helper.Typ.poly ~loc (List.map str type_variables)
+  in
+  Pvc_constraint { locally_abstract_univars = []; typ = annotation }
+
+let rec value_pattern_constraint = function
+  | Declared_value (_, ty) -> Some (declared_value_constraint ty)
+  | Located_value (_, _, pattern) -> value_pattern_constraint pattern
+  | Named _ | Unit_pattern | Ignore_pattern -> None
 
 let recursive_value_pattern_and_constraint name identity type_annotation =
   let pattern =
@@ -877,27 +914,7 @@ let recursive_value_pattern_and_constraint name identity type_annotation =
     | Some (node_id, location) ->
         Located_value (node_id, location, Named name)
   in
-  let pattern = value_pattern pattern in
-  match type_annotation with
-  | None -> (pattern, None)
-  | Some ty ->
-      let type_variables =
-        Type_solver.variables ty
-        |> List.filter_map (function
-             | Type_solver.Declared name -> Some name
-             | Type_solver.Metavariable _ -> None)
-        |> List.sort_uniq String.compare
-      in
-      if type_variables = [] then (pattern, None)
-      else
-        let annotation =
-          core_type ~type_variables ty
-          |> Ast_helper.Typ.poly ~loc (List.map str type_variables)
-        in
-        ( pattern,
-          Some
-            (Pvc_constraint
-               { locally_abstract_univars = []; typ = annotation }) )
+  (value_pattern pattern, Option.map declared_value_constraint type_annotation)
 
 let value_binding pattern expression =
   let context =
@@ -909,7 +926,8 @@ let value_binding pattern expression =
   | Error _ as err -> err
   | Ok expression ->
       let binding =
-        Ast_helper.Vb.mk ~loc (value_pattern pattern) expression
+        Ast_helper.Vb.mk ~loc ?value_constraint:(value_pattern_constraint pattern)
+          (value_pattern pattern) expression
       in
       Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
 

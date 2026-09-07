@@ -368,6 +368,10 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
           let templates, actuals = List.split matched_fields in
           Types.instantiate_type ~templates ~actuals (TNamed_record record)
       | None -> inferred)
+  | TConstraint constraint_ ->
+      TConstraint
+        (Types.map_constraint
+           (infer_named_record ~allow_dynamic_fields scope env) constraint_)
   | inferred -> inferred
 
 let infer_parameter_named_record scope env = function

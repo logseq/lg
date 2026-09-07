@@ -1061,7 +1061,7 @@ let test_source_multimethod_rejects_incompatible_method_results () =
     "app/multimethod_result_conflict.cljc" source
   |> expect_error_contains "closed sum type"
 
-let test_source_tap_registry_uses_limited_dynamic_boundary () =
+let test_source_tap_registry_uses_closed_values () =
   let source =
     {|
 (ns app.tap-registry
@@ -1091,13 +1091,10 @@ let test_source_tap_registry_uses_limited_dynamic_boundary () =
   let native =
     compile_with_stdlib Lg.Target.Native "app/tap_registry.cljc" source
   in
-  if
-    not
-      (string_contains_substring native "Lg_runtime.Runtime_tap"
-      && string_contains_substring native "Runtime_dynamic")
-  then
-    failwith "tap registry must use the documented narrow dynamic boundary";
-  assert_ocaml_runs "source_tap_registry_uses_limited_dynamic_boundary"
+  if not (string_contains_substring native "Lg_runtime.Runtime_tap")
+     || string_contains_substring native "Runtime_dynamic"
+  then failwith "tap registry must retain its closed EDN value domain";
+  assert_ocaml_runs "source_tap_registry_uses_closed_values"
     "true:true:true:true:true:[7][hi]\n" native;
   let melange =
     compile_with_stdlib Lg.Target.Melange "app/tap_registry.cljc" source
@@ -2561,6 +2558,19 @@ let test_type_relations_are_explicit_and_strict () =
   then
     failwith "source nullability must remain distinct from host option semantics"
 
+let test_type_solver_unifies_sequence_representations () =
+  let open Lg.Types in
+  let element = seqable_constraint_with_value (TVar "element") (TVar "storage") in
+  List.iter
+    (fun actual ->
+      let variable = Lg.Type_solver.fresh () in
+      match Lg.Type_solver.unify Lg.Type_solver.empty (TSeq variable) actual with
+      | Error _ -> failwith "sequence representation lost its element type"
+      | Ok substitutions ->
+          if not (equal element (Lg.Type_solver.apply substitutions variable)) then
+            failwith "sequence representation lost its element capability")
+    [ next_seq element; TOcaml_app ("Seq.t", [ element ]) ]
+
 let test_type_solver_preserves_shared_and_independent_variables () =
   let open Lg.Types in
   let template =
@@ -3604,14 +3614,14 @@ let test_inference_holes_do_not_collide_with_declared_type_names () =
 (signature user/keep-value [g1 wrapped]
   :fn<g1;wrapped;g1>)
 (defn keep-value [value wrapped]
-  (match wrapped
+  (match (Some 41)
     (Some item)
     (do
       (+ item 1)
       value)
     None
     value))
-(println (keep-value "Ada" (Some 41)))
+(println (keep-value "Ada" true))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -16264,6 +16274,124 @@ let test_identity_function_is_polymorphic_at_call_sites () =
     failwith "polymorphic identity calls must remain static";
   assert_ocaml_runs "identity_function_is_polymorphic_at_call_sites"
     "42:Ada:true\n" ocaml_source
+
+let test_declared_type_contract_rejects_specialized_implementations () =
+  let cases =
+    [
+      ("constant result", ":fn<a;a>", "(defn bad [x] 1)");
+      ("specialized argument", ":fn<a;a>",
+       "(defn bad [x] (String.length x))");
+      ("independent variables", ":fn<a;b;b>", "(defn bad [x y] x)");
+      ("zero argument result", ":fn<a>", "(defn bad [] 1)");
+      ("nested result", ":fn<a;vector<a>>", "(defn bad [x] [1])");
+      ("callback argument", ":fn<fn<a;int>;int>", "(defn bad [f] (f 1))");
+      ("function value", ":fn<a;a>", "(def bad (fn [x] 1))");
+      ("recursive result", ":fn<bool;a;a>",
+       "(defn bad [stop x] (if stop 1 (bad true x)))");
+      ("overload result", ":overload<fn<a;a>;fn<a;a;a>>",
+       "(defn bad ([x] 1) ([x y] x))");
+    ]
+  in
+  let accepted =
+    cases |> List.filter_map (fun (name, signature, definition) ->
+      let source =
+        "(ns user)\n(signature user/bad [a b] " ^ signature ^ ")\n"
+        ^ definition
+      in
+      match Raw_lg.Compiler.compile_string source with
+      | Error _ -> None
+      | Ok _ -> Some name)
+  in
+  if accepted <> [] then
+    failwith ("declared contracts accepted specialized implementations: "
+              ^ String.concat ", " accepted)
+
+let test_declared_type_contract_checks_module_definitions () =
+  List.iter (fun definition ->
+  List.iter
+    (fun body ->
+      let source = "(signature Contracts/identity-value [a] "
+        ^ ":fn<a;a>) (module Contracts (" ^ definition ^ " identity-value [x] " ^ body ^ "))" in
+      match Raw_lg.Compiler.compile_string source with
+      | Ok _ when body = "x" -> ()
+      | Error _ when body = "1" -> ()
+      | Ok _ -> failwith "module definition specialized a declared contract"
+      | Error error ->
+          failwith ("valid module contract failed: " ^ error.message))
+    [ "x"; "1" ]) [ "defn"; "defn-" ]
+
+let test_declared_type_contract_resolves_module_local_records () =
+  Raw_lg.Compiler.compile_string {|
+(signature Contracts/read-id :fn<Contracts/item;int>)
+(module Contracts
+  (type-record item (id :int))
+  (defn read-id [^item x] :int
+    (if true (:id x) (read-id x))))
+|} |> expect_ok |> ignore
+
+let test_declared_type_contract_preserves_nested_sequence_capabilities () =
+  Raw_lg.Compiler.compile_string
+    {|
+(ns user)
+(signature user/map-values [a b] :fn<fn<a;b>;seq<a>;seq<b>>)
+(defn map-values [f xs] (Seq.map f xs))
+(signature user/to-seq [a storage] :fn<optional-seqable<a;storage>;seq<a>>)
+(defn to-seq [x] (__lg_seq x))
+(signature user/rows [a storage]
+  :overload<fn<seq<seq<a>>>;variadic-fn<seqable<a;storage>;seqable<a;storage>;seq<seq<a>>>>)
+(defn rows
+  ([] (__lg_seq []))
+  ([first & xs] (map-values (fn [x] (to-seq x)) (to-seq xs))))
+|}
+  |> expect_ok |> ignore
+
+let test_declared_type_contract_preserves_value_restriction () =
+  let source = {|
+(ns user)
+(signature user/make-reader [a] :fn<int;fn<seqable<a>;seq<a>>>)
+(defn make-reader [ignored] (fn [xs] (__lg_seq xs)))
+(signature user/read-ints :fn<seqable<int>;seq<int>>)
+(def read-ints (make-reader 0))
+(def values (read-ints [1 2]))
+|} in
+  Raw_lg.Compiler.compile_string source |> expect_ok |> ignore;
+  match Raw_lg.Compiler.compile_string
+    (source ^ "(def incompatible (read-ints (__lg_seq [3])))") with
+  | Error _ -> ()
+  | Ok _ -> failwith "an expansive binding acquired polymorphic storage"
+
+let test_declared_type_contract_preserves_valid_polymorphism () =
+  let source =
+    {|
+(ns user)
+(signature user/*enabled* :bool)
+(def ^:dynamic *enabled* true)
+(signature user/identity-value [a] :fn<a;a>)
+(defn identity-value [x] x)
+(signature user/constant [a b] :fn<a;b;a>)
+(defn constant [x y] x)
+(signature user/compose [a b c] :fn<fn<b;c>;fn<a;b>;fn<a;c>>)
+(defn compose [f g] (fn [x] (f (g x))))
+(signature user/singleton [a] :fn<a;vector<a>>)
+(defn singleton [x] [x])
+(signature user/empty-values [a] :fn<vector<a>>)
+(defn empty-values [] [])
+(signature user/never [a] :fn<a>)
+(defn never [] (Stdlib.failwith "never"))
+(def number-value (identity-value 42))
+(def string-value (identity-value "Ada"))
+(def ignored (constant "Ada" 42))
+(def composed ((compose (fn [x] x) (fn [x] x)) "Ada"))
+|}
+  in
+  let output = Raw_lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring output "Runtime_dynamic" then
+    failwith "declared contracts must preserve static polymorphism";
+  let state, _ =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state source |> expect_ok
+  in
+  ignore (Lg.Compiler.compile_chunk state
+    "(ns user) (def continued (identity-value true))" |> expect_ok)
 
 let test_declared_type_scheme_is_rigid_within_each_call () =
   Lg.Compiler.compile_string
@@ -31203,7 +31331,7 @@ let test_reduced_predicate_preserves_generic_callback_results () =
       (let [result (f acc x idx)]
         (if (reduced? result)
           result
-          (recur (next remaining) result (inc idx))))
+          (recur (next remaining) (unreduced result) (inc idx))))
       acc)))
 (def total
   (reduce-indexed
@@ -31216,7 +31344,7 @@ let test_reduced_predicate_preserves_generic_callback_results () =
       (if (= index 1) (reduced acc) (+ acc value)))
     0
     [2 3 4]))
-(println (= 11 total))
+(println (= 11 (unreduced total)))
 (println (reduced? stopped))
 (println (= 2 (unreduced stopped)))
 |}
@@ -31234,15 +31362,16 @@ let test_generic_reduce_indexed_signature_keeps_rigid_accumulator () =
 (signature app.reduce-indexed/reduce-indexed [value accumulator storage]
   :fn<fn<accumulator;value;int;reducing-callback-result<accumulator>>;accumulator;seqable<value;storage>;accumulator>)
 (defn reduce-indexed [f init xs]
-  (first
+  (let [[result _]
     (reduce
       (fn [[acc idx] x]
         (let [res (f acc x idx)]
           (if (reduced? res)
-            (reduced [res idx])
-            [res (inc idx)])))
+            (reduced [(unreduced res) idx])
+            [(unreduced res) (inc idx)])))
       [init 0]
-      xs)))
+      xs)]
+    result))
 (println
   (= 11 (reduce-indexed
           (fn [acc value index] (+ acc (* value index)))
@@ -31250,7 +31379,7 @@ let test_generic_reduce_indexed_signature_keeps_rigid_accumulator () =
           [2 3 4])))
 (println
   (str
-    (reduced?
+    (= 2
       (reduce-indexed
         (fn [acc value index]
           (if (= index 1) (reduced acc) (+ acc value)))
@@ -37358,8 +37487,8 @@ let test_reduce_infers_fixed_tuple_accumulator_from_destructuring () =
       (fn [[acc index] value]
         (let [result (f acc value index)]
           (if (reduced? result)
-            (reduced [result index])
-            [result (inc index)])))
+            (reduced [(unreduced result) index])
+            [(unreduced result) (inc index)])))
       [init 0]
       values)))
 |}
@@ -47748,8 +47877,8 @@ let tests =
       test_source_multimethod_results_remain_statically_typed );
     ( "source multimethod rejects incompatible method results",
       test_source_multimethod_rejects_incompatible_method_results );
-    ( "source tap registry uses limited dynamic boundary",
-      test_source_tap_registry_uses_limited_dynamic_boundary );
+    ( "source tap registry uses closed values",
+      test_source_tap_registry_uses_closed_values );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",
@@ -47895,6 +48024,8 @@ let tests =
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
     ( "type relations are explicit and strict",
       test_type_relations_are_explicit_and_strict );
+    ( "type solver unifies sequence representations",
+      test_type_solver_unifies_sequence_representations );
     ( "type solver preserves shared and independent variables",
       test_type_solver_preserves_shared_and_independent_variables );
     ( "type schemes distinguish declared and inferred variables",
@@ -49026,6 +49157,18 @@ let tests =
       test_mapv_vector_shares_one_inferred_element_type );
     ( "identity function is polymorphic at call sites",
       test_identity_function_is_polymorphic_at_call_sites );
+    ( "declared type contract rejects specialized implementations",
+      test_declared_type_contract_rejects_specialized_implementations );
+    ( "declared type contract checks module definitions",
+      test_declared_type_contract_checks_module_definitions );
+    ( "declared type contract resolves module local records",
+      test_declared_type_contract_resolves_module_local_records );
+    ( "declared type contract preserves nested sequence capabilities",
+      test_declared_type_contract_preserves_nested_sequence_capabilities );
+    ( "declared type contract preserves value restriction",
+      test_declared_type_contract_preserves_value_restriction );
+    ( "declared type contract preserves valid polymorphism",
+      test_declared_type_contract_preserves_valid_polymorphism );
     ( "declared type scheme is rigid within each call",
       test_declared_type_scheme_is_rigid_within_each_call );
     ( "declared type scheme instantiates at each call",

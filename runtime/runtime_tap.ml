@@ -1,8 +1,6 @@
-module Dynamic = Runtime_dynamic
-
 type tap = {
   identity : string option;
-  run : Dynamic.t -> unit;
+  run : Lg_edn_backend.t -> unit;
 }
 
 let taps : tap list ref = ref []

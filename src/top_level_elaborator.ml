@@ -1044,47 +1044,7 @@ let has_static_capability ty =
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
 
-let rec freshen_unknowns = function
-  | TUnknown -> Type_solver.fresh ()
-  | TNullable ty -> TNullable (freshen_unknowns ty)
-  | TArray ty -> TArray (freshen_unknowns ty)
-  | TRef ty -> TRef (freshen_unknowns ty)
-  | TList ty -> TList (freshen_unknowns ty)
-  | TVector ty -> TVector (freshen_unknowns ty)
-  | TSet ty -> TSet (freshen_unknowns ty)
-  | TSeq ty -> TSeq (freshen_unknowns ty)
-  | TOcaml_app (name, arguments) ->
-      TOcaml_app (name, List.map freshen_unknowns arguments)
-  | TConstraint constraint_ ->
-      TConstraint (Types.map_constraint freshen_unknowns constraint_)
-  | TTuple arguments -> TTuple (List.map freshen_unknowns arguments)
-  | TFn (parameters, return_ty) ->
-      TFn (List.map freshen_unknowns parameters, freshen_unknowns return_ty)
-  | TOverloaded_fn arities ->
-      TOverloaded_fn
-        (List.map
-           (fun arity ->
-             {
-               fixed_params = List.map freshen_unknowns arity.fixed_params;
-               rest_param = Option.map freshen_unknowns arity.rest_param;
-               return_ty = freshen_unknowns arity.return_ty;
-             })
-           arities)
-  | TRecord fields ->
-      TRecord
-        (List.map
-           (fun (field : field) ->
-             { field with ty = freshen_unknowns field.ty })
-           fields)
-  | TNamed_record record ->
-      TNamed_record
-        {
-          record with
-          type_arguments = List.map freshen_unknowns record.type_arguments;
-        }
-  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-    | TKeyword | TBool | TUnit | TNil | TMeta _ | TVar _ | TOcaml _ ) as ty ->
-      ty
+let freshen_unknowns = Type_solver.freshen_unknowns
 
 let nullable_payload = function
   | TNullable ty | TOcaml_app ("option", [ ty ]) -> Some ty

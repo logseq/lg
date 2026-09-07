@@ -414,7 +414,8 @@ let expand_deferred_binding name value_type return_param_index expression =
 
 let rec value_pattern_name = function
   | Lowered.Named name -> Some name
-  | Lowered.Located_value (_, _, pattern) -> value_pattern_name pattern
+  | Lowered.Located_value (_, _, pattern)
+  | Lowered.Declared_value (pattern, _) -> value_pattern_name pattern
   | Lowered.Unit_pattern | Lowered.Ignore_pattern -> None
 
 let rec provided_value_names = function
@@ -924,7 +925,7 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
     let items =
       items
       |> List.sort (fun (left, _) (right, _) -> Int.compare left right)
-      |> List.map snd
+      |> List.map (fun (_, item) -> Signature_contract.annotate env item)
     in
     Ok (scope, env, next_type, items)
   in

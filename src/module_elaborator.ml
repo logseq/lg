@@ -811,7 +811,12 @@ let rec compile_module ?location ?signature_name ?signature_location
                     signature_name =
                       Option.map Names.module_path_to_ocaml signature_name;
                     signature_location;
-                    items = List.rev items;
+                    items =
+                      List.rev items
+                      |> List.map
+                           (Signature_contract.annotate
+                              ~module_path:(Names.module_path_to_ocaml module_path)
+                              env);
                   } ))
     | form :: rest -> (
         match compile_module_form env public_bindings next_type items form with

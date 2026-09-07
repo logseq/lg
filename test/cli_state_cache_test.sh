@@ -18,6 +18,43 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+cat >"$test_dir/invalid-types.cljc" <<'SOURCE'
+(ns contract-check)
+(def functions (Array.make 1 (fn [x] x)))
+(def number-result ((Array.get functions 0) 1))
+(def string-result ((Array.get functions 0) "Ada"))
+SOURCE
+
+cat >"$test_dir/invalid-contract.cljc" <<'SOURCE'
+(ns contract-check)
+(signature contract-check/identity-value [a] :fn<a;a>)
+(defn identity-value [x] 1)
+SOURCE
+
+expect_type_failure() {
+  if "$@" >"$test_dir/type.stdout" 2>"$test_dir/type.stderr"; then
+    echo "saved-state compilation accepted an invalid type contract" >&2
+    exit 1
+  fi
+  if ! grep -Eq "expected of type|less general" "$test_dir/type.stderr"; then
+    cat "$test_dir/type.stderr" >&2
+    exit 1
+  fi
+}
+
+for invalid_source in "$test_dir/invalid-types.cljc" "$test_dir/invalid-contract.cljc"; do
+  expect_type_failure "$cli" --compile-chunk-from "$stdlib_state" \
+    "$invalid_source" -o "$test_dir/invalid.ml"
+  expect_type_failure "$cli" --compile-files-from "$stdlib_state" \
+    "$invalid_source" -o "$test_dir/invalid.ml"
+  expect_type_failure "$cli" --compile-files-from-state "$stdlib_state" \
+    "$test_dir/invalid.state" "$invalid_source" -o "$test_dir/invalid.ml"
+done
+if [ -e "$test_dir/invalid.state" ] || [ -e "$test_dir/invalid.ml" ]; then
+  echo "failed compilation published an artifact" >&2
+  exit 1
+fi
+
 LG_CACHE_DIR="$test_dir/state-cache" \
   "$cli" --compile-files-from-state "$stdlib_state" "$test_dir/base.state" \
     "$source_file" -o "$test_dir/base.ml"
@@ -111,7 +148,11 @@ printf 'LG-COMPILER-STATE\n10\n' >"$test_dir/previous-10.state"
 expect_state_failure "$test_dir/previous-10.state" \
   "unsupported compiler state version 10" "$test_dir/previous-10.stderr"
 
-printf 'LG-COMPILER-STATE\n19\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
+printf 'LG-COMPILER-STATE\n19\n' >"$test_dir/previous-19.state"
+expect_state_failure "$test_dir/previous-19.state" \
+  "unsupported compiler state version 19" "$test_dir/previous-19.stderr"
+
+printf 'LG-COMPILER-STATE\n20\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
   >"$test_dir/oversized.state"
 expect_state_failure "$test_dir/oversized.state" \
   "compiler state artifact exceeds maximum size" "$test_dir/oversized.stderr"

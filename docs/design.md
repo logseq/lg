@@ -33,6 +33,23 @@ operation, or zero-argument function result must remain the same type variable;
 the compiler must not materialize it as `dynamic<any>`. Sidecar signatures are
 authoritative contracts, not hints that body inference may widen.
 
+An explicit value signature is retained separately from inferred expression
+annotations through lowering. The generated binding checks the original
+signature with universally quantified type parameters, for recursive and
+nonrecursive definitions alike. A body cannot specialize `fn<a;a>` to
+`fn<int;int>` or `fn<a;int>`. Calls instantiate declared type parameters afresh.
+Omitted types remain inference variables; their generalization follows the
+OCaml value restriction instead of adding an implicit universal promise.
+Runtime storage wrappers, such as the reference behind a dynamically bindable
+Var, must preserve the declared payload type.
+
+Normal compilation and compilation resumed from a saved state perform the same
+OCaml contract and value-restriction checks. A saved state restores the checked
+OCaml prefix before accepting new code; an invalid continuation must not publish
+an output or an updated state. Cache replay may skip rechecking an unchanged,
+previously validated prefix, but a subsequent cache miss restores that prefix
+before checking new code.
+
 `fn<result>` denotes a zero-argument function returning `result`. The compiler
 must not invent a `unit` source parameter to encode this arity.
 
@@ -45,7 +62,12 @@ dynamic values.
 `reducing-callback-result<T>` is a sidecar-only callback result type. It accepts
 either `T` or `reduced<T>` from a reducing callback while preserving `T` as the
 accumulator type. It must not add capability evidence to `T` or expose the
-internal reduced wrapper as the enclosing function's result type.
+internal reduced wrapper as the enclosing function's result type. At the
+callback boundary both alternatives use the closed `Runtime_reduced.t` type:
+ordinary results are wrapped as continuing values, and already reduced results
+retain their tag. The receiving function handles the tag and returns its
+statically declared result; callback adaptation must not change that result
+through an exception-based propagation convention.
 
 The host-boundary assignability policy does not make a dynamic constraint
 assignable to a static type, or a static type assignable to a dynamic
@@ -142,6 +164,22 @@ collections, sequence constraints, protocol witnesses, host values, and
 `reify` implementations. A dynamic boundary cannot be used as an implicit
 conversion API. Code that knows the supported alternatives must keep their
 static types or define a closed sum.
+
+### Sequence transducer consumers
+
+`sequence` and `eduction` collect emitted values through a reducer with a `unit`
+accumulator. Their transducer parameter is instantiated at `unit`; it does not
+promise support for an arbitrary caller-selected accumulator. `transduce`
+continues to preserve the accumulator type supplied by the caller's reducer.
+
+### Tap values
+
+The tap registry stores the closed EDN value domain, `Lg_edn_backend.t`.
+Supported scalar and collection payloads are converted directly to that domain;
+callbacks receive a closed value or an explicitly checked scalar projection.
+An arbitrary rigid type parameter is not evidence that its values can be
+converted to EDN. Tap registration and delivery must not erase callbacks or
+payloads into `Runtime_dynamic.t`.
 
 ### Absence uses `option`
 

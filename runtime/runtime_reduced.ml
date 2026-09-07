@@ -4,8 +4,6 @@ type 'a t = {
   halted : bool;
 }
 
-exception Callback_reduced
-
 let continue value = { value; reduced = false; halted = false }
 let reduced value = { value; reduced = true; halted = false }
 let halted value = { value; reduced = true; halted = true }

@@ -1675,7 +1675,7 @@
       (let [tail (next remaining)]
         (if tail
           (recur (next tail)
-                 (assoc result (first remaining) (first tail)))
+                 (assoc result (nth remaining 0) (nth tail 0)))
           (raise (Invalid_argument "No value supplied for key"))))
       result)))
 
@@ -2658,24 +2658,18 @@
   ([n coll]
    (take-nth-seq n (seq coll))))
 
-#?(:melange
-   (defn random-sample
-     ([^:option<float> probability]
-      (let [probability (match probability
-                          (Some value) value
-                          None 0.0)]
-        (filter (fn [_] (< (rand) probability)))))
-     ([^:option<float> probability coll]
-      (let [probability (match probability
-                          (Some value) value
-                          None 0.0)]
-        (filter (fn [_] (< (rand) probability)) coll))))
-   :default
-   (defn random-sample
-     ([^:float probability]
-      (filter (fn [_] (< (rand) probability))))
-     ([^:float probability coll]
-      (filter (fn [_] (< (rand) probability)) coll))))
+(defn- random-sample-probability [^:option<float> probability]
+  (match probability
+    (Some value) value
+    None 0.0))
+
+(defn random-sample
+  ([probability]
+   (let [probability (random-sample-probability probability)]
+     (filter (fn [_] (< (rand) probability)))))
+  ([probability coll]
+   (let [probability (random-sample-probability probability)]
+     (filter (fn [_] (< (rand) probability)) coll))))
 
 (defn filterv [pred coll]
   (__lg_reduce

@@ -3519,8 +3519,6 @@ and project_constraint_row ?named_record env type_name expected_fields argument 
                   Some type_name ))
         (build [] expected_fields)
 
-let reduced_callback_state = "__lg_reduced_callback_value"
-
 let same_concrete_type left right =
   let same_arguments left right =
     List.length left = List.length right && List.for_all2 Types.equal left right
@@ -3938,7 +3936,7 @@ let rec adapt_value_to_type env expected actual =
         let expected_inner =
           reduced_callback_element expected_return |> Option.get
         in
-        (match Types.reduced_element actual_return with
+        (match reduced_callback_element actual_return with
         | Some actual_inner ->
             Types.assignable ~policy:Host_boundary ~expected:expected_inner
               ~actual:actual_inner
@@ -3971,9 +3969,11 @@ let rec adapt_value_to_type env expected actual =
       (fun arguments ->
         let call = Semantic_ir.Apply (actual.semantic_expr, arguments) in
         let body =
-          match Types.reduced_element actual_return with
+          match reduced_callback_element actual_return with
           | Some _ -> call
-          | None -> call
+          | None ->
+              Semantic_ir.Apply
+                (Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue", [ call ])
         in
         Semantic_ir.Fun
           (List.map (fun name -> Semantic_ir.PVar name) parameter_names, body))
@@ -6420,7 +6420,12 @@ let rec emit_argument_adaptation env adaptation argument =
           let body =
             if callback.actual_returns_reduced then Ok result.semantic_expr
             else
-              emit_argument_adaptation env callback.result_adaptation result
+              Result.map
+                (fun value ->
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
+                     [ value ]))
+                (emit_argument_adaptation env callback.result_adaptation result)
           in
           Result.map
             (fun body ->
@@ -7000,57 +7005,6 @@ let typed_nullable_row_argument env type_name expected_fields argument =
       Result.map
         (fun row -> Semantic_ir.Constructor ("Some", Some row))
         (typed_row_argument env type_name expected_fields argument)
-
-let adapt_reduced_callback arg =
-  match arg.ty with
-  | TFn (params, return_type) -> (
-      match Types.reduced_element return_type with
-      | Some _ ->
-          let parameter_names =
-            List.mapi
-              (fun index _ -> "__lg_callback_arg_" ^ string_of_int index)
-              params
-          in
-          let result_name = "__lg_callback_result" in
-          let result = Semantic_ir.Ident result_name in
-          let value =
-            Semantic_ir.Apply
-              ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.unreduced",
-                [ result ] )
-          in
-          Semantic_ir.Fun
-            ( List.map (fun name -> Semantic_ir.PVar name) parameter_names,
-              Semantic_ir.Let
-                ( [
-                    ( Semantic_ir.PVar result_name,
-                      Semantic_ir.Apply
-                        ( arg.semantic_expr,
-                          List.map
-                            (fun name -> Semantic_ir.Ident name)
-                            parameter_names ) );
-                  ],
-                  Semantic_ir.If
-                    ( Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_reduced.is_reduced",
-                          [ result ] ),
-                      Semantic_ir.Sequence
-                        [
-                          Semantic_ir.Infix
-                            ( ":=",
-                              Semantic_ir.Ident reduced_callback_state,
-                              Semantic_ir.Constructor ("Some", Some result) );
-                          Semantic_ir.Apply
-                            ( Semantic_ir.Ident "raise",
-                              [
-                                Semantic_ir.Constructor
-                                  ( "Lg_runtime.Runtime_reduced.Callback_reduced",
-                                    None );
-                              ] );
-                        ],
-                      value ) ) )
-      | None -> arg.semantic_expr)
-  | _ -> arg.semantic_expr
 
 let adapt_nullable_callback env expected arg =
   match (expected, arg.ty) with
@@ -10812,7 +10766,7 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] -> (
-            match Types.reduced_element value.ty with
+            match reduced_callback_element value.ty with
             | Some _ ->
                 Ok
                   (typed_ir TBool
@@ -10832,7 +10786,7 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] -> (
-            match Types.reduced_element value.ty with
+            match reduced_callback_element value.ty with
             | Some inner ->
                 Ok
                   (typed_ir inner
@@ -12473,7 +12427,9 @@ let create ~compile_expr =
                  (apply "float_of_int" [ semantic_expr ]))
         | Ok [ ({ ty = TFloat; _ } as value) ] -> Ok value
         | Ok [ value ] when Env.target env = Target.Melange -> Ok value
-        | Ok [ _ ] -> Error.error "double expects a numeric value"
+        | Ok [ value ] ->
+            Error.error
+              ("double expects a numeric value, got " ^ Types.source_name value.ty)
         | Ok _ -> Error.error "double expects 1 argument")
     | "__lg_bigdec" -> (
         let decimal_ty = TOcaml "Lg_runtime.Runtime_decimal.t" in
@@ -14930,7 +14886,9 @@ let create ~compile_expr =
         match arg_forms with
         | [ callback_form ] -> (
             match
-              Tap_dynamic_boundary.compile_callback ~compile_expr scope env
+              Tap_value.compile_callback ~compile_expr
+                ~pack_argument:(fun expected value ->
+                  plan_and_emit_argument env ~expected value) scope env
                 callback_form
             with
             | Error _ as error -> error
@@ -14967,7 +14925,7 @@ let create ~compile_expr =
         match arg_forms with
         | [ value_form ] -> (
             match
-              Tap_dynamic_boundary.compile_form ~compile_expr scope env value_form
+              Tap_value.compile_form ~compile_expr scope env value_form
             with
             | Error _ as error -> error
             | Ok value ->
@@ -20023,6 +19981,7 @@ let create ~compile_expr =
                 let storage_ret_template =
                   let storage_ret =
                     Types.maybe_reduced_callback_element ret
+                    |> Option.map Types.reduced
                     |> Option.value ~default:ret
                   in
                   match storage_ret with
@@ -20479,14 +20438,8 @@ let create ~compile_expr =
                                     TFn (actual_params, _) )
                                   when callback_parameters_compatible
                                          expected_params actual_params ->
-                                    (match
-                                       maybe_reduced_callback_payload
-                                         expected_ty arg.ty
-                                     with
-                                    | Some _ -> Ok (adapt_reduced_callback arg)
-                                    | None ->
-                                        plan_and_emit_argument env
-                                          ~expected:expected_ty arg)
+                                    plan_and_emit_argument env
+                                      ~expected:expected_ty arg
                                 | _ ->
                                     Error.error
                                       (name
@@ -20531,7 +20484,8 @@ let create ~compile_expr =
                                   maybe_reduced_callback_payload expected_ty
                                     arg.ty
                                 with
-                                | Some _ -> Ok (adapt_reduced_callback arg)
+                                | Some _ ->
+                                    plan_and_emit_argument env ~expected:expected_ty arg
                                 | None -> (
                                     match (callback_expected_ty, arg.ty) with
                                     | TFn (_, _), TFn (_, _)
@@ -20756,6 +20710,7 @@ let create ~compile_expr =
                 in
                 let ret =
                   Types.maybe_reduced_callback_element ret
+                  |> Option.map Types.reduced
                   |> Option.value ~default:ret
                 in
                 let sequence_storage_follows_adapter =
@@ -20821,72 +20776,7 @@ let create ~compile_expr =
                     plan_and_emit_argument env ~expected:ret
                       (typed_ir storage_ret call)
                 in
-                let reduced_payload =
-                  List.combine param_tys args
-                  |> List.find_map (fun (expected, actual) ->
-                         maybe_reduced_callback_payload expected actual.ty)
-                in
-                    match call with
-                | Error _ as error -> error
-                    | Ok call -> (
-                        match reduced_payload with
-                | None -> Ok (typed_ir ret call)
-                | Some payload_ty
-                          when Types.assignable ~policy:Host_boundary
-                                 ~expected:ret ~actual:payload_ty
-                       || Types.equal ret TUnknown ->
-                    let caught_result = "__lg_reduced_result" in
-                    let callback_exception =
-                      Semantic_ir.Constructor
-                        ( "Lg_runtime.Runtime_reduced.Callback_reduced",
-                          None )
-                    in
-                    let handler =
-                      Semantic_ir.Match
-                        ( Semantic_ir.Prefix
-                                    ( "!",
-                                      Semantic_ir.Ident reduced_callback_state
-                                    ),
-                                  [
-                                    ( Semantic_ir.PConstructor
-                                        ( "Some",
-                                          Some (Semantic_ir.PVar caught_result)
-                                        ),
-                                      Semantic_ir.Ident caught_result );
-                            ( Semantic_ir.PConstructor ("None", None),
-                              Semantic_ir.Apply
-                                        ( Semantic_ir.Ident "raise",
-                                          [ callback_exception ] ) );
-                          ] )
-                    in
-                    Ok
-                      (typed_ir (Types.reduced ret)
-                         (Semantic_ir.Let
-                                    ( [
-                                        ( Semantic_ir.PVar reduced_callback_state,
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "ref",
-                                              [
-                                                Semantic_ir.Constructor
-                                                  ("None", None);
-                                              ] ) );
-                                      ],
-                              Semantic_ir.Try
-                                ( Semantic_ir.Apply
-                                    ( Semantic_ir.Ident
-                                        "Lg_runtime.Runtime_reduced.continue",
-                                      [ call ] ),
-                                          [
-                                            ( Semantic_ir.PConstructor
-                                        ( "Lg_runtime.Runtime_reduced.Callback_reduced",
-                                          None ),
-                                      None,
-                                      handler );
-                                  ] ) )))
-                | Some _ ->
-                    Error.error
-                              "reduced callback value must match the function \
-                               result")))
+                Result.map (typed_ir ret) call))
             | ty when Types.is_dynamic ty ->
                 Error.error
                   ("call target must have a static function or callable \

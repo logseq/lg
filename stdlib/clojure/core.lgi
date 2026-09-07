@@ -275,10 +275,10 @@
   :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;optional-seqable<input;storage>;accumulator>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;accumulator;optional-seqable<input;storage>;accumulator>>)
 (signature clojure.core/transduce [input output storage accumulator]
   :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;optional-seqable<input;storage>;accumulator>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;accumulator;optional-seqable<input;storage>;accumulator>>)
-(signature clojure.core/sequence [input output storage accumulator]
-  :overload<fn<optional-seqable<input;storage>;seq<input>>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;optional-seqable<input;storage>;seq<output>>>)
-(signature clojure.core/eduction [input output storage accumulator]
-  :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;optional-seqable<input;storage>;seq<output>>>)
+(signature clojure.core/sequence [input output storage]
+  :overload<fn<optional-seqable<input;storage>;seq<input>>;fn<fn<overload<fn<unit>;fn<unit;unit>;fn<unit;output;__lg_maybe_reduced_callback_result<unit>>>;overload<fn<unit>;fn<unit;unit>;fn<unit;input;__lg_maybe_reduced_callback_result<unit>>>>;optional-seqable<input;storage>;seq<output>>>)
+(signature clojure.core/eduction [input output storage]
+  :overload<fn<fn<overload<fn<unit>;fn<unit;unit>;fn<unit;output;__lg_maybe_reduced_callback_result<unit>>>;overload<fn<unit>;fn<unit;unit>;fn<unit;input;__lg_maybe_reduced_callback_result<unit>>>>;optional-seqable<input;storage>;seq<output>>>)
 (signature clojure.core/repeatedly [value]
   :overload<fn<fn<value>;seq<value>>;fn<int;fn<value>;seq<value>>>)
 (signature clojure.core/repeat [value]
@@ -346,7 +346,7 @@
 (signature clojure.core/every-pred [value predicate-result]
   :overload<fn<fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>;fn<fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>;fn<fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>;variadic-fn<fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>>)
 (signature clojure.core/some-fn [value result]
-  :overload<fn<fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>>;fn<fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>>;fn<fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>>;variadic-fn<fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;option<result>>;fn<value;value;option<result>>;fn<value;value;value;option<result>>;variadic-fn<value;value;value;value;option<result>>>>>)
+  :overload<fn<fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;option<result>>>>;fn<fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;option<result>>>>;fn<fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;option<result>>>>;variadic-fn<fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;option<result>>;fn<value;value;option<result>>;fn<value;value;value;option<result>>;variadic-fn<value;value;value;value;option<result>>>>>)
 (signature clojure.core/comp-apply [input result]
   :fn<overload<fn<result>;fn<input;result>;fn<input;input;result>;fn<input;input;input;result>;variadic-fn<input;input;input;input;result>>;input;input;input;seq<input>;result>)
 (signature clojure.core/comp-many [value]
@@ -417,15 +417,16 @@
 (signature clojure.core/equiv-map [key value]
   :fn<map<key;value>;map<key;value>;bool>)
 (signature clojure.core/regexp? :fn<regex;bool>)
-(signature clojure.core/re-find :fn<regex;string;option<string>>)
-(signature clojure.core/re-matches :fn<regex;string;option<string>>)
+(signature clojure.core/re-find
+  :overload<fn<Lg_runtime.Runtime_string.regex_matcher;Lg_edn_backend.t>;fn<regex;string;Lg_edn_backend.t>>)
+(signature clojure.core/re-matches :fn<regex;string;Lg_edn_backend.t>)
 (signature clojure.core/*exec-tap-fn* :fn<fn<unit>;bool>)
-(signature clojure.core/add-tap [value]
-  :fn<fn<printable<value>;nil>;nil>)
-(signature clojure.core/remove-tap [value]
-  :fn<fn<printable<value>;nil>;nil>)
-(signature clojure.core/tap> [value]
-  :fn<value;bool>)
+(signature clojure.core/add-tap
+  :fn<fn<Lg_edn_backend.t;nil>;nil>)
+(signature clojure.core/remove-tap
+  :fn<fn<Lg_edn_backend.t;nil>;nil>)
+(signature clojure.core/tap>
+  :fn<Lg_edn_backend.t;bool>)
 (signature clojure.core/volatile? [value]
   :fn<ref<value>;bool>)
 (signature clojure.core/rational? :fn<int;bool>)
@@ -551,7 +552,7 @@
 (signature clojure.core/parse-double :fn<string;option<float>>)
 (signature clojure.core/NaN? :fn<float;bool>)
 (signature clojure.core/infinite? :fn<float;bool>)
-(signature clojure.core/flush :fn<option<value>>)
+(signature clojure.core/flush :fn<nil>)
 (signature clojure.core/any? [value] :fn<value;bool>)
 (signature clojure.core/gensym
   :overload<fn<symbol>;fn<string;symbol>>)
@@ -660,7 +661,7 @@
 (signature clojure.core/rand
   :overload<fn<float>;fn<float;float>>)
 (signature clojure.core/rand-nth [value]
-  :fn<seqable<value>;value>)
+  :fn<seqable<value>;option<value>>)
 (signature clojure.core/uuid
   :fn<string;Lg_runtime.Runtime_uuid.t>)
 (signature clojure.core/system-time :fn<float>)

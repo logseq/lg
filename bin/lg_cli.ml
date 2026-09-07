@@ -710,11 +710,6 @@ let resume_compiler_state ~target ~packages ~sources = function
   | Replayed state ->
       Lg.Compiler.restore_ocaml_environment ~target ~packages state sources
 
-let resume_saved_compiler_state ~target ~packages = function
-  | Live state -> Ok state
-  | Replayed state ->
-      Lg.Compiler.restore_ocaml_environment ~target ~packages state []
-
 let replay_cached_prefix compiler_state prepared =
   Result.bind (read_compiler_state compiler_state) (fun state ->
       Lg.Compiler.compile_prepared_chunk_with_diagnostics ~check_ocaml:false
@@ -862,10 +857,10 @@ let compile_chunk_from_saved_state ?reader_target target state_path input_path =
             in
             Result.bind
               (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
-                 [])
+                 [ saved.ocaml_source ])
               (fun state ->
                 Lg.Compiler.compile_prepared_chunk_with_diagnostics
-                  ~check_ocaml:false state prepared
+                  state prepared
                 |> Result.map (fun (state, compilation) ->
                        (state, packages, compilation)))))
 
@@ -898,7 +893,8 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
       (read_sources [] saved.packages input_paths)
       (fun (sources, packages) ->
         Result.bind
-          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state [])
+          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
+             [ saved.ocaml_source ])
           (fun initial_state ->
             Result.bind
               (order_prepared_sources ?reader_target target initial_state sources)
@@ -931,14 +927,16 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
                         rest)
               | None ->
                   Result.bind
-                    (resume_saved_compiler_state ~target ~packages compiler_state)
+                    (resume_compiler_state ~target ~packages
+                       ~sources:(saved.ocaml_source :: List.rev outputs)
+                       compiler_state)
                     (fun state ->
                       if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
                         Printf.eprintf "lg: compiling %s\n%!" input_path;
                       let started_at = Sys.time () in
                       match
                         Lg.Compiler.compile_prepared_chunk_with_diagnostics
-                          ~check_ocaml:false state prepared
+                          state prepared
                       with
                       | Error _ as err -> err
                       | Ok (state, compilation) ->

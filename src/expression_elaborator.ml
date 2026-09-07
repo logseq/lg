@@ -948,10 +948,7 @@ and prepare_fn ?(param_type_overrides = []) ?(additional_inference_params = [])
                match List.nth_opt param_type_overrides index with
                | Some (Some ty) when not (Types.equal ty TUnknown) ->
                    if refine_open_overrides then (
-                     if
-                       Types.source_name ty
-                       <> Types.source_name binding.ty
-                     then refined := true;
+                     if not (Types.equal ty binding.ty) then refined := true;
                      Some binding.ty)
                    else Some ty
                | _ -> (

@@ -1,5 +1,6 @@
 type value_pattern =
   | Named of string
+  | Declared_value of value_pattern * Types.ty
   | Unit_pattern
   | Ignore_pattern
   | Located_value of Source_node_id.t * Location.t * value_pattern
