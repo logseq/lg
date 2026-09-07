@@ -40,6 +40,7 @@
  (modules compiler_tests)
  (deps
   compiler_test_runner.bc.exe
+  ../stdlib/lg/literal.cljc
   ../stdlib/clojure/core.lgi
   ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.lgi
@@ -524,3 +525,12 @@
 (alias
  (name runtest)
  (deps (alias jsoo-cross-runtime)))
+
+; Requires the current lg packages to be installed, matching mobile builds.
+(rule
+ (alias mobile-dependency-interfaces)
+ (deps mobile_dependency_interfaces_test.sh
+       ../scripts/mobile/build_lg_dependencies.sh)
+ (action
+  (chdir %{workspace_root}
+   (run bash test/mobile_dependency_interfaces_test.sh))))

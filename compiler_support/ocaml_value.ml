@@ -8,6 +8,7 @@ type value_type =
   | Arrow of argument_label * value_type * value_type
   | Tuple of value_type list
   | Constructor of string * value_type list
+  | Variant of (string * value_type option) list * bool * string list
   | Opaque
 
 type constructor_type = {
@@ -88,6 +89,21 @@ let argument_label = function
   | Optional name -> Optional name
 
 let rec normalize type_expr =
+  match Types.get_desc type_expr with
+  | Tvariant row ->
+      let fields = Types.row_fields row in
+      let rec convert tags required = function
+        | [] -> Variant (List.sort compare tags, Types.row_closed row, List.rev required)
+        | (tag, field) :: rest ->
+            (match Types.row_field_repr field with
+             | Rabsent -> convert tags required rest
+             | Rpresent payload -> convert ((tag, Option.map normalize payload) :: tags) (tag :: required) rest
+             | Reither (true, [], _) -> convert ((tag, None) :: tags) required rest
+             | Reither (false, [payload], _) -> convert ((tag, Some (normalize payload)) :: tags) required rest
+             | Reither _ -> Opaque) in
+      convert [] [] fields
+  | _ -> normalize_nonvariant type_expr
+and normalize_nonvariant type_expr =
   let type_expr = Btype.proxy type_expr in
   let id = Types.get_id type_expr in
   match (Types.Transient_expr.repr type_expr).desc with

@@ -17,6 +17,7 @@ type t = {
   signatures : Lowered.signature_item list Signature_map.t;
   emitted_signatures : Signature_id.t Emitted_signature_map.t;
   functor_results : (string * Types.binding) list Functor_map.t;
+  functor_parameters : string list Functor_map.t;
   functor_protocols : Protocol_registry.t Functor_map.t;
   functor_types : Type_registry.t Functor_map.t;
   functor_modules : module_declaration list Functor_map.t;
@@ -30,6 +31,7 @@ let empty =
     signatures = Signature_map.empty;
     emitted_signatures = Emitted_signature_map.empty;
     functor_results = Functor_map.empty;
+    functor_parameters = Functor_map.empty;
     functor_protocols = Functor_map.empty;
     functor_types = Functor_map.empty;
     functor_modules = Functor_map.empty;
@@ -77,30 +79,36 @@ let find_signature_named ~owner name registry =
          then Some (signature_id, items)
          else None)
 
-let abstract_signature_types signature_id registry =
-  let rec collect visiting signature_id =
-    if Signature_set.mem signature_id visiting then []
-    else
-      let visiting = Signature_set.add signature_id visiting in
-      match find_signature signature_id registry with
-      | None -> []
-      | Some items ->
-          List.concat_map
-            (function
-              | Lowered.Signature_type
-                  { type_name; manifest = None; _ } ->
-                  [ type_name ]
-              | Lowered.Signature_include { module_signature; _ } ->
-                  collect visiting
-                    (Signature_id.create ~owner:(Signature_id.owner signature_id)
-                       ~name:module_signature)
-              | Lowered.Signature_type { manifest = Some _; _ }
-              | Lowered.Signature_value _
-              | Lowered.Signature_module _ ->
-                  [])
-            items
+let expanded_signature signature_id registry =
+  let rec expand visiting signature_id =
+    match find_signature_named ~owner:(Signature_id.owner signature_id)
+            (Signature_id.name signature_id) registry with
+    | None -> Ok []
+    | Some (resolved_id, items) ->
+        if Signature_set.mem resolved_id visiting then
+          Error.error ("cyclic module signature include " ^ Signature_id.to_string resolved_id)
+        else
+          let visiting = Signature_set.add resolved_id visiting in
+          let rec collect acc = function
+            | [] -> Ok (Signature_types.resolve_manifests (List.rev acc))
+            | Lowered.Signature_include {module_signature; type_constraints; _} :: rest ->
+                let included = Signature_id.create ~owner:(Signature_id.owner resolved_id)
+                    ~name:module_signature in
+                Result.bind (expand visiting included) (fun items ->
+                  Result.bind (Signature_types.apply ~resolve_module:(fun name -> expand visiting (Signature_id.create ~owner:(Signature_id.owner resolved_id) ~name)) type_constraints items) (fun items ->
+                    collect (List.rev_append items acc) rest))
+            | item :: rest -> collect (item :: acc) rest
+          in
+          collect [] items
   in
-  collect Signature_set.empty signature_id
+  expand Signature_set.empty signature_id
+
+let abstract_signature_types signature_id registry =
+  match expanded_signature signature_id registry with
+  | Error _ -> []
+  | Ok items -> List.filter_map (function
+      | Lowered.Signature_type {type_name; manifest = None; _} -> Some type_name
+      | _ -> None) items
 
 let store_functor_result functor_id bindings registry =
   {
@@ -294,3 +302,9 @@ let resolve_alias ~scope module_path registry =
           resolve (Module_set.add module_id visited) target
   in
   Option.bind initial (resolve Module_set.empty)
+
+let store_functor_parameters functor_id parameters registry =
+  {registry with functor_parameters = Functor_map.add functor_id parameters registry.functor_parameters}
+
+let find_functor_parameters functor_id registry =
+  Functor_map.find_opt functor_id registry.functor_parameters

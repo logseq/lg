@@ -38,7 +38,9 @@ let applied_function_return_type env expression =
       | _ -> None)
   | _ -> None
 let prepare_fn = Expression_elaborator.prepare_fn
-let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
+let prepare_inferred_recursive_fn = Expression_elaborator.prepare_inferred_recursive_fn
+let prepare_inferred_recursive_fn_with_return =
+  Expression_elaborator.prepare_inferred_recursive_fn_with_return
 let fn_code = Expression_elaborator.fn_code
 let binding_of_expr = Expression_support.binding_of_expr
 let allocate_anonymous_record = Expression_support.allocate_anonymous_record
@@ -91,7 +93,9 @@ let compile_module_alias ?semantic_target ?location ?target_location scope env
   | Ok modules ->
       Ok
         ( scope,
-          env |> Env.with_modules modules |> Env.add_bindings alias_bindings,
+          env |> Env.with_modules modules |> Env.add_bindings alias_bindings
+          |> Env.remap_private_exports ~from_module:(Names.module_path_to_ocaml target_path)
+               ~to_module:(Names.module_path_to_ocaml alias_name),
           next_type,
           Module_alias
             {
@@ -131,8 +135,9 @@ let variant_public_bindings module_path previous updated =
 
 let compile_module_apply ?location ?functor_location scope env next_type module_name
     functor_name arguments =
+  let argument_names = List.map (fun (argument : Lowered.module_reference) -> argument.module_name) arguments in
   let applied_bindings =
-    Module_metadata.apply_functor_result_bindings env module_name functor_name
+    Module_metadata.apply_functor_result_bindings env module_name functor_name argument_names
   in
   let module_id =
     Module_id.create ~owner:(if scope = "" then [] else [ scope ])
@@ -153,7 +158,7 @@ let compile_module_apply ?location ?functor_location scope env next_type module_
            with
           | Error _ as err -> err
           | Ok modules -> (
-              match Module_metadata.apply_functor_types env module_name functor_name with
+              match Module_metadata.apply_functor_types env module_name functor_name argument_names with
               | Error _ as err -> err
               | Ok types ->
               let protocols =
@@ -162,7 +167,9 @@ let compile_module_apply ?location ?functor_location scope env next_type module_
               Ok
                 ( scope,
                   env |> Env.with_modules modules |> Env.with_protocols protocols
-                  |> Env.with_types types |> Env.add_bindings applied_bindings,
+                  |> Env.with_types types |> Env.add_bindings applied_bindings
+                  |> Env.remap_private_exports ~from_module:(Names.module_path_to_ocaml functor_name)
+                       ~to_module:(Names.module_path_to_ocaml module_name),
                   next_type,
                   Module_apply
                     {
@@ -616,8 +623,9 @@ let rec compile_module ?location ?signature_name ?signature_location
         | Ok return_ty ->
             let local_name = Names.sanitize_name name in
             (match
-               prepare_recursive_fn ~ocaml_name:local_name module_path env name
-                 return_ty params body_forms
+               prepare_inferred_recursive_fn_with_return ~ocaml_name:local_name module_path env name
+                 (Function_elaborator.infer_named_record module_path env return_ty)
+                 params body_forms
              with
             | Error _ as err -> err
             | Ok parts ->
@@ -669,7 +677,19 @@ let rec compile_module ?location ?signature_name ?signature_location
     | FList
         (FSymbol (("defn" | "defn-") as definition) :: FSymbol name :: params
         :: body_forms) -> (
-        match prepare_fn module_path env params body_forms with
+        let local_name = Names.sanitize_name name in
+        let recursive =
+          body_forms |> List.concat_map Dependency_graph.symbols
+          |> List.exists (fun symbol -> symbol = name
+               || symbol = Names.scoped_key module_path name)
+        in
+        let prepared =
+          if recursive then
+            prepare_inferred_recursive_fn ~ocaml_name:local_name module_path env
+              name params body_forms
+          else prepare_fn module_path env params body_forms
+        in
+        match prepared with
         | Error _ as err -> err
         | Ok parts -> (
             let local_name = Names.sanitize_name name in
@@ -704,8 +724,13 @@ let rec compile_module ?location ?signature_name ?signature_location
                 in
                 let type_items = row_type_items local_row_types param_tys in
                 let value_item =
-                  Value_binding
-                    { pattern = Named local_name; expression = expr.semantic_expr }
+                  if recursive then
+                    Recursive_value_binding
+                      { name = local_name; identity = None; type_annotation = None;
+                        expression = expr.semantic_expr }
+                  else
+                    Value_binding
+                      { pattern = Named local_name; expression = expr.semantic_expr }
                 in
                 Ok
                   ( Env.add key local_binding env,
@@ -822,6 +847,12 @@ let rec compile_module ?location ?signature_name ?signature_location
         match compile_module_form env public_bindings next_type items form with
         | Error _ as err -> err
         | Ok (env, public_bindings, next_type, items) ->
+            let env = match form, items with
+              | FList (FSymbol "defn-" :: _), item :: _ ->
+                  Interface_visibility.mark_private
+                    ~module_path:(Names.module_path_to_ocaml module_path) env item
+              | _ -> env
+            in
             loop env public_bindings next_type items rest)
   in
   loop env [] next_type [] forms
@@ -892,6 +923,7 @@ let compile_module_functor ?location scope env next_type functor_name parameter_
                       let modules =
                         Module_registry.store_functor_result functor_id
                           public_bindings modules
+                        |> Module_registry.store_functor_parameters functor_id (List.map (fun parameter -> parameter.parameter_name) parameters)
                       in
                       let modules =
                         Module_registry.store_functor_protocols functor_id
@@ -911,7 +943,8 @@ let compile_module_functor ?location scope env next_type functor_name parameter_
                       in
                       Ok
                         ( scope,
-                          Env.with_modules modules env,
+                          Env.with_modules modules env
+                          |> Env.inherit_private_exports module_env,
                           next_type,
                           Module_functor
                             {

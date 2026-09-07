@@ -1,7 +1,4 @@
-type metavariable = {
-  id : int;
-  location : Location.t option;
-}
+type metavariable = { id : int; location : Location.t option }
 
 type ty =
   | TInt
@@ -31,9 +28,12 @@ type ty =
   | TSeq of ty
   | TFn of ty list * ty
   | TOverloaded_fn of fn_arity list
+  | TPoly_variant of variant_row
   | TRecord of field list
   | TNamed_record of named_record
 
+and row_bound = Exact_row | Lower_row | Upper_row | Bounded_row of string list
+and variant_row = { tags : (string * ty option) list; bound : row_bound }
 and seqable_requirement = Required | Optional | Optional_sequential
 
 and constraint_ =
@@ -63,6 +63,7 @@ and field = {
   keyword : string;
   ocaml_name : string;
   ty : ty;
+  quantified : string list;
   mutable_ : bool;
   runtime_map : bool;
   location : Location.t option;
@@ -87,15 +88,9 @@ and fn_arity = {
 
 type scheme_variable =
   | Declared_variable of string
-  | Inferred_variable of {
-      metavariable_id : int;
-      name : string;
-    }
+  | Inferred_variable of { metavariable_id : int; name : string }
 
-type scheme = {
-  quantified : scheme_variable list;
-  body : ty;
-}
+type scheme = { quantified : scheme_variable list; body : ty }
 
 let constraint_children = function
   | Seqable_constraint { element; storage; _ } -> [ element; storage ]
@@ -133,7 +128,8 @@ let map_constraint map constraint_ =
       map_two
         (fun key storage -> Contains_constraint { key; storage })
         key storage
-  | Truthy_constraint value -> map_one (fun value -> Truthy_constraint value) value
+  | Truthy_constraint value ->
+      map_one (fun value -> Truthy_constraint value) value
   | Nil_predicate_constraint value ->
       map_one (fun value -> Nil_predicate_constraint value) value
   | Printable_constraint value ->
@@ -155,3 +151,50 @@ let map_constraint map constraint_ =
         (fun witness value ->
           Protocol_constraint { protocol with witness; value })
         witness value
+
+let map_children map = function
+  | TPoly_variant row ->
+      TPoly_variant
+        {
+          row with
+          tags =
+            List.map
+              (fun (tag, payload) -> (tag, Option.map map payload))
+              row.tags;
+        }
+  | TNullable ty -> TNullable (map ty)
+  | TOcaml_app (name, arguments) -> TOcaml_app (name, List.map map arguments)
+  | TConstraint constraint_ -> TConstraint (map_constraint map constraint_)
+  | TTuple types -> TTuple (List.map map types)
+  | TArray ty -> TArray (map ty)
+  | TRef ty -> TRef (map ty)
+  | TList ty -> TList (map ty)
+  | TVector ty -> TVector (map ty)
+  | TSet ty -> TSet (map ty)
+  | TSeq ty -> TSeq (map ty)
+  | TFn (parameters, result) -> TFn (List.map map parameters, map result)
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             {
+               fixed_params = List.map map arity.fixed_params;
+               rest_param = Option.map map arity.rest_param;
+               return_ty = map arity.return_ty;
+             })
+           arities)
+  | TRecord fields ->
+      TRecord (List.map (fun field -> { field with ty = map field.ty }) fields)
+  | TNamed_record record ->
+      TNamed_record
+        {
+          record with
+          type_arguments = List.map map record.type_arguments;
+          fields =
+            List.map
+              (fun field -> { field with ty = map field.ty })
+              record.fields;
+        }
+  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+    | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ) as ty ->
+      ty

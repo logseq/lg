@@ -30,7 +30,36 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
         && Env.variant_constructors expected_inner env <> []
     | _ -> false
   in
+  let same_closed_sum_head =
+    match (Env.closed_sum_head expected, Env.closed_sum_head argument.ty) with
+    | Some expected_name, Some actual_name ->
+        String.equal expected_name actual_name
+        && Env.is_closed_sum expected env
+        && Env.is_closed_sum argument.ty env
+    | Some _, None | None, Some _ | None, None -> false
+  in
   if identical_closed_sum_option then Some (Ok argument)
+  else if same_closed_sum_head then
+    let argument_compatible expected actual =
+      Types.equal expected actual
+      ||
+      match (expected, actual) with
+      | TVar _, _ | _, TVar _ | TUnknown, _ | _, TUnknown | TMeta _, _
+      | _, TMeta _ ->
+          true
+      | _ -> Types.assignable ~policy:Nominal ~expected ~actual
+    in
+    match (expected, argument.ty) with
+    | TOcaml_app (_, expected_args), TOcaml_app (_, actual_args)
+      when List.length expected_args = List.length actual_args
+           && List.for_all2 argument_compatible expected_args actual_args ->
+        Some (Ok { argument with ty = expected })
+    | TOcaml _, TOcaml _ -> Some (Ok { argument with ty = expected })
+    | _ ->
+        Some
+          (Error.error
+             ("cannot inject " ^ Types.source_name argument.ty
+            ^ " into closed sum " ^ Types.source_name expected))
   else if
     not (Types.equal argument.ty (Types.constraint_value_type argument.ty))
     && Types.equal expected (Types.constraint_value_type argument.ty)
@@ -592,6 +621,7 @@ let rec implicit_edn_branch_value ty =
 
 let rec merge_branch_types left right =
   match (left, right) with
+  | TPoly_variant left, TPoly_variant right -> Option.map (fun row -> TPoly_variant row) (Variant_row.merge merge_branch_types left right)
   | TNamed_record left_record, TNamed_record right_record
     when Type_id.equal left_record.type_id right_record.type_id
          && left_record.type_arguments <> right_record.type_arguments -> (
@@ -739,13 +769,13 @@ let rec merge_branch_types left right =
     | ty, (TOcaml "Lg_edn_backend.t" as edn)
       when implicit_edn_branch_value ty ->
         Some edn
+    | TUnknown, ty | ty, TUnknown -> Some ty
     | TVar _, TVar _ -> Some left
     | TVar _, ty | ty, TVar _ -> Some ty
     | TMeta _, _ | _, TMeta _ -> (
         match Type_solver.unify Type_solver.empty left right with
         | Ok substitutions -> Some (Type_solver.apply substitutions left)
         | Error _ -> None)
-    | TUnknown, ty | ty, TUnknown -> Some ty
     | _ when Types.defer_to_ocaml ~expected:left ~actual:right -> Some left
     | _ -> None
 
@@ -1304,6 +1334,7 @@ let anonymous_record_type_parameters fields =
     if not (List.mem name !parameters) then parameters := !parameters @ [ name ]
   in
   let rec visit = function
+    | TPoly_variant row -> List.iter visit (List.filter_map snd row.tags)
     | TUnknown | TMeta _ | TNil -> add "a"
     | TVar name -> add name
     | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
@@ -1371,6 +1402,16 @@ type nested_record_allocation = {
 
 let allocate_nested_anonymous_records ~owner env next_type fields =
   let rec allocate_type env next_type items = function
+    | TPoly_variant row ->
+        let tags, env, next_type, items = List.fold_left
+          (fun (tags, env, next_type, items) (tag, payload) ->
+            match payload with
+            | None -> ((tag, None) :: tags, env, next_type, items)
+            | Some ty ->
+                let ty, env, next_type, items = allocate_type env next_type items ty in
+                ((tag, Some ty) :: tags, env, next_type, items))
+          ([], env, next_type, items) row.tags in
+        (TPoly_variant {row with tags = List.rev tags}, env, next_type, items)
     | TRecord fields when Types.is_homogeneous_record fields ->
         let allocated = allocate_fields env next_type items fields in
         ( TRecord allocated.nested_fields,
@@ -1619,8 +1660,14 @@ let lookup_function scope env name =
       match untyped_first_class_function_error name with
       | Some message -> Error.error message
       | None -> (
-      match name with
-      | _ -> Error.error ("unknown function " ^ name)))
+          match Resolver.ocaml_call_target scope env name with
+          | Some target -> (
+              match Ocaml_signature.value_signature target with
+              | Ok { parameters = []; return_type; _ }
+                when not (Types.equal return_type TUnknown) ->
+                  Ok (typed_ir return_type (Semantic_ir.Ident target))
+              | Ok _ | Error _ -> Error.error ("unknown function " ^ name))
+          | None -> Error.error ("unknown function " ^ name)))
 
 let record_constructor_type scope env name =
   if String.ends_with ~suffix:"." name then
@@ -1843,7 +1890,11 @@ let lookup_function_ty scope env name =
               Ok
                 (TFn
                    (parameters, clj_function_type signature.return_type))
-          | Error _ -> Error original_error)
+          | Error _ -> (
+              match Ocaml_signature.constructor_signature target with
+              | Ok signature ->
+                  Ok (TFn (signature.payload_types, signature.result_type))
+              | Error _ -> Error original_error))
       | None ->
       match record_constructor_type scope env name with
       | Some ty -> Ok ty
@@ -1940,6 +1991,7 @@ let parameterize_row_fields fields =
         parameter
   in
   let rec parameterize = function
+    | TPoly_variant _ as ty -> Semantic_type.map_children parameterize ty
     | TUnknown | TMeta _ -> TVar (fresh_parameter ())
     | TVar name -> TVar (named_parameter name)
     | TNullable ty -> TNullable (parameterize ty)
@@ -2273,6 +2325,7 @@ let constrain_record_function_argument_expr fn element_ty =
   | _ -> fn.semantic_expr
 
 let rec concrete_constraint_type = function
+  | TPoly_variant row -> List.for_all concrete_constraint_type (List.filter_map snd row.tags)
   | ty when Types.is_dynamic ty -> true
   | TUnknown | TMeta _ | TVar _ | TOverloaded_fn _ -> false
   | TRecord fields -> (

@@ -1,0 +1,14 @@
+(copy_files ../access_semantics.ml)
+
+(melange.emit
+ (target output)
+ (alias emit-access-semantics)
+ (module_systems es6)
+ (emit_stdlib true)
+ (modules access_semantics)
+ (libraries rrbvec))
+
+(rule
+ (alias runtest)
+ (deps (alias emit-access-semantics) output/vendor/rrbvec/test/melange/access_semantics.js)
+ (action (run node %{dep:output/vendor/rrbvec/test/melange/access_semantics.js})))

@@ -152,6 +152,21 @@ let rec parse_ocaml_type source =
             (String.length source - open_index - 2)
         in
         if name = "" then Error.error "missing OCaml type constructor"
+        else if List.mem name ["variant"; "variant-open"; "variant-upper"] then
+          let bound = match name with "variant" -> Exact_row | "variant-open" -> Lower_row | _ -> Upper_row in
+          let rec parse_tags tags = function
+            | [] -> Ok (TPoly_variant {tags = List.sort compare tags; bound})
+            | source :: rest ->
+                let tag, payload = match String.index_opt source ':' with
+                  | None -> (source, Ok None)
+                  | Some index ->
+                      (String.sub source 0 index,
+                       Result.map Option.some (parse_ocaml_type (String.sub source (index + 1) (String.length source - index - 1)))) in
+                if not (Variant_row.valid_tag tag) then
+                  Error.error "invalid polymorphic variant tag"
+                else if List.mem_assoc tag tags then Error.error "duplicate polymorphic variant tag"
+                else Result.bind payload (fun payload -> parse_tags ((tag, payload) :: tags) rest) in
+          parse_tags [] (split_top_level_type_args inner)
         else
           let arg_sources = split_top_level_type_args inner in
           if List.exists (( = ) "") arg_sources then
@@ -170,7 +185,11 @@ let rec parse_ocaml_type source =
                 match validate_ocaml_type_application name args with
                 | Error _ as err -> err
                 | Ok () ->
-                    if name = "option" then
+                    if name = "module" then
+                      match arg_sources with
+                      | [ signature ] -> Ok (Types.module_package_type (Names.module_path_to_ocaml signature))
+                      | _ -> Error.error "module expects one module signature"
+                    else if name = "option" then
                       match args with
                       | [ inner ] -> Ok (TNullable inner)
                       | _ -> assert false
@@ -391,6 +410,13 @@ let of_keyword = function
   | keyword -> Error.error ("unknown vector element type " ^ keyword)
 
 let rec resolve_type_parameters parameters = function
+  | TPoly_variant row ->
+      let rec resolve acc = function
+        | [] -> Ok (TPoly_variant {row with tags = List.rev acc})
+        | (tag, None) :: rest -> resolve ((tag, None) :: acc) rest
+        | (tag, Some ty) :: rest -> Result.bind (resolve_type_parameters parameters ty)
+            (fun ty -> resolve ((tag, Some ty) :: acc) rest) in
+      resolve [] row.tags
   | TOcaml name when List.mem name parameters ->
       Ok (TVar (Names.sanitize_name name))
   | TOcaml name

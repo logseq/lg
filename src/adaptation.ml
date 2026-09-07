@@ -320,6 +320,9 @@ let rec sequence_element_compatible ~sequence_satisfies expected actual =
       (Seqable_constraint { requirement; element = expected_element; _ }) ->
       sequence_source_compatible ~sequence_satisfies requirement
         expected_element actual
+  | TConstraint (Protocol_constraint { value; _ })
+    when Option.is_none (Types.capability_constraint_value actual) ->
+      sequence_element_compatible ~sequence_satisfies value actual
   | _ ->
       Type_solver.is_open expected
       || Type_solver.is_open actual

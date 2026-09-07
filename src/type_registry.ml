@@ -49,7 +49,7 @@ let hide_manifest ~scope source_name registry =
 
 let bindings registry = Emitted_map.bindings registry
 
-let export_scope ~from_scope ~to_scope source target =
+let export_scope ?(map_manifest = Fun.id) ~from_scope ~to_scope source target =
   let remap_scope owner =
     match owner with
     | [ path ] when path = from_scope -> Some to_scope
@@ -67,7 +67,9 @@ let export_scope ~from_scope ~to_scope source target =
       | Ok registry, None -> Ok registry
       | Ok registry, Some scope ->
           declare ~type_parameters:declaration.type_parameters
-            ?manifest:declaration.manifest ~scope
+            ?manifest:(Option.map (fun ty ->
+              Types.remap_module_type ~from_path:(Names.module_path_to_ocaml from_scope)
+                ~to_path:(Names.module_path_to_ocaml to_scope) ty |> map_manifest) declaration.manifest) ~scope
             (Type_id.name declaration.type_id)
             declaration.kind registry
           |> Result.map snd)

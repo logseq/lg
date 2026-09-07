@@ -267,6 +267,22 @@ and compile_expr_unlocated scope (env : Env.t) = function
             | expanded_bindings :: expanded_body_forms ->
                 compile_let scope env expanded_bindings expanded_body_forms
             | [] -> assert false)
+  | FList (FSymbol "tag" :: FSymbol name :: payload) ->
+      if not (Variant_row.valid_tag name) then Error.error "invalid polymorphic variant tag"
+      else
+        (match payload with
+         | [] -> Ok (typed_ir (TPoly_variant {tags = [name, None]; bound = Lower_row}) (Semantic_ir.PolyTag (name, None)))
+         | [payload] -> Result.map (fun (payload : typed_expr) ->
+             typed_ir (TPoly_variant {tags = [name, Some payload.ty]; bound = Lower_row})
+               (Semantic_ir.PolyTag (name, Some payload.semantic_expr)))
+             (compile_expr scope (Env.with_expected_type None env) payload)
+         | _ -> Error.error "tag expects a name and at most one payload")
+  | FList [FSymbol "pack-module"; FSymbol name; FSymbol signature] ->
+      Module_value_elaborator.pack name signature
+  | FList (FSymbol "pack-module" :: _) ->
+      Error.error "pack-module expects a module and a module signature"
+  | FList (FSymbol "let-module" :: binding :: body_forms) ->
+      Module_value_elaborator.unpack ~compile_expr ~compile_body scope env binding body_forms
   | FList (FSymbol "letfn" :: bindings :: body_forms) ->
       compile_letfn scope env bindings body_forms
   | FList [ FSymbol "__lg_if-let"; binding; then_form; else_form ] ->
@@ -829,28 +845,11 @@ and compile_let scope env bindings body_forms =
   (Lazy.force context).special_forms.compile_let scope env bindings body_forms
 
 and compile_letfn scope env bindings body_forms =
-  match (bindings, body_forms) with
-  | ( FVector [ FList (FSymbol name :: (FVector _ as params) :: function_body) ],
-      _ :: _ ) ->
-      compile_expr scope env
-        (FList
-           ( FSymbol "let"
-           :: FVector
-                [
-                  FSymbol name;
-                  FList (FSymbol "fn" :: FSymbol name :: params :: function_body);
-                ]
-           :: body_forms ))
-  | FVector [], _ ->
-      Error.error "letfn requires at least one local function binding"
-  | FVector (_ :: _ :: _), _ ->
-      Error.error
-        "letfn currently supports exactly one local recursive function"
-  | FVector [ _ ], _ ->
-      Error.error
-        "letfn binding must be a list of name, parameter vector, and body"
-  | _, [] -> Error.error "letfn requires a body"
-  | _ -> Error.error "letfn expects a vector of local function bindings"
+  Local_function_elaborator.compile ~compile_named_fn ~compile_body
+    ~prepare_recursive:(fun ~ocaml_name scope env name params body ->
+      Result.map (fun parts -> fn_code parts)
+        (prepare_inferred_recursive_fn_body ~ocaml_name scope env name params body))
+    scope env bindings body_forms
 
 and prepare_fn ?(param_type_overrides = []) ?(additional_inference_params = [])
     ?refine_inferred_env ?preferred_record ?(infer_parameters_only = false)
@@ -1799,7 +1798,7 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
                 ("recursive defn " ^ source_name ^ " must return "
                 ^ Types.source_name return_ty))
 
-and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
+and prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
     source_name params body_forms =
   match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
   | Error _ as error -> error
@@ -2196,6 +2195,28 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
             prepare_recursive_parts self_param_tys overrides
           else
             prepare_recursive_parts inferred_param_tys param_type_overrides))
+
+and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
+    source_name params body_forms =
+  Result.bind
+    (prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
+       source_name params body_forms)
+    (fun parts ->
+      let expression = fn_code parts in
+      Result.bind
+        (Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms)
+        (fun body ->
+          Result.map
+            (fun substitutions ->
+              { parts with
+                param_bindings = List.map
+                  (fun (key, (binding : binding)) ->
+                    key, { binding with ty = Type_solver.apply substitutions binding.ty })
+                  parts.param_bindings;
+                body = { parts.body with
+                  ty = Type_solver.apply substitutions parts.body.ty } })
+            (Local_function_elaborator.refine_function scope env ~name:source_name
+               ~target:ocaml_name ~params ~body expression)))
 
 and prepare_inferred_recursive_fn_with_return ~ocaml_name scope env source_name
     return_ty params body_forms =

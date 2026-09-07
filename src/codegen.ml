@@ -111,6 +111,16 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
     | _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
   in
   match expr.ty with
+  | TPoly_variant row ->
+      let cases = List.map (fun (tag, payload) ->
+        match payload with
+        | None -> (Semantic_ir.PPolyTag (tag, None), Semantic_ir.String ("(tag " ^ tag ^ ")"))
+        | Some ty ->
+            let value = typed_ir ty (Semantic_ir.Ident "__lg_tag_payload") in
+            (Semantic_ir.PPolyTag (tag, Some (Semantic_ir.PVar "__lg_tag_payload")),
+             wrap_expr ("(tag " ^ tag ^ " ") (stringify_expr_ir ~pr ?print_length ?print_level value) ")")) row.tags in
+      let cases = if row.bound = Lower_row then cases @ [Semantic_ir.PAny, Semantic_ir.String "<variant>"] else cases in
+      Semantic_ir.Match (expr.semantic_expr, cases)
   | TInt | TOcaml "int" -> apply "string_of_int" [ expr.semantic_expr ]
   | TFloat ->
       apply

@@ -7,6 +7,7 @@ type pattern =
   | PInt64 of int64
   | PString of string
   | PBool of bool
+  | PPolyTag of string * pattern option
   | PConstructor of string * pattern option
   | PTuple of pattern list
   | PList of pattern list
@@ -18,6 +19,7 @@ type pattern =
   | PTyped of pattern * Semantic_type.ty
 
 type t =
+  | GadtScope of t
   | Typed of Semantic_type.ty * t
   | Located of Source_node_id.t * Location.t * t
   | Int of int
@@ -27,6 +29,7 @@ type t =
   | Char of char
   | Bool of bool
   | Unit
+  | PolyTag of string * t option
   | Constructor of string * t option
   | Tuple of t list
   | Ident of string
@@ -42,6 +45,9 @@ type t =
   | EvaluateOnce of string * t * t
   | LetRec of string * pattern list * t * t list
   | LetRecIn of string * pattern list * t * t
+  | LetRecGroup of (pattern * t) list * t
+  | PackModule of string * string
+  | UnpackModule of string * string * t * t
   | Match of t * (pattern * t) list
   | Match_guarded of t * (pattern * t option * t) list
   | Try of t * (pattern * t option * t) list
@@ -151,6 +157,7 @@ let rec evaluate_for_effect expression =
 
 let rec never_returns = function
   | Typed (_, expression)
+  | GadtScope expression
   | Located (_, _, expression)
   | Constraint (expression, _)
   | SharedValue (_, expression)
@@ -174,7 +181,8 @@ let rec never_returns = function
       || never_returns body
   | EvaluateOnce (_, value, body) ->
       never_returns value || never_returns body
-  | LetRecIn (_, _, _, body) -> never_returns body
+  | LetRecIn (_, _, _, body) | LetRecGroup (_, body) -> never_returns body
+  | UnpackModule (_, _, value, body) -> never_returns value || never_returns body
   | _ -> false
 
 let annotate ty = function
@@ -183,18 +191,21 @@ let annotate ty = function
 
 let rec type_annotations expression =
   let children = function
-    | Typed (_, value) | Located (_, _, value) | SharedValue (_, value) ->
+    | GadtScope value | Typed (_, value) | Located (_, _, value) | SharedValue (_, value) ->
         [ value ]
-    | Constructor (_, value) -> Option.to_list value
+    | PolyTag (_, value) | Constructor (_, value) -> Option.to_list value
     | Tuple values | List values | Array values | Sequence values -> values
     | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
     | Labelled_apply (fn, args) -> fn :: List.map snd args
     | If (condition, then_expr, else_expr) -> [ condition; then_expr; else_expr ]
     | Fun (_, body) -> [ body ]
-    | Let (bindings, body) -> List.map snd bindings @ [ body ]
+    | Let (bindings, body) | LetRecGroup (bindings, body) ->
+        List.map snd bindings @ [ body ]
     | EvaluateOnce (_, value, body) -> [ value; body; value ]
     | LetRec (_, _, body, args) -> body :: args
     | LetRecIn (_, _, body, next) -> [ body; next ]
+    | UnpackModule (_, _, value, body) -> [value; body]
+    | PackModule _ -> []
     | Match (target, cases) -> target :: List.map snd cases
     | Match_guarded (target, cases) ->
         target
@@ -237,8 +248,10 @@ let rec rewrite fn expression =
   let expression =
     match expression with
     | Typed (ty, value) -> Typed (ty, rewrite fn value)
+    | GadtScope value -> GadtScope (rewrite fn value)
     | Located (node_id, location, value) ->
         Located (node_id, location, rewrite fn value)
+    | PolyTag (name, value) -> PolyTag (name, Option.map (rewrite fn) value)
     | Constructor (name, value) ->
         Constructor (name, Option.map (rewrite fn) value)
     | Tuple values -> Tuple (List.map (rewrite fn) values)
@@ -275,6 +288,13 @@ let rec rewrite fn expression =
             List.map (rewrite fn) arguments )
     | LetRecIn (name, patterns, body, next) ->
         LetRecIn (name, patterns, rewrite fn body, rewrite fn next)
+    | LetRecGroup (bindings, body) ->
+        LetRecGroup
+          (List.map (fun (pattern, value) -> (pattern, rewrite fn value)) bindings,
+           rewrite fn body)
+    | PackModule _ as expression -> expression
+    | UnpackModule (name, signature, value, body) ->
+        UnpackModule (name, signature, rewrite fn value, rewrite fn body)
     | Match (target, cases) ->
         Match (rewrite fn target, List.map rewrite_pattern_case cases)
     | Match_guarded (target, cases) ->
@@ -317,19 +337,22 @@ let rec rewrite fn expression =
 let rec exists_identifier predicate expression =
   let children =
     match expression with
-    | Typed (_, value) | Located (_, _, value) | SharedValue (_, value) ->
+    | GadtScope value | Typed (_, value) | Located (_, _, value) | SharedValue (_, value) ->
         [ value ]
-    | Constructor (_, value) -> Option.to_list value
+    | PolyTag (_, value) | Constructor (_, value) -> Option.to_list value
     | Tuple values | List values | Array values | Sequence values -> values
     | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
     | Labelled_apply (fn, args) -> fn :: List.map snd args
     | If (condition, then_expr, else_expr) ->
         [ condition; then_expr; else_expr ]
     | Fun (_, body) -> [ body ]
-    | Let (bindings, body) -> List.map snd bindings @ [ body ]
+    | Let (bindings, body) | LetRecGroup (bindings, body) ->
+        List.map snd bindings @ [ body ]
     | EvaluateOnce (_, value, body) -> [ value; body; value ]
     | LetRec (_, _, body, args) -> body :: args
     | LetRecIn (_, _, body, next) -> [ body; next ]
+    | UnpackModule (_, _, value, body) -> [value; body]
+    | PackModule _ -> []
     | Match (target, cases) -> target :: List.map snd cases
     | Match_guarded (target, cases) ->
         target

@@ -48,6 +48,10 @@ let deduplicate_protocol_constraints ty =
 
 let rec refine_type existing inferred =
   match (existing, inferred) with
+  | TPoly_variant left, TPoly_variant right ->
+      (match Variant_row.merge (fun left right -> Some (refine_type left right)) left right with
+       | Some row -> TPoly_variant {row with bound = left.bound}
+       | None -> existing)
   | TUnknown, inferred -> inferred
   | existing, TUnknown -> existing
   | existing, inferred
@@ -456,6 +460,8 @@ let refine_returned_seqable_vector params branch other_ty =
   match (branch, other_ty) with
   | FSymbol name, TVector other_element -> (
       match string_assoc_opt name params with
+      | Some (TVector element) ->
+          replace_param name (TVector (refine_type element other_element)) params
       | Some current -> (
           match Types.seqable_constraint_info current with
           | Some (`Required, current_element, (TUnknown | TMeta _ | TVar _)) ->

@@ -2782,9 +2782,31 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             | _ -> Error.error "unsupported match pattern"
           else Error.error "match pattern type must match target"
     in
+    let pattern_refinement = ref Type_solver.empty in
+    let pattern_refines_type = ref false in
+    let constructor_type target_ty (constructor : binding) =
+      if not constructor.gadt_constructor then Ok constructor.ty else
+      let ty = Type_solver.instantiate (Type_solver.generalize constructor.ty) in
+      match ty with
+      | TFn (_, result) ->
+          (match Type_solver.unify !pattern_refinement target_ty result with
+           | Error _ -> Error.error "GADT constructor index does not match the pattern target type"
+           | Ok substitutions ->
+               pattern_refinement := substitutions;
+               pattern_refines_type := true;
+               Ok (Type_solver.apply substitutions ty))
+      | _ -> Error.error "invalid GADT constructor type"
+    in
     let rec compile_pattern target_ty pattern =
       let result =
         match (target_ty, pattern) with
+      | TPoly_variant row, FList (FSymbol "tag" :: FSymbol tag :: payload) ->
+          (match List.assoc_opt tag row.tags, payload with
+           | Some None, [] -> Ok (Semantic_ir.PPolyTag (tag, None), [])
+           | Some (Some ty), [pattern] -> Result.map (fun (pattern, bindings) ->
+               (Semantic_ir.PPolyTag (tag, Some pattern), bindings)) (compile_pattern ty pattern)
+           | None, _ -> Error.error ("polymorphic variant type does not contain tag " ^ tag)
+           | _ -> Error.error "polymorphic variant pattern payload type mismatch")
       | _, FSymbol "_" -> Ok (Semantic_ir.PAny, [])
         | ( target_ty,
             FList [ FSymbol "as"; inner_pattern; (FSymbol alias as alias_form) ]
@@ -2868,10 +2890,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | target_ty, FSymbol name
         when is_ocaml_constructor_pattern_target target_ty name
              && is_constructor_name name ->
-          Ok
+          let check = match lookup_binding scope env name with
+            | Ok constructor when constructor.gadt_constructor ->
+                Result.map (fun _ -> ()) (constructor_type target_ty constructor)
+            | _ -> Ok () in
+          Result.map (fun () ->
             ( Semantic_ir.PConstructor
                 (resolve_ocaml_constructor_target scope env name, None),
-              [] )
+              [] )) check
       | target_ty, FList (FSymbol name :: payload_patterns)
         when is_ocaml_constructor_pattern_target target_ty name
              && is_constructor_name name -> (
@@ -2937,13 +2963,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         (resolve_ocaml_constructor_target scope env name)
                         opaque_payload_tys)
               | Ok constructor -> (
-                  match constructor.ty with
+                  Result.bind (constructor_type target_ty constructor) (fun constructor_ty ->
+                  match constructor_ty with
                   | TFn (payload_tys, return_ty)
                       when List.length payload_tys
                            = List.length payload_patterns -> (
                       let instantiated =
                         Types.instantiate_type ~templates:[ return_ty ]
-                          ~actuals:[ target_ty ] constructor.ty
+                          ~actuals:[ target_ty ] constructor_ty
                       in
                         match instantiated with
                       | TFn (payload_tys, _) ->
@@ -2951,7 +2978,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             payload_tys
                       | _ -> Error.error (name ^ " is not a constructor"))
                   | TFn _ -> Error.error "constructor pattern arity mismatch"
-                  | _ -> Error.error (name ^ " is not a constructor"))))
+                  | _ -> Error.error (name ^ " is not a constructor")))))
       | _, FSymbol name ->
           let ocaml_name = Names.sanitize_name name in
           Ok
@@ -3008,10 +3035,22 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             (pattern_form, Some guard_form)
         | pattern_form -> (pattern_form, None)
       in
+      pattern_refinement := Type_solver.empty;
+      pattern_refines_type := false;
       match compile_pattern target_ty pattern_form with
       | Error _ as err -> err
       | Ok (pattern_code, bindings) -> (
+          let refinement = if !pattern_refines_type then Some !pattern_refinement else None in
+          let original_expected = Env.expected_type env in
+          let bindings = match refinement with
+            | None -> bindings
+            | Some substitutions -> List.map (fun (key, (binding : binding)) ->
+                (key, {binding with ty = Type_solver.apply substitutions binding.ty})) bindings in
           let clause_env = Env.add_bindings bindings env in
+          let clause_env = match refinement with
+            | None -> clause_env
+            | Some substitutions ->
+                Env.with_expected_type (Option.map (Type_solver.apply substitutions) original_expected) clause_env in
           let guard =
             match guard_form with
             | None -> Ok None
@@ -3025,7 +3064,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           match (guard, compile_expr scope clause_env result_form) with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
-          | Ok guard, Ok result -> Ok (pattern_code, guard, result))
+          | Ok guard, Ok result ->
+              (match refinement, original_expected, Env.expected_type clause_env with
+               | Some _, Some original, Some expected ->
+                   Result.map (fun semantic_expr ->
+                     (pattern_code, guard, {result with ty = original;
+                       semantic_expr = Semantic_ir.GadtScope semantic_expr}))
+                     (adapt_branch_expression clause_env expected result)
+               | _ -> Ok (pattern_code, guard, result)))
     in
     match (compile_expr scope env target_form, parse_pairs [] clauses) with
     | (Error _ as err), _ -> err
@@ -4116,6 +4162,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   | Some capability -> contains_protocol capability
                   | None -> (
                       match ty with
+                      | TPoly_variant row -> List.exists contains_protocol (List.filter_map snd row.tags)
                       | TNullable inner | TArray inner | TRef inner
                       | TList inner | TVector inner | TSet inner | TSeq inner
                       | TOcaml_app (_, [ inner ]) ->

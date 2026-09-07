@@ -21,3 +21,8 @@
     runtime_time_melange
     runtime_weak_melange)))
  (libraries rrbvec lg.edn-backend))
+
+(install
+ (section lib)
+ (package lg)
+ (files (runtime_time_stubs.c as runtime/runtime_time_stubs.c)))

@@ -7727,17 +7727,97 @@ let test_letfn_supports_single_local_recursive_function () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_letfn_reports_unsupported_mutual_recursion () =
-  compile_string_with_stdlib
+let test_letfn_supports_mutual_recursion () =
+  let source =
     {|
-(letfn [(even-local? [value]
-          (if (zero? value) true (odd-local? (dec value))))
-        (odd-local? [value]
-          (if (zero? value) false (even-local? (dec value))))]
-  (even-local? 4))
+(def offset 2)
+(def result
+  (letfn [(even-local? [value]
+            (if (zero? value) true (odd-local? (dec value))))
+          (odd-local? [value]
+            (if (zero? value) false (even-local? (dec value))))
+          (start [value] (even-local? (+ value offset)))]
+    (println (even-local? 12))
+    (println (odd-local? 11))
+    start))
+(println (result 4))
 |}
-  |> expect_error_contains
-       "letfn currently supports exactly one local recursive function"
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "letfn_supports_mutual_recursion" "true\ntrue\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_letfn_generalizes_dependency_groups () =
+  let source =
+    {|
+(letfn [(number [] (pass 42))
+        (text [] (pass "ok"))
+        (pass [value] value)]
+  (println (number))
+  (println (text)))
+(let [pass 7]
+  (letfn [(pass [value] value)
+          (use-pass [value] (pass value))]
+    (println (use-pass 7))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "letfn_generalizes_dependency_groups" "42\nok\n7\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_letfn_preserves_recursive_polymorphism_and_captures () =
+  let source =
+    {|
+(let [offset 40]
+  (letfn [(first-step [n value]
+            (if (zero? n) value (second-step (dec n) value)))
+          (second-step [n value] (third-step n value offset))
+          (third-step [n value ignored] (first-step n value))]
+    (println (first-step 3 42))
+    (println (first-step 3 "ok"))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "letfn_preserves_recursive_polymorphism_and_captures"
+    "42\nok\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_letfn_respects_lexical_shadowing () =
+  let source =
+    {|
+(letfn [(pass [use-pass] use-pass)
+        (use-pass [] (println (pass 42)) (pass "ok"))]
+  (println (use-pass)))
+(letfn [(inc [value] value)
+        (apply-local [value] (inc value))]
+  (println (apply-local "local")))
+(letfn [(a-b [] 1) (a_b [] 2)]
+  (println (+ (a-b) (a_b))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "letfn_respects_lexical_shadowing" "42\nok\nlocal\n3\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_letfn_rejects_invalid_groups () =
+  let reject source fragment =
+    List.iter
+      (fun target ->
+        (try compile_string_with_stdlib ~target source |> expect_error_contains fragment
+         with Failure message -> failwith (source ^ "\n" ^ message)))
+      [ Lg.Target.Native; Lg.Target.Melange ]
+  in
+  reject {|(letfn [(f [x] x) (f [y] y)] (f 1))|} "duplicate letfn binding f";
+  reject {|(letfn [(f [x] (g x)) (g [x] (f x x))] (f 1))|} "argument";
+  reject {|(letfn [(f [x] (g x)) (g [x] (inc x))] (f "bad"))|} "expects int";
+  reject {|(letfn [(f [x] (g x)) (g [x] x)] (f 1)) (def leak g)|}
+    "unknown symbol g";
+  reject {|(letfn [(f [x] (g x))
+                  (g [x] (if (zero? x) 0 (f "bad")))] (f 1))|}
+    "incompatible";
+  reject {|(letfn [(f [n x] (g n [x]))
+                  (g [n x] (if (zero? n) x (f (dec n) x)))] (f 1 1))|}
+    "recursive types"
 
 let test_if_rejects_static_and_dynamic_function_parameter_join () =
   Lg.Compiler.compile_string
@@ -13736,6 +13816,132 @@ let test_contextual_closed_sum_injection_rejects_missing_constructor () =
 |}
   |> expect_error_contains "cannot inject int into closed sum result"
 
+let parameterized_closed_sum_status_source body =
+  {|
+(ns user)
+(type-variant status [target]
+  (Applied :target)
+  (Rejected :string)
+  (Required :string))
+|} ^ body
+
+let test_declared_parameterized_closed_sum_returns_if_branches () =
+  let source =
+    parameterized_closed_sum_status_source
+      {|
+(signature user/choose [target]
+  :fn<bool;target;status<target>>)
+(defn choose [ok value]
+  (if ok (Applied value) (Rejected "no")))
+(println
+  (match (choose true "ok")
+    (Applied value) value
+    (Rejected message) message
+    (Required message) message))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "declared parameterized closed-sum if branches must stay static";
+  assert_ocaml_runs "declared_parameterized_closed_sum_returns_if_branches"
+    "ok\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_declared_parameterized_closed_sum_returns_nested_match () =
+  let source =
+    {|
+(ns user)
+(type-variant migration-result [model]
+  (MigrationApplied :model)
+  (MigrationRejected :string)
+  (MigrationRestartRequired :string))
+(type-variant soft-restart-status [target]
+  (SoftRestartApplied :target)
+  (SoftRestartRejected :string)
+  (SoftRestartRequired :string))
+(signature user/soft-restart! [model target]
+  :fn<migration-result<model>;fn<model;target>;fn<target;bool>;fn<target;bool>;fn<bool>;soft-restart-status<target>>)
+(defn soft-restart! [migration start activate discard retire-old]
+  (match migration
+    (MigrationRejected message) (SoftRestartRejected message)
+    (MigrationRestartRequired message) (SoftRestartRequired message)
+    (MigrationApplied model)
+    (let [candidate
+          (try
+            (Some (start model))
+            (catch (Invalid_argument _message) None))]
+      (match candidate
+        None (SoftRestartRejected "candidate start failed")
+        (Some target)
+        (let [activated
+              (try
+                (activate target)
+                (catch (Invalid_argument _message) false))]
+          (if-not activated
+            (do
+              (discard target)
+              (SoftRestartRejected "candidate activation failed"))
+            (if (retire-old)
+              (SoftRestartApplied target)
+              (SoftRestartRequired "old application retirement failed"))))))))
+(println
+  (match
+    (soft-restart!
+      (MigrationApplied 1)
+      (fn [model] (str model))
+      (fn [_] true)
+      (fn [_] true)
+      (fn [] true))
+    (SoftRestartApplied value) value
+    (SoftRestartRejected message) message
+    (SoftRestartRequired message) message))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "declared parameterized closed-sum nested match must stay static";
+  assert_ocaml_runs "declared_parameterized_closed_sum_returns_nested_match"
+    "1\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_parameterized_closed_sum_does_not_wrap_itself () =
+  let source =
+    parameterized_closed_sum_status_source
+      {|
+(signature user/passthrough [target]
+  :fn<status<target>;status<target>>)
+(defn passthrough [value] value)
+(println
+  (match (passthrough (Rejected "kept"))
+    (Applied value) value
+    (Rejected message) message
+    (Required message) message))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "same-domain parameterized closed-sum passthrough must stay static";
+  assert_ocaml_runs "parameterized_closed_sum_does_not_wrap_itself" "kept\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_declared_parameterized_closed_sum_rejects_incompatible_payload () =
+  parameterized_closed_sum_status_source
+    {|
+(signature user/take-string :fn<status<string>;string>)
+(defn take-string [value]
+  (match value
+    (Applied text) text
+    (Rejected message) message
+    (Required message) message))
+(def bad (take-string (Applied 1)))
+|}
+  |> Lg.Compiler.compile_string
+  |> expect_error_contains "string"
+
 let test_contextual_closed_sum_prefers_exact_payload () =
   let source =
     {|
@@ -16149,6 +16355,69 @@ let test_private_defn_supports_variadic_and_multi_arity_recur () =
   assert_ocaml_runs "private_defn_supports_variadic_and_multi_arity_recur"
     "10:true:false\n" ocaml_source
 
+let test_module_recursion_infers_parameters_and_results () =
+  let source =
+    {|
+(module Recursive
+  (defn- descend [n]
+    (if (zero? n) 0 (descend (dec n))))
+  (defn countdown [n] (descend n))
+  (defn annotated [n] :int
+    (if (zero? n) 0 (annotated (dec n))))
+  (defn pass [n value]
+    (if (zero? n) value (pass (dec n) value))))
+(println (Recursive/countdown 4))
+(println (Recursive/annotated 4))
+(println (Recursive/pass 3 42))
+(println (Recursive/pass 3 "ok"))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "module_recursion_infers_parameters_and_results"
+    "0\n0\n42\nok\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  compile_string_with_stdlib
+    {|(module Bad (defn wrong [n] :int
+         (if (zero? n) false (wrong (dec n)))))|}
+  |> expect_error_contains "int"
+
+let test_inferred_interface_hides_private_functions () =
+  let source =
+    {|
+(defn- root-secret [x] x)
+(defn root-public [x] (root-secret x))
+(module Outer
+  (defn- outer-secret [x] x)
+  (defn outer-public [x] (outer-secret x))
+  (module Inner
+    (defn- inner-secret [x] x)
+    (defn inner-public [x] (inner-secret x))))
+(module-signature Input (val value :int))
+(module Arg (def value 1))
+(module-functor Make [M Input]
+  (defn- functor-secret [x] x)
+  (defn functor-public [x] (functor-secret x)))
+(module-apply Applied Make Arg)
+(module-alias Alias Outer)
+|}
+  in
+  List.iter (fun target ->
+    let interface = Lg.Compiler.infer_interface ~target source |> expect_ok in
+    List.iter (fun name ->
+      if string_contains_substring interface name then
+        failwith ("private function leaked into inferred interface: " ^ name ^ "\n" ^ interface))
+      [ "root_secret"; "outer_secret"; "inner_secret"; "functor_secret" ];
+    List.iter (fun name ->
+      if not (string_contains_substring interface name) then
+        failwith ("public function missing from inferred interface: " ^ name))
+      [ "root_public"; "outer_public"; "inner_public"; "functor_public" ];
+    if target = Lg.Target.Native then
+      let implementation = Lg.Compiler.compile_string source |> expect_ok in
+      assert_ocaml_compiles "inferred_private_interface_matches_implementation"
+        ("module type Public = sig\n" ^ interface ^ "end\nmodule Implementation : Public = struct\n"
+         ^ implementation ^ "\nend"))
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
 let test_module_private_defn_is_internal_only () =
   let source =
     {|
@@ -16971,14 +17240,14 @@ let test_test_macros_preserve_typed_callback_parameters () =
     "true\n" native_source;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_conditional_function_type_relationship_is_checked_by_ocaml () =
+let test_conditional_function_type_relationship_is_inferred () =
   Lg.Compiler.compile_string
     {|
 (defn choose [flag left right]
   (if flag left right))
 (def bad (choose true 42 "Ada"))
 |}
-  |> expect_error_contains "expected of type"
+  |> expect_error_contains "choose called with incompatible arguments"
 
 let test_unannotated_function_parameters_reject_bad_int_calls () =
   let source = {|
@@ -19830,6 +20099,244 @@ let test_inline_macros_can_distinguish_float_literals () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "inline_macros_can_distinguish_float_literals"
     "float:other\n" ocaml_source
+
+let test_recursive_function_with_nested_generic_records () =
+  let provider = {|
+(ns app.nodes)
+(type-record retained-node [platform]
+  (platform-node :platform)
+  (kind :int)
+  (retained-parent :option<int>))
+(type-record retained-store [platform]
+  (retained-nodes :map<int;retained-node<platform>>))
+(signature app.nodes/node [platform]
+  :fn<retained-store<platform>;int;option<retained-node<platform>>>)
+(signature app.nodes/standard-kind [platform] :fn<retained-node<platform>;int>)
+|} in
+  let consumer = {|
+(ns app.web (:require [app.nodes :as retained]))
+(type-record renderer (web-store :retained-store<string>))
+(defn standard? [current expected] (= (retained/standard-kind current) expected))
+(defn has-ancestor? [renderer id expected]
+  (if-some [current (retained/node (:web-store renderer) id)]
+    (match (:retained-parent current)
+      (Some parent)
+      (if-some [parent-node (retained/node (:web-store renderer) parent)]
+        (or (standard? parent-node expected)
+            (has-ancestor? renderer parent expected))
+        false)
+      None false)
+    false))
+|} in
+  let implementation = {|(ns app.nodes)
+(defn node [store id] (get (:retained-nodes store) id))
+(defn standard-kind [current] (:kind current))|} in
+  ignore
+    (compile_chunks_with_stdlib Lg.Target.Native
+       [("nodes.lgi", provider); ("nodes.cljc", implementation);
+        ("web.cljc", consumer)]);
+  let state, _ =
+    Lg.Compiler.compile_chunk_with_filename ~filename:"nodes.lgi"
+      (stdlib_state Lg.Target.Native) provider |> expect_ok
+  in
+  let env = state.typecheck_state.env in
+  let application = Lg.Types.TOcaml_app ("retained_node", [Lg.Types.TString]) in
+  let resolved =
+    Lg.Local_function_elaborator.resolve_constraint_type "app.web" env application
+  in
+  match resolved with
+  | Lg.Types.TNamed_record record when record.type_arguments = [Lg.Types.TString] ->
+      let other = {record with
+        type_id = Lg.Type_id.create ~owner:["other"] ~name:"retained-node"} in
+      let ambiguous_env =
+        Lg.Compiler_environment.add "__record/other/retained-node"
+          (Lg.Types.binding "other" (Lg.Types.TNamed_record other)) env
+      in
+      let ambiguous =
+        Lg.Local_function_elaborator.resolve_constraint_type "app.web" ambiguous_env application
+      in
+      if not (Lg.Types.equal ambiguous application) then
+        failwith "ambiguous emitted record names must not select an arbitrary record"
+  | _ -> failwith "emitted generic record names must resolve across namespaces"
+
+let test_qualified_constructor_inference_preserves_protocol_payload () =
+  let source =
+    {|(defprotocol Encode (-encode [value] :string))
+(extend-type :string Encode (-encode [value] value))
+(defn- generic [value] (-encode value))
+(defn- concrete [value] (Stdlib.Failure value))
+(defn combined [value]
+  (generic value)
+  (concrete value))
+(match (combined "test")
+  (Stdlib.Failure value) (Stdlib.print_endline value)
+  _ (Stdlib.print_endline "wrong"))|}
+  in
+  let output = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "qualified_constructor_protocol_payload" "test\n" output;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sequence_elements_acquire_static_protocol_witnesses () =
+  let definitions =
+    {|(ns test.sequence-input)
+(defprotocol Encode (-encode [value] :string))
+(extend-type :string Encode (-encode [value] value))
+(defn- generic [value] (-encode value))
+(defn- concrete [value] (Stdlib.Failure value))
+(defn combined [value] (generic value) (concrete value))
+(defn run-all [values] (map combined values))
+|}
+  in
+  let source = definitions ^
+    {|(println (pr-str (vec
+  (map (fn [value] (match value (Stdlib.Failure text) text _ "wrong"))
+    (run-all ["one" "two"])))))|}
+  in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "sequence_protocol_witnesses" "[\"one\" \"two\"]\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  expect_error_contains "int"
+    (compile_string_with_stdlib (definitions ^ "(run-all [1 2])"))
+
+let test_inline_branch_result_preserves_printable_type () =
+  let source =
+    {|(ns app.inline-branch)
+(def catalog-scope "catalog")
+(defn mapped [identity source local remote]
+  (if (and (= identity "doc/id") (not (= remote catalog-scope)))
+    (if (= source remote) local (raise (Invalid_argument "mismatch")))
+    source))
+(defn entity-key [identity entity] (str identity ":" entity))
+(defn create-key [identity local remote]
+  (entity-key identity (mapped identity "peer" local remote)))
+(println (create-key "shape/id" "local" "remote"))
+(println (create-key "doc/id" "local" "peer"))
+(signature field :fn<string;string;string>)
+(defn field [value key] value)
+(defn create-keys [items local remote]
+  (loop [i 0 result (hash-map)]
+    (if (= i (Array.length items)) result
+      (let [source (aget items i)]
+        (recur (inc i)
+          (if (= (field source "kind") "peer")
+            (let [identity (field source "identity") property (field source "property")]
+              (if (= property identity)
+                (assoc result (entity-key identity (mapped identity (field source "entity") local remote)) true)
+                result))
+            result))))))
+(println (contains? (create-keys (Array.make 1 "peer") "local" "remote") "peer:peer"))|}
+  in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_compiles "inline_branch_printable_export" output;
+  assert_ocaml_runs "inline_branch_printable" "shape/id:peer\ndoc/id:local\ntrue\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sequence_protocol_witnesses_keep_protocol_identity () =
+  let open Lg.Types in
+  let witness name =
+    protocol_constraint (Lg.Protocol_id.create ~owner:[] ~name)
+      [ TFn ([ TString ], TString) ] TString
+  in
+  match Lg.Adaptation.plan_argument
+    ~expected:(seqable_constraint (witness "Second"))
+    ~actual:(TVector (witness "First")) () with
+  | Error _ -> ()
+  | Ok _ -> failwith "different protocol witnesses cannot be reused as sequence elements"
+
+let test_imported_ocaml_constants_are_static_values () =
+  let source = {|(ns app.constants
+  (:require [ocaml.Stdlib :as stdlib] [ocaml.String :as text]))
+(def empty text/empty)
+(def maximum stdlib/max_int)
+(println (str (String.length empty) ":" (> maximum 0)))
+(println (= Stdlib.max_int maximum))
+|} in
+  let output = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "imported_ocaml_constants" "0:true\ntrue\n" output;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string
+    {|(ns bad (:require [ocaml.String :as text])) (inc text/empty)|}
+  |> expect_error_contains "expected int arguments";
+  Lg.Compiler.compile_string
+    {|(ns bad (:require [ocaml.String :as text])) (def x text/missing_constant)|}
+  |> expect_error_contains "unknown symbol";
+  Lg.Compiler.compile_string
+    {|(ns bad (:require [ocaml.Lg_runtime.Runtime_dynamic :as dynamic]))
+      (def x dynamic/nil)|}
+  |> expect_error_contains "universal dynamic runtime is not available"
+
+let literal_test_prefix () =
+  {|
+(ns app.literal)
+(type-variant node
+  (NInt :int) (NString :string) (NKeyword :string) (NSymbol :string)
+  (NBool :bool) (NFloat :float) (NNil)
+  (NVector :list<node>) (NList :list<node>) (NSet :list<node>)
+  (NMap :list<tuple<node;node>>))
+(defmacro tree [form]
+  (list 'lg.literal/build
+    {:int 'NInt :string 'NString :keyword 'NKeyword :symbol 'NSymbol
+     :bool 'NBool :float 'NFloat :nil 'NNil
+     :vector 'NVector :list 'NList :set 'NSet :map 'NMap}
+    form))
+|}
+
+let compile_library_literal ?(target = Lg.Target.Native) source =
+  let stdlib = compiled_stdlib target in
+  Result.bind
+    (Lg.Compiler.compile_chunk stdlib.state (read_file "stdlib/lg/literal.cljc"))
+    (fun (state, library) ->
+      Result.map (fun (_, output) -> stdlib.ocaml_source ^ library ^ output)
+        (Lg.Compiler.compile_chunk state source))
+
+let test_library_literal_expansion_preserves_closed_data () =
+  let source = literal_test_prefix () ^ {|
+(def value (tree {:a [1 "two" nil true 2.5] :b (?x :ns/key) :c #{3 4}}))
+(println (match value
+  (NMap entries)
+  (match (List.hd entries)
+    (tuple (NKeyword key) (NVector values))
+    (str key ":" (count values) ":" (dec (count entries)))
+    _ "wrong-entry")
+  _ "wrong"))
+(println (match (tree []) (NVector values) (count values) _ -1))
+(println (match (tree {}) (NMap values) (count values) _ -1))
+(println (match (tree ()) (NList values) (count values) _ -1))
+(println (match (tree #{}) (NSet values) (count values) _ -1))
+(println (match (tree :ns/key) (NKeyword value) value _ "wrong"))
+(println (match (tree ?x) (NSymbol value) value _ "wrong"))
+|} in
+  let output = compile_library_literal source |> expect_ok in
+  assert_ocaml_runs "library_literal_closed_data" "a:5:2\n0\n0\n0\n0\nns/key\n?x\n" output;
+  ignore (compile_library_literal ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_library_literal_embeds_are_ordered_and_typed () =
+  let source = literal_test_prefix () ^ {|
+(def calls (atom ""))
+(defn record-call [text]
+  (swap! calls (fn [previous] (str previous text))) text)
+(let [value "local" literal_1 "untouched"]
+  (let [result (tree [(unquote :string (record-call value))
+                    {:nested (unquote :string (record-call "next"))}
+                    (unquote (NInt 42))])]
+  (println (deref calls))
+  (println literal_1)
+  (println (match result (NVector values) (count values) _ -1))))
+|} in
+  let output = compile_library_literal source |> expect_ok in
+  assert_ocaml_runs "library_literal_evaluation" "localnext\nuntouched\n3\n" output;
+  ignore (compile_library_literal ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_library_literal_rejects_invalid_embeds () =
+  let prefix = literal_test_prefix () in
+  List.iter (fun (source, message) ->
+    compile_library_literal (prefix ^ source) |> expect_error_contains message)
+    [ ("(tree (unquote :string 42))", "string");
+      ("(tree [(unquote (fn [x] x))])", "node");
+      ("(tree (unquote :unknown 42))", "unsupported literal kind");
+      ("(tree (unquote))", "unquote expects");
+      ("(tree #\"regex\")", "unsupported literal form");
+      ("(lg.literal/build {:int NInt} [1])", "unsupported literal kind") ]
 
 let test_macro_assert_validates_expansion_inputs () =
   let provider =
@@ -35959,6 +36466,36 @@ let test_call_observer_receives_static_argument_types () =
          !observed)
   then failwith "call observer did not receive the static argument types"
 
+let test_inference_propagates_long_recursive_declarations () =
+  let count = 24 in
+  let declarations = List.init count (fun index ->
+    Printf.sprintf "(defn chain%d [x] (chain%d x))" index (index + 1)) in
+  let source = String.concat "\n" (declarations @
+    [Printf.sprintf "(defn chain%d [x] (if (zero? x) 42 (chain0 (dec x))))" count;
+     "(println (chain0 1))"]) in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "long_recursive_declarations" "42\n" compiled
+
+let test_inference_propagates_long_constraint_chains () =
+  let open Lg.Ast in
+  let open Lg.Types in
+  let name index = "v" ^ string_of_int index in
+  let count = 12 in
+  let body = List.init count (fun index ->
+      FList [FSymbol "if"; FSymbol "flag";
+        FSymbol (name index); FSymbol (name (index + 1))])
+    @ [FList [FSymbol "consume"; FSymbol (name count)]] in
+  let inferred = Lg.Type_inference.infer_params
+      ~lookup_function_ty:(fun name -> if name = "consume"
+        then Ok (TFn ([TVector TInt], TUnit)) else Lg.Error.error "unknown")
+      ~lookup_protocol_constraint:(fun _ -> None)
+      ~lookup_dynamic_key_record_type:(fun _ -> None)
+      ~resolve_named_record:Fun.id
+      (("flag", TBool) :: List.init (count + 1)
+        (fun index -> (name index, TVector TUnknown))) body |> expect_ok in
+  List.iter (fun (name, ty) -> if name <> "flag" && not (equal ty (TVector TInt))
+    then failwith (name ^ " remained " ^ source_name ty)) inferred
+
 let test_global_function_alias_keeps_contextual_inference () =
   let lookup_function_ty name =
     if String.equal name "known" then
@@ -46356,6 +46893,376 @@ let test_nested_module_signatures_are_checked_by_ocaml () =
 |}
   |> expect_error_contains "not included"
 
+let test_ocaml_type_metadata_preserves_variant_rows () =
+  let row = Types.create_row
+    ~fields:["Ready", Types.rf_present None;
+             "Value", Types.rf_present (Some Predef.type_int)]
+    ~more:(Btype.newgenty Types.Tnil) ~closed:true ~fixed:None ~name:None in
+  let ty = Btype.newgenty (Types.Tvariant row)
+    |> Lg_compiler_support.Ocaml_value.normalize
+    |> Lg.Ocaml_signature.of_compiler_type in
+  match ty with
+  | Lg.Types.TPoly_variant {bound = Lg.Types.Exact_row;
+      tags = ["Ready", None; "Value", Some Lg.Types.TInt]} -> ()
+  | _ -> failwith "OCaml polymorphic variant metadata lost its static row"
+
+let test_polymorphic_variants_infer_rows_from_patterns () =
+  let source = {|(defn read-status [status]
+  (match status (tag Ready) 0 (tag Value value) (+ value 1)))
+(println (read-status (tag Value 41)))
+(defn unwrap [status] (match status (tag Value value) value))
+(println (unwrap (tag Value "answer")))
+(println (+ 1 (unwrap (tag Value 41))))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "inferred_variant_rows" "42\nanswer\n42\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_polymorphic_variants_support_generic_and_open_rows () =
+  let source = {|(signature extract [a] :fn<variant-upper<Ready;Value:a>;option<a>>)
+(defn extract [value]
+  (match value (tag Ready) nil (tag Value item) (Some item)))
+(println (Option.get (extract (tag Value 42))))
+(println (Option.get (extract (tag Value "answer"))))
+(defn forward [^:variant-open<Value:int> value] value)
+(defn describe-extra [^:variant<Extra:string;Value:int> value]
+  (match value (tag Extra text) text (tag Value number) (str number)))
+(println (describe-extra (forward (tag Extra "kept"))))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "polymorphic_variant_rows" "42\nanswer\nkept\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_polymorphic_variants_preserve_static_payloads () =
+  let source = {|(defn describe [^:variant<Ready;Value:int> status]
+  (match status (tag Ready) "ready" (tag Value value) (str value)))
+(println (describe (tag Ready)))
+(println (describe (tag Value 42)))
+(defn choose [flag] (if flag (tag Ready) (tag Value 7)))
+(println (describe (choose false)))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "polymorphic_variant_payloads" "ready\n42\n7\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_polymorphic_variants_reject_unknown_tags_and_payloads () =
+  let prefix = "(defn consume [^:variant<Ready;Value:int> value] value)" in
+  List.iter (fun source ->
+    Lg.Compiler.compile_string (prefix ^ source) |> expect_error_contains "incompatible")
+    ["(consume (tag Missing))"; "(consume (tag Value \"wrong\"))"]
+
+let test_gadt_rejects_invalid_refinements () =
+  List.iter (fun target ->
+    Lg.Compiler.compile_string ~target
+      {|(type-variant witness [a]
+          (IntWitness (returns :witness<int>))
+          (StringWitness (returns :witness<string>)))
+        (signature wrong [a] :fn<witness<a>;a>)
+        (defn wrong [witness]
+          (match witness IntWitness "wrong" StringWitness "answer"))|}
+    |> expect_error_contains "type") [Lg.Target.Native; Lg.Target.Melange]
+
+let test_gadt_result_indices_register_set_modules () =
+  let source = {|(type-variant witness [a]
+    (SetWitness (returns :witness<set<tuple<int;string>>>)))
+|} in
+  List.iter (fun target ->
+    ignore (Raw_lg.Compiler.compile_string ~target source |> expect_ok))
+    [Lg.Target.Native; Lg.Target.Melange]
+
+let test_gadt_nullary_witnesses_refine_branches () =
+  let source = {|(type-variant witness [a]
+  (IntWitness (returns :witness<int>))
+  (StringWitness (returns :witness<string>)))
+(signature default-value [a] :fn<witness<a>;a>)
+(defn default-value [witness]
+  (match witness IntWitness 42 StringWitness "answer"))
+(println (default-value (IntWitness)))
+(println (default-value (StringWitness)))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "gadt_nullary_witnesses" "42\nanswer\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_gadt_recursive_evaluation_preserves_pair_indices () =
+  let source = {|(type-variant expression [a]
+  (IntExpression :int (returns :expression<int>))
+  (PairExpression [a b] :expression<a> :expression<b>
+    (returns :expression<tuple<a;b>>)))
+(signature evaluate [a] :fn<expression<a>;a>)
+(defn evaluate [expression]
+  (match expression
+    (IntExpression value) value
+    (PairExpression left right) (tuple (evaluate left) (evaluate right))))
+(def result (evaluate (PairExpression (IntExpression 20) (IntExpression 22))))
+(println (+ (first result) (second result)))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "gadt_recursive_pairs" "42\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_gadt_existentials_preserve_payload_relationships () =
+  let source = {|(type-variant packed
+  (Pack [a] :a :fn<a;string> (returns :packed)))
+(defn show [^:packed package]
+  (match package (Pack value render) (render value)))
+(println (show (Pack 42 (fn [^:int value] (str value)))))
+(println (show (Pack "answer" (fn [^:string value] value))))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "gadt_existential_payloads" "42\nanswer\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string
+    {|(type-variant packed (Pack [a] :a (returns :packed)))
+      (defn reveal [^:packed package] (match package (Pack value) value))|}
+  |> expect_error_contains "escape"
+
+let test_gadt_matching_refines_generic_results () =
+  let source = {|(type-variant expression [a]
+  (IntExpression :int (returns :expression<int>))
+  (StringExpression :string (returns :expression<string>)))
+(signature evaluate [a] :fn<expression<a>;a>)
+(defn evaluate [expression]
+  (match expression
+    (IntExpression value) value
+    (StringExpression value) value))
+(println (evaluate (IntExpression 42)))
+(println (evaluate (StringExpression "answer")))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "gadt_generic_results" "42\nanswer\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_gadt_constructors_preserve_result_indices () =
+  let source = {|(type-variant expression [a]
+  (IntExpression :int (returns :expression<int>))
+  (StringExpression :string (returns :expression<string>)))
+(defn int-value [^:expression<int> expression]
+  (match expression (IntExpression value) value))
+(println (int-value (IntExpression 42)))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "gadt_result_indices" "42\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string
+    (source ^ "(int-value (StringExpression \"wrong\"))")
+  |> expect_error_contains "type"
+
+let test_explicit_polymorphic_record_fields () =
+  let source = {|(type-record Universal (run (forall [a] :fn<a;a>)))
+(def identity-holder (record Universal (run (fn [x] x))))
+(println ((:run identity-holder) 42))
+(println ((:run identity-holder) "answer"))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "explicit_polymorphic_record_fields" "42\nanswer\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_polymorphic_field_quantifiers_are_lexically_bound () =
+  let open Lg.Types in
+  let field = make_field ~quantified:["a"] ":run"
+    (TFn ([TVar "a"; TVar "outer"], TVar "a")) in
+  let record = TRecord [field] in
+  let variables = Lg.Type_solver.variables record in
+  if List.mem (Lg.Type_solver.Declared "a") variables then
+    failwith "field quantifier escaped into record free variables";
+  let substitutions = Lg.Type_solver.of_list
+    [Lg.Type_solver.Declared "a", TInt; Lg.Type_solver.Declared "outer", TString] in
+  match Lg.Type_solver.apply substitutions record with
+  | TRecord [{ty = TFn ([TVar "a"; TString], TVar "a"); _}] -> ()
+  | _ -> failwith "outer substitution captured a field quantifier"
+
+let test_polymorphic_field_substitution_avoids_capture () =
+  let open Lg.Types in
+  let field = make_field ~quantified:["a"] ":run"
+    (TFn ([TVar "a"; TVar "outer"], TVar "a")) in
+  let replaced = Lg.Type_solver.apply
+    (Lg.Type_solver.of_list [Lg.Type_solver.Declared "outer", TVar "a"])
+    (TRecord [field]) in
+  match replaced with
+  | TRecord [{quantified = [bound]; ty = TFn ([TVar parameter; TVar "a"], TVar result); _}]
+      when bound <> "a" && parameter = bound && result = bound -> ()
+  | _ -> failwith "replacement variable was captured by a field quantifier"
+
+let test_polymorphic_record_fields_reject_specialization () =
+  Lg.Compiler.compile_string
+    {|(type-record Universal (run (forall [a] :fn<a;a>)))
+      (def holder (record Universal (run (fn [x] (+ x 1)))))|}
+  |> expect_error_contains "general"
+
+let test_first_class_modules_support_runtime_selection () =
+  let source =
+    {|
+(module-signature Transform (val run :fn<int;int>))
+(module Add (defn run [x] (+ x 1)))
+(module Double (defn run [x] (* x 2)))
+(defn choose [flag]
+  (if flag (pack-module Add Transform) (pack-module Double Transform)))
+(defn invoke [^:module<Transform> package ^:int value]
+  (let-module [M package] (M/run value)))
+(println (invoke (choose true) 41))
+(println (invoke (choose false) 21))
+(def packages [(pack-module Add Transform) (pack-module Double Transform)])
+(println (invoke (nth packages 0) 41))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "first_class_modules_support_runtime_selection" "42\n42\n42\n" native;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_first_class_modules_preserve_abstract_types () =
+  let source =
+    {|
+(module-signature Hidden
+  (type item) (val value :item) (val render :fn<item;string>))
+(module Text
+  (type-alias item :string)
+  (def value "hidden")
+  (defn render [^:string value] value))
+(def package (pack-module Text Hidden))
+(defn render-package [^:module<Hidden> package]
+  (let-module [M package] (M/render M/value)))
+(println (render-package package))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "first_class_modules_preserve_abstract_types" "hidden\n" native;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string
+    {|
+(module-signature Hidden (type item) (val value :item))
+(module Text (type-alias item :string) (def value "hidden"))
+(def escaped (let-module [M (pack-module Text Hidden)] M/value))
+|}
+  |> expect_error_contains "escape"
+
+let test_first_class_modules_reject_invalid_packages () =
+  Lg.Compiler.compile_string {|(let-module [M 42] 0)|}
+  |> expect_error_contains "module package";
+  Lg.Compiler.compile_string
+    {|(module-signature S (val value :int))
+      (module Wrong (def value "bad"))
+      (def package (pack-module Wrong S))|}
+  |> expect_error_contains "not included"
+
+let test_functor_application_preserves_argument_type_equalities () =
+  let source = {|(module-signature Value (type item) (val value :item))
+(module-functor Identity [M Value]
+  (type-alias item :M.item)
+  (def value M/value)
+  (defn same [^:M.item x] x))
+(module Integers (type-alias item :int) (def value 41))
+(module-apply Applied Identity Integers)
+(println (+ Applied/value 1))
+(println (+ (Applied/same 41) 1))
+(type-record applied-holder (value :Applied.item))
+(def holder (record applied-holder (value Applied/value)))
+(println (+ (:value holder) 1))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "functor_argument_equalities" "42\n42\n42\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_inferred_interface_hides_ascribed_private_functions () =
+  let source = {|(module-signature S (val hidden :fn<int;int>) (val visible :fn<int;int>))
+(module M S
+  (defn- hidden [x] x)
+  (defn visible [x] (hidden x)))
+(module-signature Input (val value :int))
+(module-functor Make [I Input]
+  (module Inner S (defn- hidden [x] x) (defn visible [x] (hidden x))))
+(module InputValue (def value 42))
+(module-apply Applied Make InputValue)
+|} in
+  let interface = Lg.Compiler.infer_interface source |> expect_ok in
+  if string_contains_substring interface "module M : S" then
+    failwith "module ascription re-exported a private function";
+  if count_substring interface "val hidden" <> 1 then
+    failwith "private values leaked through an ascribed functor result";
+  if not (string_contains_substring interface "visible") then
+    failwith "public function disappeared from the inferred interface"
+
+let test_incremental_printer_preserves_user_modules () =
+  let chunks =
+    [ ("first.cljc", "(module B (def value 41))");
+      ("second.cljc", "(defn increment [x] (+ x 1)) (println 0)");
+      ("third.cljc", "(println (increment B/value))") ] in
+  let source = compile_chunks_with_stdlib Lg.Target.Native chunks in
+  assert_ocaml_runs "incremental_printer_preserves_user_modules" "0\n42\n" source;
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange chunks)
+
+let test_nested_module_signature_type_constraints () =
+  let source = {|(module-signature Child (type item) (val value :item))
+(module-signature Parent (module Inner Child) (val copy :Inner.item))
+(module-signature Concrete (include Parent (with-type Inner.item :int)))
+(module-signature Bare (include Parent (substitute-type Inner.item :int)))
+(module Values Concrete
+  (module Inner (type-alias item :int) (def value 41)) (def copy 41))
+(module BareValues Bare (module Inner (def value 40)) (def copy 40))
+(module-functor Read [M Concrete] (def answer (+ M.Inner/value 1)))
+(module-functor ReadBare [M Bare] (def answer (+ M/copy 2)))
+(module-apply A Read Values)
+(module-apply B ReadBare BareValues)
+(println A/answer)
+(println B/answer)
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_signature_constraints" "42\n42\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_module_signature_type_equalities_and_substitution () =
+  let source =
+    {|
+(module-signature ValueSig (type item) (val value :item))
+(module-signature IntSig (include ValueSig (with-type item :int)))
+(module-signature IntValue (include ValueSig (substitute-type item :int)))
+(module Values IntSig (type-alias item :int) (def value 41))
+(module Bare IntValue (def value 40))
+(module-functor Read [M IntSig] (def answer (+ M/value 1)))
+(module-functor ReadBare [M IntValue] (def answer (+ M/value 2)))
+(module-apply ReadValues Read Values)
+(module-apply ReadOther ReadBare Bare)
+(println ReadValues/answer)
+(println ReadOther/answer)
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_signature_type_equalities_and_substitution" "42\n42\n" native;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_module_signature_parameterized_type_constraints () =
+  let source =
+    {|
+(module-signature BoxSig (type box [a]) (val value :box<int>))
+(module-signature OptionalSig
+  (include BoxSig (substitute-type box [a] :option<a>)))
+(module Values OptionalSig (def value (Some 42)))
+(module-functor Read [M OptionalSig]
+  (def answer (match M/value (Some x) x None 0)))
+(module-apply Result Read Values)
+(println Result/answer)
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_signature_parameterized_type_constraints" "42\n" native;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_module_signature_rejects_invalid_type_constraints () =
+  let reject source fragment =
+    List.iter (fun target -> Lg.Compiler.compile_string ~target source
+      |> expect_error_contains fragment) [Lg.Target.Native; Lg.Target.Melange]
+  in
+  reject {|(module-signature S (type item))
+           (module-signature T (include S (with-type missing :int)))|}
+    "unknown constrained signature type";
+  reject {|(module-signature S (type item [a]))
+           (module-signature T (include S (with-type item :int)))|}
+    "parameter";
+  reject {|(module-signature S (type item))
+           (module-signature T (include S (with-type item :int)))
+           (module Wrong T (type-alias item :string))|}
+    "not included"
+
 let test_module_signatures_include_other_signatures () =
   let source =
     {|
@@ -48362,8 +49269,34 @@ let tests =
       test_named_fn_infers_recursive_lazy_sequence_result );
     ( "letfn supports single local recursive function",
       test_letfn_supports_single_local_recursive_function );
-    ( "letfn reports unsupported mutual recursion",
-      test_letfn_reports_unsupported_mutual_recursion );
+    ( "letfn supports mutual recursion", test_letfn_supports_mutual_recursion );
+    ( "letfn generalizes dependency groups", test_letfn_generalizes_dependency_groups );
+    ( "letfn preserves recursive polymorphism and captures",
+      test_letfn_preserves_recursive_polymorphism_and_captures );
+    ( "letfn respects lexical shadowing", test_letfn_respects_lexical_shadowing );
+    ( "letfn rejects invalid groups", test_letfn_rejects_invalid_groups );
+    ( "inference propagates long constraint chains", test_inference_propagates_long_constraint_chains );
+    ( "GADT constructors preserve result indices", test_gadt_constructors_preserve_result_indices );
+    ( "polymorphic variants preserve static payloads", test_polymorphic_variants_preserve_static_payloads );
+    ( "OCaml metadata preserves polymorphic variant rows", test_ocaml_type_metadata_preserves_variant_rows );
+    ( "polymorphic variants infer rows from patterns", test_polymorphic_variants_infer_rows_from_patterns );
+    ( "polymorphic variants support generic and open rows", test_polymorphic_variants_support_generic_and_open_rows );
+    ( "polymorphic variants reject unknown tags and payloads", test_polymorphic_variants_reject_unknown_tags_and_payloads );
+    ( "GADT matching refines generic results", test_gadt_matching_refines_generic_results );
+    ( "functor application preserves argument type equalities", test_functor_application_preserves_argument_type_equalities );
+    ( "incremental printer preserves user modules", test_incremental_printer_preserves_user_modules );
+    ( "GADT result indices register set modules", test_gadt_result_indices_register_set_modules );
+    ( "nested module signature type constraints", test_nested_module_signature_type_constraints );
+    ( "inferred interface hides ascribed private functions", test_inferred_interface_hides_ascribed_private_functions );
+    ( "GADT rejects invalid refinements", test_gadt_rejects_invalid_refinements );
+    ( "GADT nullary witnesses refine branches", test_gadt_nullary_witnesses_refine_branches );
+    ( "GADT recursive evaluation preserves pair indices", test_gadt_recursive_evaluation_preserves_pair_indices );
+    ( "GADT existentials preserve payload relationships", test_gadt_existentials_preserve_payload_relationships );
+    ( "explicit polymorphic record fields", test_explicit_polymorphic_record_fields );
+    ( "polymorphic record fields bind quantifiers", test_polymorphic_field_quantifiers_are_lexically_bound );
+    ( "polymorphic record fields avoid capture", test_polymorphic_field_substitution_avoids_capture );
+    ( "polymorphic record fields reject specialization", test_polymorphic_record_fields_reject_specialization );
+    ( "inference propagates long recursive declarations", test_inference_propagates_long_recursive_declarations );
     ( "if rejects static and dynamic function parameter joins",
       test_if_rejects_static_and_dynamic_function_parameter_join );
     ("JVM lookup hints are rejected", test_jvm_lookup_hints_are_rejected);
@@ -48951,6 +49884,14 @@ let tests =
       test_contextual_closed_sum_injection_rejects_ambiguity );
     ( "contextual closed sum injection rejects missing constructor",
       test_contextual_closed_sum_injection_rejects_missing_constructor );
+    ( "declared parameterized closed sum returns if branches",
+      test_declared_parameterized_closed_sum_returns_if_branches );
+    ( "declared parameterized closed sum returns nested match",
+      test_declared_parameterized_closed_sum_returns_nested_match );
+    ( "parameterized closed sum does not wrap itself",
+      test_parameterized_closed_sum_does_not_wrap_itself );
+    ( "declared parameterized closed sum rejects incompatible payload",
+      test_declared_parameterized_closed_sum_rejects_incompatible_payload );
     ( "contextual closed sum prefers exact payload",
       test_contextual_closed_sum_prefers_exact_payload );
     ( "transient vector injects closed sum element",
@@ -49143,6 +50084,10 @@ let tests =
       test_private_defn_supports_single_and_typed_recursive_arities );
     ( "private defn supports variadic and multi-arity recur",
       test_private_defn_supports_variadic_and_multi_arity_recur );
+    ( "module recursion infers parameters and results",
+      test_module_recursion_infers_parameters_and_results );
+    ( "inferred interface hides private functions",
+      test_inferred_interface_hides_private_functions );
     ( "module private defn is internal only",
       test_module_private_defn_is_internal_only );
     ( "private defn rejects invalid declarations",
@@ -49223,8 +50168,8 @@ let tests =
       test_generic_record_accessors_keep_concrete_printable_fields );
     ( "test macros preserve typed callback parameters",
       test_test_macros_preserve_typed_callback_parameters );
-    ( "conditional function type relationship is checked by OCaml",
-      test_conditional_function_type_relationship_is_checked_by_ocaml );
+    ( "conditional function type relationship is inferred",
+      test_conditional_function_type_relationship_is_inferred );
     ( "unannotated function parameters reject bad int calls",
       test_unannotated_function_parameters_reject_bad_int_calls );
     ( "unannotated function parameters use Clojure truthiness",
@@ -49456,6 +50401,15 @@ let tests =
       test_macros_iterate_literal_map_entries );
     ( "macro assoc accepts multiple key value pairs",
       test_macro_assoc_accepts_multiple_key_value_pairs );
+    ( "recursive function with nested generic records", test_recursive_function_with_nested_generic_records );
+    ( "qualified constructor inference preserves protocol payload", test_qualified_constructor_inference_preserves_protocol_payload );
+    ( "sequence elements acquire static protocol witnesses", test_sequence_elements_acquire_static_protocol_witnesses );
+    ( "inline branch result preserves printable type", test_inline_branch_result_preserves_printable_type );
+    ( "sequence protocol witnesses keep protocol identity", test_sequence_protocol_witnesses_keep_protocol_identity );
+    ( "imported OCaml constants are static values", test_imported_ocaml_constants_are_static_values );
+    ( "library literal expansion preserves closed data", test_library_literal_expansion_preserves_closed_data );
+    ( "library literal embeds are ordered and typed", test_library_literal_embeds_are_ordered_and_typed );
+    ( "library literal rejects invalid embeds", test_library_literal_rejects_invalid_embeds );
     ( "macro namespace accepts qualified keywords",
       test_macro_namespace_accepts_qualified_keywords );
     ( "nil guarded compare remains statically polymorphic",
@@ -51424,6 +52378,18 @@ let tests =
       test_functor_parameters_expose_nested_signature_modules );
     ( "nested module signatures are checked by OCaml",
       test_nested_module_signatures_are_checked_by_ocaml );
+    ( "first-class modules support runtime selection",
+      test_first_class_modules_support_runtime_selection );
+    ( "first-class modules preserve abstract types",
+      test_first_class_modules_preserve_abstract_types );
+    ( "first-class modules reject invalid packages",
+      test_first_class_modules_reject_invalid_packages );
+    ( "module signature type equalities and substitution",
+      test_module_signature_type_equalities_and_substitution );
+    ( "module signature parameterized type constraints",
+      test_module_signature_parameterized_type_constraints );
+    ( "module signature rejects invalid type constraints",
+      test_module_signature_rejects_invalid_type_constraints );
     ( "module signatures include other signatures",
       test_module_signatures_include_other_signatures );
     ( "module signature cycles are rejected",

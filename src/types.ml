@@ -19,6 +19,7 @@ type binding = {
   multimethod_method_types : ty list;
   multimethod_definition : Semantic_ir.t option;
   never_returns : bool;
+  gadt_constructor : bool;
 }
 
 and host_reference =
@@ -46,7 +47,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?constant_keyword ?(false_non_nil_names = []) ?(dynamically_bindable = false)
     ?redef_root_name ?(multimethod = false) ?(multimethod_method_types = [])
     ?multimethod_definition
-    ?(never_returns = false)
+    ?(never_returns = false) ?(gadt_constructor = false)
     ocaml_name ty =
   {
     ocaml_name;
@@ -67,6 +68,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     multimethod_method_types;
     multimethod_definition;
     never_returns;
+    gadt_constructor;
   }
 
 let is_runtime_root (binding : binding) =
@@ -94,6 +96,12 @@ let instantiate_binding (binding : binding) =
   match binding.scheme with
   | None -> binding
   | Some scheme -> { binding with ty = Type_solver.instantiate scheme }
+
+let module_package_name = "__lg_module_package"
+let module_package_type signature = TOcaml_app (module_package_name, [TOcaml signature])
+let module_package_signature = function
+  | TOcaml_app (name, [TOcaml signature]) when name = module_package_name -> Some signature
+  | _ -> None
 
 let constant_function_name = "__lg_constant_function"
 let constant_function result_ty = TOcaml_app (constant_function_name, [ result_ty ])
@@ -210,6 +218,7 @@ let dynamic_constraint_info = function
 let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
 
 let rec contains_dynamic = function
+  | TPoly_variant row -> List.exists contains_dynamic (List.filter_map snd row.tags)
   | ty when is_dynamic ty -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
@@ -653,6 +662,9 @@ let maybe_reduced_callback_element = function
 
 let rec equal left right =
   match (left, right) with
+  | TPoly_variant left, TPoly_variant right ->
+      left.bound = right.bound && List.length left.tags = List.length right.tags
+      && List.for_all2 (fun (ln, lt) (rn, rt) -> ln = rn && Option.equal equal lt rt) left.tags right.tags
   | TUnknown, TUnknown -> true
   | TMeta left, TMeta right -> left.id = right.id
   | TVar left, TVar right -> left = right
@@ -713,6 +725,7 @@ let rec equal left right =
           (fun l r ->
             l.keyword = r.keyword
             && l.runtime_map = r.runtime_map
+            && l.quantified = r.quantified
             && equal l.ty r.ty)
           left right
   | TNamed_record left, TNamed_record right ->
@@ -807,6 +820,8 @@ let is_numeric = function TInt | TFloat -> true | _ -> false
 
 let rec row_compatible ~expected ~actual =
   match (expected, actual) with
+  | TPoly_variant expected, TPoly_variant actual ->
+      Variant_row.compatible_payloads (fun expected actual -> row_compatible ~expected ~actual) expected actual
   | expected, actual when equal expected actual -> true
   | TUnknown, _ | _, TUnknown | TMeta _, _ | _, TMeta _ | TVar _, _
   | _, TVar _ ->
@@ -929,6 +944,8 @@ let classify_assignability ~expected ~actual =
 
 let rec assignable ~policy ~expected ~actual =
   match (expected, actual) with
+  | TPoly_variant expected, TPoly_variant actual ->
+      Variant_row.compatible_payloads (fun expected actual -> assignable ~policy ~expected ~actual) expected actual
   | expected, actual when is_dynamic expected <> is_dynamic actual -> false
   | expected, actual
     when Option.is_some (static_unary_constraint_value expected) ->
@@ -1004,6 +1021,12 @@ let rec assignable ~policy ~expected ~actual =
       | Incompatible -> false)
 
 let rec source_name = function
+  | TPoly_variant row ->
+      (match row.bound with Exact_row -> "variant" | Lower_row -> "variant-open" | Upper_row -> "variant-upper" | Bounded_row tags -> "variant-required(" ^ String.concat "," tags ^ ")")
+      ^ "<" ^ String.concat ";" (List.map (fun (tag, payload) ->
+        tag ^ Option.fold ~none:"" ~some:(fun ty -> ":" ^ source_name ty) payload) row.tags) ^ ">"
+  | TOcaml_app (name, [TOcaml signature]) when name = module_package_name ->
+      "module<" ^ signature ^ ">"
   | TInt -> "int"
   | TFloat -> "float"
   | TChar -> "char"
@@ -1147,7 +1170,7 @@ let rec diagnostic_type_term = function
   | TNamed_record record ->
       Error.Type_application
         (record.type_name, List.map diagnostic_type_term record.type_arguments)
-  | (TConstraint _ | TOverloaded_fn _) as ty -> Error.Type_atom (source_name ty)
+  | (TPoly_variant _ | TConstraint _ | TOverloaded_fn _) as ty -> Error.Type_atom (source_name ty)
 
 let ocaml_record_type_name name =
   let local_name separator name =
@@ -1161,6 +1184,12 @@ let ocaml_record_type_name name =
   else name
 
 let rec ocaml_name = function
+  | TPoly_variant row ->
+      (match row.bound with Exact_row -> "[ " | Lower_row -> "[> " | Upper_row | Bounded_row _ -> "[< ")
+      ^ String.concat " | " (List.map (fun (tag, payload) ->
+        "`" ^ tag ^ Option.fold ~none:"" ~some:(fun ty -> " of " ^ ocaml_name ty) payload) row.tags) ^ (match row.bound with Bounded_row tags -> " > " ^ String.concat " " (List.map (fun tag -> "`" ^ tag) tags) | _ -> "") ^ " ]"
+  | TOcaml_app (name, [TOcaml signature]) when name = module_package_name ->
+      "(module " ^ signature ^ ")"
   | TInt -> "int"
   | TFloat -> "float"
   | TChar -> "char"
@@ -1451,6 +1480,7 @@ let rec qualify_module_type module_path ty =
     if String.contains name '.' then name else module_path ^ "." ^ name
   in
   match ty with
+  | TPoly_variant _ -> Semantic_type.map_children (qualify_module_type module_path) ty
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       ty
@@ -1519,13 +1549,15 @@ let rec remap_module_type ~from_path ~to_path ty =
     | _ -> type_id
   in
   match ty with
+  | TPoly_variant _ -> Semantic_type.map_children (remap_module_type ~from_path ~to_path) ty
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
+  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ ->
       ty
+  | TOcaml name -> TOcaml (remap_name name)
   | TNullable inner ->
       TNullable (remap_module_type ~from_path ~to_path inner)
   | TOcaml_app (name, args) ->
-      TOcaml_app (name, List.map (remap_module_type ~from_path ~to_path) args)
+      TOcaml_app (remap_name name, List.map (remap_module_type ~from_path ~to_path) args)
   | TConstraint constraint_ ->
       TConstraint
         (map_constraint (remap_module_type ~from_path ~to_path) constraint_)
@@ -1575,6 +1607,7 @@ let rec remap_module_type ~from_path ~to_path ty =
 let rec refresh_named_record (fresh : named_record) ty =
   let refresh = refresh_named_record fresh in
   match ty with
+  | TPoly_variant _ -> Semantic_type.map_children (refresh) ty
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
       ty
@@ -1621,11 +1654,12 @@ let rec refresh_named_record (fresh : named_record) ty =
 
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields
-let make_field ?location ?(mutable_ = false) ?(runtime_map = false) keyword ty =
+let make_field ?location ?(quantified = []) ?(mutable_ = false) ?(runtime_map = false) keyword ty =
   {
     keyword;
     ocaml_name = Names.keyword_to_ocaml_name keyword;
     ty;
+    quantified;
     mutable_;
     runtime_map;
     location;
@@ -1837,10 +1871,11 @@ let instantiate_receiver_method_type receiver_ty method_ty =
 let rec idents_in_conversion names = function
   | Semantic_ir.Ident name -> name :: names
   | Semantic_ir.Typed (_, value)
+  | Semantic_ir.GadtScope value
   | Semantic_ir.Located (_, _, value)
   | Semantic_ir.SharedValue (_, value) ->
       idents_in_conversion names value
-  | Semantic_ir.Constructor (_, value) ->
+  | Semantic_ir.PolyTag (_, value) | Semantic_ir.Constructor (_, value) ->
       Option.fold ~none:names ~some:(idents_in_conversion names) value
   | Semantic_ir.Tuple values
   | Semantic_ir.List values
@@ -1857,7 +1892,8 @@ let rec idents_in_conversion names = function
       List.fold_left idents_in_conversion names
         [ condition; then_expr; else_expr ]
   | Semantic_ir.Fun (_, body) -> idents_in_conversion names body
-  | Semantic_ir.Let (bindings, body) ->
+  | Semantic_ir.Let (bindings, body)
+  | Semantic_ir.LetRecGroup (bindings, body) ->
       List.fold_left
         (fun names (_, value) -> idents_in_conversion names value)
         (idents_in_conversion names body) bindings
@@ -1867,6 +1903,8 @@ let rec idents_in_conversion names = function
         value
   | Semantic_ir.LetRec (_, _, body, args) ->
       List.fold_left idents_in_conversion (idents_in_conversion names body) args
+  | Semantic_ir.PackModule _ -> names
+  | Semantic_ir.UnpackModule (_, _, body, next)
   | Semantic_ir.LetRecIn (_, _, body, next) ->
       idents_in_conversion (idents_in_conversion names body) next
   | Semantic_ir.Match (target, cases) ->
@@ -1912,10 +1950,11 @@ let rec dynamic_pinned_idents names = function
       let names = idents_in_conversion names conversion in
       dynamic_pinned_idents names conversion
   | Semantic_ir.Typed (_, value)
+  | Semantic_ir.GadtScope value
   | Semantic_ir.Located (_, _, value)
   | Semantic_ir.SharedValue (_, value) ->
       dynamic_pinned_idents names value
-  | Semantic_ir.Constructor (_, value) ->
+  | Semantic_ir.PolyTag (_, value) | Semantic_ir.Constructor (_, value) ->
       Option.fold ~none:names ~some:(dynamic_pinned_idents names) value
   | Semantic_ir.Tuple values
   | Semantic_ir.List values
@@ -1935,7 +1974,8 @@ let rec dynamic_pinned_idents names = function
       List.fold_left dynamic_pinned_idents names
         [ condition; then_expr; else_expr ]
   | Semantic_ir.Fun (_, body) -> dynamic_pinned_idents names body
-  | Semantic_ir.Let (bindings, body) ->
+  | Semantic_ir.Let (bindings, body)
+  | Semantic_ir.LetRecGroup (bindings, body) ->
       List.fold_left
         (fun names (_, value) -> dynamic_pinned_idents names value)
         (dynamic_pinned_idents names body)
@@ -1948,6 +1988,8 @@ let rec dynamic_pinned_idents names = function
       List.fold_left dynamic_pinned_idents
         (dynamic_pinned_idents names body)
         args
+  | Semantic_ir.PackModule _ -> names
+  | Semantic_ir.UnpackModule (_, _, body, next)
   | Semantic_ir.LetRecIn (_, _, body, next) ->
       dynamic_pinned_idents (dynamic_pinned_idents names body) next
   | Semantic_ir.Match (target, cases) ->
@@ -2001,7 +2043,7 @@ let rec pattern_name = function
       | pattern :: _ -> pattern_name pattern
       | [] -> None)
   | Semantic_ir.PAny | Semantic_ir.PUnit | Semantic_ir.PInt _ | Semantic_ir.PInt64 _
-  | Semantic_ir.PString _ | Semantic_ir.PBool _ | Semantic_ir.PConstructor _
+  | Semantic_ir.PString _ | Semantic_ir.PBool _ | Semantic_ir.PPolyTag _ | Semantic_ir.PConstructor _
   | Semantic_ir.PList _ | Semantic_ir.PCons _ | Semantic_ir.PRecord _
   | Semantic_ir.POr _ ->
       None

@@ -78,6 +78,7 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
 
 let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
     ?(required_protocols = []) scope env = function
+  | TPoly_variant _ as ty -> Semantic_type.map_children (infer_named_record scope env) ty
   | TNamed_record record as ty -> (
       match
         Resolver.lookup_record_type scope env (Type_id.to_string record.type_id)
@@ -529,6 +530,7 @@ let array_storage_type = function
   | ty -> ty
 
 let rec contains_open_type = function
+  | TPoly_variant row -> List.exists contains_open_type (List.filter_map snd row.tags)
   | TUnknown | TMeta _ | TVar _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
@@ -560,6 +562,7 @@ let rec contains_open_type = function
       false
 
 let rec contains_structural_record = function
+  | TPoly_variant row -> List.exists contains_structural_record (List.filter_map snd row.tags)
   | TRecord _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
@@ -1344,11 +1347,19 @@ let fn_code ?(row_param_type_names = []) parts =
             | None -> (
             match Types.printable_constraint_info ty with
             | Some value_ty ->
+                let witness_pattern suffix =
+                  let pattern = Semantic_ir.PVar (name ^ suffix) in
+                  let payload_ty = Types.constraint_value_type value_ty in
+                  if not (concrete_constraint_type payload_ty) then pattern
+                  else
+                    Semantic_ir.PConstraint
+                      (pattern, Types.ocaml_name (TFn ([payload_ty], TString)))
+                in
                 Semantic_ir.PTuple
                   [
                     Semantic_ir.PTuple
-                      [ Semantic_ir.PVar (name ^ "__print");
-                        Semantic_ir.PVar (name ^ "__pr");
+                      [ witness_pattern "__print";
+                        witness_pattern "__pr";
                       ];
                     capability_pattern ?value_type name value_ty;
                   ]

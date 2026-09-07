@@ -7,6 +7,7 @@ type pattern =
   | PInt64 of int64
   | PString of string
   | PBool of bool
+  | PPolyTag of string * pattern option
   | PConstructor of string * pattern option
   | PTuple of pattern list
   | PList of pattern list
@@ -17,6 +18,7 @@ type pattern =
   | PConstraint of pattern * string
 
 type t =
+  | GadtScope of t
   | Located of Source_node_id.t * Location.t * t
   | Int of int
   | Int64 of int64
@@ -25,6 +27,7 @@ type t =
   | Char of char
   | Bool of bool
   | Unit
+  | PolyTag of string * t option
   | Constructor of string * t option
   | Tuple of t list
   | Ident of string
@@ -39,6 +42,9 @@ type t =
   | Let of (pattern * t) list * t
   | LetRec of string * pattern list * t * t list
   | LetRecIn of string * pattern list * t * t
+  | LetRecGroup of (pattern * t) list * t
+  | PackModule of string * string
+  | UnpackModule of string * string * t * t
   | Match of t * (pattern * t) list
   | Match_guarded of t * (pattern * t option * t) list
   | Try of t * (pattern * t option * t) list
@@ -64,6 +70,8 @@ let rec pattern_to_source = function
   | PInt64 value -> Int64.to_string value ^ "L"
   | PString value -> Printf.sprintf "%S" value
   | PBool value -> string_of_bool value
+  | PPolyTag (name, None) -> "`" ^ name
+  | PPolyTag (name, Some value) -> "`" ^ name ^ " (" ^ pattern_to_source value ^ ")"
   | PConstructor (name, None) -> name
   | PConstructor (name, Some pattern) -> name ^ " " ^ pattern_to_source pattern
   | PTuple patterns ->
@@ -83,7 +91,7 @@ let rec pattern_to_source = function
       "(" ^ pattern_to_source pattern ^ " : " ^ type_name ^ ")"
 
 let rec to_source = function
-  | Located (_, _, expression) -> to_source expression
+  | GadtScope expression | Located (_, _, expression) -> to_source expression
   | Int value -> string_of_int value
   | Int64 value -> Int64.to_string value ^ "L"
   | Float value -> value
@@ -91,6 +99,8 @@ let rec to_source = function
   | Char value -> Printf.sprintf "%C" value
   | Bool value -> string_of_bool value
   | Unit -> "()"
+  | PolyTag (name, None) -> "`" ^ name
+  | PolyTag (name, Some value) -> "`" ^ name ^ " (" ^ to_source value ^ ")"
   | Constructor (name, None) -> name
   | Constructor (name, Some value) -> name ^ " (" ^ to_source value ^ ")"
   | Tuple values ->
@@ -154,6 +164,16 @@ let rec to_source = function
       "(let rec " ^ name ^ " "
       ^ (params |> List.map pattern_to_source |> String.concat " ")
       ^ " = " ^ to_source body ^ " in " ^ to_source next ^ ")"
+  | LetRecGroup (bindings, body) ->
+      "(let rec "
+      ^ String.concat " and "
+          (List.map (fun (pattern, value) ->
+             pattern_to_source pattern ^ " = " ^ to_source value) bindings)
+      ^ " in " ^ to_source body ^ ")"
+  | PackModule (name, signature) -> "(module " ^ name ^ " : " ^ signature ^ ")"
+  | UnpackModule (name, signature, value, body) ->
+      "(let module " ^ name ^ " = (val " ^ to_source value ^ " : " ^ signature
+      ^ ") in " ^ to_source body ^ ")"
   | Match (target, cases) ->
       "(match " ^ to_source target ^ " with "
       ^ (cases
@@ -258,7 +278,7 @@ let source_attributes node_id =
 
 let rec pattern_node_ids = function
   | PLocated (node_id, _, pattern) -> node_id :: pattern_node_ids pattern
-  | PConstructor (_, payload) ->
+  | PPolyTag (_, payload) | PConstructor (_, payload) ->
       Option.fold ~none:[] ~some:pattern_node_ids payload
   | PTuple patterns | PList patterns -> List.concat_map pattern_node_ids patterns
   | PCons (head, tail) | POr (head, tail) ->
@@ -295,6 +315,7 @@ let rec pattern_to_parsetree = function
       Ast_helper.Pat.construct ~loc
         (lid (Longident.Lident (string_of_bool value)))
         None
+  | PPolyTag (name, payload) -> Ast_helper.Pat.variant ~loc name (Option.map pattern_to_parsetree payload)
   | PConstructor (name, None) ->
       Ast_helper.Pat.construct ~loc (lid (longident_of_string name)) None
   | PConstructor (name, Some pattern) ->
@@ -389,6 +410,11 @@ and guarded_cases_to_parsetree ~context cases =
   build_cases [] cases
 
 and to_parsetree ~context = function
+  | GadtScope expression ->
+      Result.map (fun expression ->
+        {expression with Parsetree.pexp_attributes =
+          Ast_helper.Attr.mk (Location.mknoloc "lg.gadt_scope") (Parsetree.PStr [])
+          :: expression.Parsetree.pexp_attributes}) (to_parsetree ~context expression)
   | Located (node_id, location, expression) ->
       to_parsetree ~context expression
       |> Result.map (fun (expression : Parsetree.expression) ->
@@ -416,6 +442,8 @@ and to_parsetree ~context = function
   | Unit ->
       Ok
         (Ast_helper.Exp.construct ~loc (lid (Longident.Lident "()")) None)
+  | PolyTag (name, None) -> Ok (Ast_helper.Exp.variant ~loc name None)
+  | PolyTag (name, Some payload) -> Result.map (fun payload -> Ast_helper.Exp.variant ~loc name (Some payload)) (to_parsetree ~context payload)
   | Constructor (name, None) ->
       Ok (Ast_helper.Exp.construct ~loc (lid (longident_of_string name)) None)
   | Constructor (name, Some value) -> (
@@ -519,16 +547,16 @@ and to_parsetree ~context = function
                   None (Pfunction_body body))))
   | Sequence expressions -> (
       let rec discardable = function
-        | Located (_, _, expression) | Constraint (expression, _) ->
+        | GadtScope expression | Located (_, _, expression) | Constraint (expression, _) ->
             discardable expression
         | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit
-        | Ident _ | Constructor (_, None) ->
+        | Ident _ | PolyTag (_, None) | Constructor (_, None) ->
             true
-        | Constructor (_, Some value) -> discardable value
+        | PolyTag (_, Some value) | Constructor (_, Some value) -> discardable value
         | Tuple values | List values | Array values ->
             List.for_all discardable values
         | Apply _ | Uncurried_apply _ | Labelled_apply _ | If _ | Fun _
-        | Sequence _ | Let _ | LetRec _ | LetRecIn _ | Match _
+        | Sequence _ | Let _ | LetRec _ | LetRecIn _ | LetRecGroup _ | PackModule _ | UnpackModule _ | Match _
         | Match_guarded _ | Try _ | Infix _ | Prefix _ | Field _ | SetField _
         | Cons _
         | Record _ | RecordUpdate _ ->
@@ -617,6 +645,32 @@ and to_parsetree ~context = function
             Ast_helper.Vb.mk ~loc (Ast_helper.Pat.var ~loc (str name)) fn
           in
           Ok (Ast_helper.Exp.let_ ~loc Asttypes.Recursive [ binding ] next))
+  | LetRecGroup (bindings, body) ->
+      let rec compile_bindings acc = function
+        | [] ->
+            Result.map
+              (fun body -> Ast_helper.Exp.let_ ~loc Asttypes.Recursive
+                 (List.rev acc) body)
+              (to_parsetree ~context body)
+        | (pattern, value) :: rest ->
+            Result.bind (to_parsetree ~context value) (fun value ->
+                let binding =
+                  Ast_helper.Vb.mk ~loc (pattern_to_parsetree pattern) value
+                in
+                compile_bindings (binding :: acc) rest)
+      in
+      compile_bindings [] bindings
+  | PackModule (name, signature) ->
+      let module_ = Ast_helper.Mod.ident ~loc (lid (longident_of_string name)) in
+      let ty = Ast_helper.Typ.package ~loc (Ast_helper.Typ.package_type ~loc (lid (longident_of_string signature)) []) in
+      Ok (Ast_helper.Exp.constraint_ ~loc (Ast_helper.Exp.pack ~loc module_ None) ty)
+  | UnpackModule (name, signature, value, body) ->
+      Result.bind (to_parsetree ~context value) (fun value ->
+        Result.map (fun body ->
+          let ty = Ast_helper.Typ.package ~loc (Ast_helper.Typ.package_type ~loc (lid (longident_of_string signature)) []) in
+          let module_ = Ast_helper.Mod.unpack ~loc (Ast_helper.Exp.constraint_ ~loc value ty) in
+          Ast_helper.Exp.struct_item ~loc (Ast_helper.Str.module_ ~loc (Ast_helper.Mb.mk ~loc (Location.mkloc (Some name) loc) module_)) body)
+          (to_parsetree ~context body))
   | Match (target, cases) -> (
       let case_patterns = List.map fst cases in
       match to_parsetree ~context target with

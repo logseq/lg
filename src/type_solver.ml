@@ -1,8 +1,6 @@
 open Semantic_type
 
-type variable =
-  | Metavariable of int
-  | Declared of string
+type variable = Metavariable of int | Declared of string
 
 let variable_equal left right =
   match (left, right) with
@@ -37,10 +35,7 @@ let filter predicate substitutions =
       if predicate variable ty then add variable ty filtered else filtered)
     substitutions empty
 
-type conflict = {
-  left : ty;
-  right : ty;
-}
+type conflict = { left : ty; right : ty }
 
 let next_metavariable = ref 0
 
@@ -65,129 +60,236 @@ let map_preserving_identity map values =
   in
   map_values values
 
-let apply substitutions ty =
+let rec variables ty =
+  let union left right =
+    List.fold_left
+      (fun variables variable ->
+        if variable_mem variable variables then variables
+        else variable :: variables)
+      left right
+  in
+  let variables_all types =
+    List.fold_left (fun names ty -> union names (variables ty)) [] types
+  in
+  let field_variables fields =
+    List.fold_left
+      (fun names (field : field) ->
+        let free =
+          variables field.ty
+          |> List.filter (function
+            | Declared name -> not (List.mem name field.quantified)
+            | Metavariable _ -> true)
+        in
+        union names free)
+      [] fields
+  in
+  match ty with
+  | TPoly_variant row -> variables_all (List.filter_map snd row.tags)
+  | TMeta { id; _ } -> [ Metavariable id ]
+  | TVar name -> [ Declared name ]
+  | TNullable inner
+  | TArray inner
+  | TRef inner
+  | TList inner
+  | TVector inner
+  | TSet inner
+  | TSeq inner ->
+      variables inner
+  | TOcaml_app (_, arguments) | TTuple arguments -> variables_all arguments
+  | TConstraint constraint_ -> variables_all (constraint_children constraint_)
+  | TFn (parameters, return_ty) -> variables_all (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      arities
+      |> List.concat_map (fun arity ->
+          (arity.return_ty :: arity.fixed_params)
+          @ Option.to_list arity.rest_param)
+      |> variables_all
+  | TRecord fields -> field_variables fields
+  | TNamed_record { type_arguments; fields; _ } ->
+      union (variables_all type_arguments) (field_variables fields)
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
+      []
+
+let rec apply substitutions ty =
   if Variable_map.cardinal substitutions = 0 then ty
   else
-      let visiting = ref [] in
-      let last_mapped = ref None in
-      let memoized_node = function
-        | TNullable _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ | TList _
-        | TVector _ | TSet _ | TSeq _ | TFn _ | TOverloaded_fn _ | TRecord _
-        | TNamed_record _ | TConstraint _ ->
-            true
-        | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-        | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _
-        | TOcaml _ ->
-            false
-      in
-      let rec apply_ty ty =
-        if not (memoized_node ty) then apply_uncached ty
-        else
-          match !last_mapped with
-          | Some (original, mapped) when original == ty -> mapped
-          | Some _ | None ->
+    let visiting = ref [] in
+    let last_mapped = ref None in
+    let memoized_node = function
+      | TNullable _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ | TList _
+      | TVector _ | TSet _ | TSeq _ | TFn _ | TOverloaded_fn _ | TRecord _
+      | TPoly_variant _ | TNamed_record _ | TConstraint _ ->
+          true
+      | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+      | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _
+        ->
+          false
+    in
+    let rec apply_ty ty =
+      if not (memoized_node ty) then apply_uncached ty
+      else
+        match !last_mapped with
+        | Some (original, mapped) when original == ty -> mapped
+        | Some _ | None ->
             let mapped = apply_uncached ty in
             last_mapped := Some (ty, mapped);
             mapped
-      and apply_replacement variable original replacement =
-        if variable_mem variable !visiting then original
-        else
-          let previous = !visiting in
-          visiting := variable :: previous;
-          let mapped = apply_ty replacement in
-          visiting := previous;
-          mapped
-      and apply_inner original build inner =
-        let mapped = apply_ty inner in
-        if mapped == inner then original else build mapped
-      and apply_field (field : field) =
+    and apply_replacement variable original replacement =
+      if variable_mem variable !visiting then original
+      else
+        let previous = !visiting in
+        visiting := variable :: previous;
+        let mapped = apply_ty replacement in
+        visiting := previous;
+        mapped
+    and apply_inner original build inner =
+      let mapped = apply_ty inner in
+      if mapped == inner then original else build mapped
+    and apply_field (field : field) =
+      if field.quantified = [] then
         let field_ty = apply_ty field.ty in
         if field_ty == field.ty then field else { field with ty = field_ty }
-      and apply_uncached ty =
-        match ty with
-        | TMeta { id; _ } -> (
-            match find_opt (Metavariable id) substitutions with
-            | None -> ty
-            | Some (TMeta replacement) when replacement.id = id -> ty
-            | Some replacement ->
-                apply_replacement (Metavariable id) ty replacement)
-        | TVar name -> (
-            match find_opt (Declared name) substitutions with
-            | None -> ty
-            | Some (TVar candidate) when String.equal candidate name -> ty
-            | Some replacement ->
-                apply_replacement (Declared name) ty replacement)
-        | TNullable inner ->
-            apply_inner ty (fun inner -> TNullable inner) inner
-        | TOcaml_app (name, arguments) ->
-            let mapped = map_preserving_identity apply_ty arguments in
-            if mapped == arguments then ty else TOcaml_app (name, mapped)
-        | TConstraint constraint_ ->
-            let mapped = map_constraint apply_ty constraint_ in
-            if mapped == constraint_ then ty else TConstraint mapped
-        | TTuple items ->
-            let mapped = map_preserving_identity apply_ty items in
-            if mapped == items then ty else TTuple mapped
-        | TArray inner -> apply_inner ty (fun inner -> TArray inner) inner
-        | TRef inner -> apply_inner ty (fun inner -> TRef inner) inner
-        | TList inner -> apply_inner ty (fun inner -> TList inner) inner
-        | TVector inner -> apply_inner ty (fun inner -> TVector inner) inner
-        | TSet inner -> apply_inner ty (fun inner -> TSet inner) inner
-        | TSeq inner -> apply_inner ty (fun inner -> TSeq inner) inner
-        | TFn (parameters, return_ty) ->
-            let mapped_parameters =
-              map_preserving_identity apply_ty parameters
-            in
-            let mapped_return = apply_ty return_ty in
-            if mapped_parameters == parameters && mapped_return == return_ty then
-              ty
-            else TFn (mapped_parameters, mapped_return)
-        | TOverloaded_fn arities ->
-            let apply_optional = function
-              | None as value -> value
-              | Some inner as value ->
-                  let mapped = apply_ty inner in
-                  if mapped == inner then value else Some mapped
-            in
-            let apply_arity arity =
-              let fixed_params =
-                map_preserving_identity apply_ty arity.fixed_params
-              in
-              let rest_param = apply_optional arity.rest_param in
-              let return_ty = apply_ty arity.return_ty in
-              if
-                fixed_params == arity.fixed_params
-                && rest_param == arity.rest_param
-                && return_ty == arity.return_ty
-              then arity
-              else { fixed_params; rest_param; return_ty }
-            in
-            let mapped = map_preserving_identity apply_arity arities in
-            if mapped == arities then ty else TOverloaded_fn mapped
-        | TRecord fields ->
-            let mapped = map_preserving_identity apply_field fields in
-            if mapped == fields then ty else TRecord mapped
-        | TNamed_record record ->
-            let type_arguments =
-              map_preserving_identity apply_ty record.type_arguments
-            in
-            let fields = map_preserving_identity apply_field record.fields in
-            if
-              type_arguments == record.type_arguments && fields == record.fields
-            then ty
-            else TNamed_record { record with type_arguments; fields }
-        | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-        | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
+      else
+        let free = variables field.ty in
+        let substitutions =
+          filter
+            (fun variable _ ->
+              variable_mem variable free
+              &&
+              match variable with
+              | Declared name -> not (List.mem name field.quantified)
+              | Metavariable _ -> true)
+            substitutions
+        in
+        let replacement_variables =
+          Variable_map.fold
+            (fun _ ty names -> variables ty @ names)
+            substitutions []
+        in
+        let occupied = free @ replacement_variables in
+        let fresh_name () =
+          let rec choose () =
+            let id = !next_metavariable in
+            incr next_metavariable;
+            let name = "lg_field_" ^ string_of_int id in
+            if variable_mem (Declared name) occupied then choose () else name
+          in
+          choose ()
+        in
+        let renamings =
+          List.filter_map
+            (fun name ->
+              if variable_mem (Declared name) replacement_variables then
+                Some (name, fresh_name ())
+              else None)
+            field.quantified
+        in
+        let quantified =
+          List.map
+            (fun name ->
+              Option.value (List.assoc_opt name renamings) ~default:name)
+            field.quantified
+        in
+        let field_ty =
+          apply
+            (of_list
+               (List.map
+                  (fun (name, replacement) -> (Declared name, TVar replacement))
+                  renamings))
+            field.ty
+        in
+        let field_ty = apply substitutions field_ty in
+        if quantified = field.quantified && field_ty == field.ty then field
+        else { field with ty = field_ty; quantified }
+    and apply_uncached ty =
+      match ty with
+      | TPoly_variant _ -> Semantic_type.map_children apply_ty ty
+      | TMeta { id; _ } -> (
+          match find_opt (Metavariable id) substitutions with
+          | None -> ty
+          | Some (TMeta replacement) when replacement.id = id -> ty
+          | Some replacement ->
+              apply_replacement (Metavariable id) ty replacement)
+      | TVar name -> (
+          match find_opt (Declared name) substitutions with
+          | None -> ty
+          | Some (TVar candidate) when String.equal candidate name -> ty
+          | Some replacement -> apply_replacement (Declared name) ty replacement
+          )
+      | TNullable inner -> apply_inner ty (fun inner -> TNullable inner) inner
+      | TOcaml_app (name, arguments) ->
+          let mapped = map_preserving_identity apply_ty arguments in
+          if mapped == arguments then ty else TOcaml_app (name, mapped)
+      | TConstraint constraint_ ->
+          let mapped = map_constraint apply_ty constraint_ in
+          if mapped == constraint_ then ty else TConstraint mapped
+      | TTuple items ->
+          let mapped = map_preserving_identity apply_ty items in
+          if mapped == items then ty else TTuple mapped
+      | TArray inner -> apply_inner ty (fun inner -> TArray inner) inner
+      | TRef inner -> apply_inner ty (fun inner -> TRef inner) inner
+      | TList inner -> apply_inner ty (fun inner -> TList inner) inner
+      | TVector inner -> apply_inner ty (fun inner -> TVector inner) inner
+      | TSet inner -> apply_inner ty (fun inner -> TSet inner) inner
+      | TSeq inner -> apply_inner ty (fun inner -> TSeq inner) inner
+      | TFn (parameters, return_ty) ->
+          let mapped_parameters = map_preserving_identity apply_ty parameters in
+          let mapped_return = apply_ty return_ty in
+          if mapped_parameters == parameters && mapped_return == return_ty then
             ty
-      in
-      apply_ty ty
+          else TFn (mapped_parameters, mapped_return)
+      | TOverloaded_fn arities ->
+          let apply_optional = function
+            | None as value -> value
+            | Some inner as value ->
+                let mapped = apply_ty inner in
+                if mapped == inner then value else Some mapped
+          in
+          let apply_arity arity =
+            let fixed_params =
+              map_preserving_identity apply_ty arity.fixed_params
+            in
+            let rest_param = apply_optional arity.rest_param in
+            let return_ty = apply_ty arity.return_ty in
+            if
+              fixed_params == arity.fixed_params
+              && rest_param == arity.rest_param
+              && return_ty == arity.return_ty
+            then arity
+            else { fixed_params; rest_param; return_ty }
+          in
+          let mapped = map_preserving_identity apply_arity arities in
+          if mapped == arities then ty else TOverloaded_fn mapped
+      | TRecord fields ->
+          let mapped = map_preserving_identity apply_field fields in
+          if mapped == fields then ty else TRecord mapped
+      | TNamed_record record ->
+          let type_arguments =
+            map_preserving_identity apply_ty record.type_arguments
+          in
+          let fields = map_preserving_identity apply_field record.fields in
+          if type_arguments == record.type_arguments && fields == record.fields
+          then ty
+          else TNamed_record { record with type_arguments; fields }
+      | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+      | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
+          ty
+    in
+    apply_ty ty
 
 let rec occurs variable ty =
   match ty with
+  | TPoly_variant row -> List.exists (occurs variable) (List.filter_map snd row.tags)
   | TMeta { id; _ } -> variable_equal variable (Metavariable id)
   | TVar name -> variable_equal variable (Declared name)
-  | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
-  | TSet inner | TSeq inner ->
+  | TNullable inner
+  | TArray inner
+  | TRef inner
+  | TList inner
+  | TVector inner
+  | TSet inner
+  | TSeq inner ->
       occurs variable inner
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.exists (occurs variable) arguments
@@ -203,10 +305,24 @@ let rec occurs variable ty =
           || occurs variable arity.return_ty)
         arities
   | TRecord fields ->
-      List.exists (fun (field : field) -> occurs variable field.ty) fields
+      List.exists
+        (fun (field : field) ->
+          (not
+             (List.exists
+                (fun name -> variable_equal variable (Declared name))
+                field.quantified))
+          && occurs variable field.ty)
+        fields
   | TNamed_record { type_arguments; fields; _ } ->
       List.exists (occurs variable) type_arguments
-      || List.exists (fun (field : field) -> occurs variable field.ty) fields
+      || List.exists
+           (fun (field : field) ->
+             (not
+                (List.exists
+                   (fun name -> variable_equal variable (Declared name))
+                   field.quantified))
+             && occurs variable field.ty)
+           fields
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       false
@@ -234,41 +350,6 @@ let bind substitutions variable ty =
 let bind_meta substitutions meta ty =
   bind substitutions (Metavariable meta.id) ty
 
-let rec variables ty =
-  let union left right =
-    List.fold_left
-      (fun variables variable ->
-        if variable_mem variable variables then variables
-        else variable :: variables)
-      left right
-  in
-  let variables_all types =
-    List.fold_left (fun names ty -> union names (variables ty)) [] types
-  in
-  match ty with
-  | TMeta { id; _ } -> [ Metavariable id ]
-  | TVar name -> [ Declared name ]
-  | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
-  | TSet inner | TSeq inner ->
-      variables inner
-  | TOcaml_app (_, arguments) | TTuple arguments -> variables_all arguments
-  | TConstraint constraint_ -> variables_all (constraint_children constraint_)
-  | TFn (parameters, return_ty) -> variables_all (return_ty :: parameters)
-  | TOverloaded_fn arities ->
-      arities
-      |> List.concat_map (fun arity ->
-             arity.return_ty :: arity.fixed_params
-             @ Option.to_list arity.rest_param)
-      |> variables_all
-  | TRecord fields ->
-      fields |> List.map (fun (field : field) -> field.ty) |> variables_all
-  | TNamed_record { type_arguments; fields; _ } ->
-      variables_all
-        (type_arguments @ List.map (fun (field : field) -> field.ty) fields)
-  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
-      []
-
 let conflict_is_occurs conflict =
   List.exists
     (fun variable -> occurs variable conflict.right)
@@ -278,36 +359,44 @@ let conflict_is_occurs conflict =
        (variables conflict.right)
 
 let rec is_open = function
+  | TPoly_variant row -> row.bound <> Exact_row || List.exists is_open (List.filter_map snd row.tags)
   | TUnknown | TMeta _ | TVar _ -> true
-  | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
-  | TSet inner | TSeq inner ->
+  | TNullable inner
+  | TArray inner
+  | TRef inner
+  | TList inner
+  | TVector inner
+  | TSet inner
+  | TSeq inner ->
       is_open inner
-  | TOcaml_app (_, arguments) | TTuple arguments -> List.exists is_open arguments
-  | TConstraint constraint_ -> List.exists is_open (constraint_children constraint_)
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists is_open arguments
+  | TConstraint constraint_ ->
+      List.exists is_open (constraint_children constraint_)
   | TFn (parameters, return_ty) -> List.exists is_open (return_ty :: parameters)
   | TOverloaded_fn arities ->
       List.exists
         (fun arity ->
           List.exists is_open
-            (arity.return_ty :: arity.fixed_params
+            ((arity.return_ty :: arity.fixed_params)
             @ Option.to_list arity.rest_param))
         arities
-  | TRecord fields -> List.exists (fun (field : field) -> is_open field.ty) fields
+  | TRecord fields ->
+      List.exists (fun (field : field) -> is_open field.ty) fields
   | TNamed_record { type_arguments; _ } -> List.exists is_open type_arguments
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
   | TBool | TUnit | TNil | TOcaml _ ->
       false
 
-let force substitutions variable ty =
-  add variable ty substitutions
+let force substitutions variable ty = add variable ty substitutions
 
 let matching_fields left right =
   left
   |> List.filter_map (fun (left_field : field) ->
-         right
-         |> List.find_opt (fun (right_field : field) ->
-                left_field.keyword = right_field.keyword)
-         |> Option.map (fun right_field -> (left_field.ty, right_field.ty)))
+      right
+      |> List.find_opt (fun (right_field : field) ->
+          left_field.keyword = right_field.keyword)
+      |> Option.map (fun right_field -> (left_field.ty, right_field.ty)))
 
 let resolve_head substitutions ty =
   let rec resolve visiting ty =
@@ -331,6 +420,16 @@ let rec unify substitutions left right =
   if left == right then Ok substitutions
   else
     match (left, right) with
+    | TPoly_variant left_row, TPoly_variant right_row ->
+        if not (Variant_row.compatible left_row right_row) then Error {left; right}
+        else List.fold_left (fun result (tag, payload) ->
+          Result.bind result (fun substitutions ->
+            match List.assoc_opt tag right_row.tags, payload with
+            | None, _ | Some None, None -> Ok substitutions
+            | Some (Some right), Some left -> unify substitutions left right
+            | _ -> Error {left; right})) (Ok substitutions) left_row.tags
+    | TInt, TOcaml "int"
+    | TOcaml "int", TInt
     | TInt, TInt
     | TFloat, TFloat
     | TChar, TChar
@@ -343,12 +442,12 @@ let rec unify substitutions left right =
     | TUnit, TUnit
     | TNil, TNil ->
         Ok substitutions
-    | TOcaml left_name, TOcaml right_name when String.equal left_name right_name ->
+    | TOcaml left_name, TOcaml right_name when String.equal left_name right_name
+      ->
         Ok substitutions
     | TUnknown, _ | _, TUnknown -> Ok substitutions
     | TMeta meta, ty | ty, TMeta meta -> bind_meta substitutions meta ty
-    | TVar name, ty | ty, TVar name ->
-        bind substitutions (Declared name) ty
+    | TVar name, ty | ty, TVar name -> bind substitutions (Declared name) ty
     | ( TConstraint (Truthy_constraint left),
         TConstraint (Truthy_constraint right) ) ->
         unify substitutions left right
@@ -412,49 +511,55 @@ let rec unify substitutions left right =
         unify substitutions left right
     | ( TConstraint
           (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
-        ((TList actual | TVector actual | TSet actual | TSeq actual
-         | TArray actual) as collection_ty) )
-    | ( ((TList actual | TVector actual | TSet actual | TSeq actual
-         | TArray actual) as collection_ty),
+        (( TList actual
+         | TVector actual
+         | TSet actual
+         | TSeq actual
+         | TArray actual ) as collection_ty) )
+    | ( (( TList actual
+         | TVector actual
+         | TSet actual
+         | TSeq actual
+         | TArray actual ) as collection_ty),
         TConstraint
-          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }) ) ->
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ })
+      ) ->
         Result.bind (unify substitutions element_ty actual)
-          (fun substitutions ->
-            unify substitutions storage_ty collection_ty)
+          (fun substitutions -> unify substitutions storage_ty collection_ty)
     | ( TConstraint
           (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
         TString )
     | ( TString,
         TConstraint
-          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }) ) ->
-        Result.bind (unify substitutions element_ty TChar)
-          (fun substitutions -> unify substitutions storage_ty TString)
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ })
+      ) ->
+        Result.bind (unify substitutions element_ty TChar) (fun substitutions ->
+            unify substitutions storage_ty TString)
     | ( TConstraint
           (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
-        (TOcaml_app
-          (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
-          as collection_ty) )
-    | ( (TOcaml_app
-          (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
-          as collection_ty),
+        (TOcaml_app (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
+         as collection_ty) )
+    | ( (TOcaml_app (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
+         as collection_ty),
         TConstraint
-          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }) ) ->
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ })
+      ) ->
         Result.bind (unify substitutions element_ty actual)
           (fun substitutions -> unify substitutions storage_ty collection_ty)
     | ( TConstraint
           (Seqable_constraint
-            {
-              requirement = left_requirement;
-              element = left_element;
-              storage = left_storage;
-            }),
+             {
+               requirement = left_requirement;
+               element = left_element;
+               storage = left_storage;
+             }),
         TConstraint
           (Seqable_constraint
-            {
-              requirement = right_requirement;
-              element = right_element;
-              storage = right_storage;
-            }) )
+             {
+               requirement = right_requirement;
+               element = right_element;
+               storage = right_storage;
+             }) )
       when left_requirement = right_requirement ->
         unify_lists substitutions
           [ left_element; left_storage ]
@@ -462,44 +567,43 @@ let rec unify substitutions left right =
     | ( TConstraint
           (Contains_constraint { key = left_key; storage = left_storage }),
         TConstraint
-          (Contains_constraint { key = right_key; storage = right_storage }) ) ->
-        unify_lists substitutions
-          [ left_key; left_storage ]
+          (Contains_constraint { key = right_key; storage = right_storage }) )
+      ->
+        unify_lists substitutions [ left_key; left_storage ]
           [ right_key; right_storage ]
     | ( TConstraint (Open_boundary_constraint left),
         TConstraint (Open_boundary_constraint right) ) ->
         unify substitutions left right
     | ( TConstraint
           (Protocol_constraint
-            {
-              protocol_id = left_id;
-              witness = left_witness;
-              value = left_value;
-              guarded = left_guarded;
-            }),
+             {
+               protocol_id = left_id;
+               witness = left_witness;
+               value = left_value;
+               guarded = left_guarded;
+             }),
         TConstraint
           (Protocol_constraint
-            {
-              protocol_id = right_id;
-              witness = right_witness;
-              value = right_value;
-              guarded = right_guarded;
-            }) )
+             {
+               protocol_id = right_id;
+               witness = right_witness;
+               value = right_value;
+               guarded = right_guarded;
+             }) )
       when Protocol_id.equal left_id right_id && left_guarded = right_guarded ->
         unify_lists substitutions
           [ left_witness; left_value ]
           [ right_witness; right_value ]
     | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args)
-      when left_name = right_name && List.length left_args = List.length right_args
-      ->
+      when left_name = right_name
+           && List.length left_args = List.length right_args ->
         unify_lists substitutions left_args right_args
     | TTuple left_items, TTuple right_items
       when List.length left_items = List.length right_items ->
         unify_lists substitutions left_items right_items
     | TFn (left_params, left_return), TFn (right_params, right_return)
       when List.length left_params = List.length right_params ->
-        Result.bind
-          (unify_lists substitutions left_params right_params)
+        Result.bind (unify_lists substitutions left_params right_params)
           (fun substitutions -> unify substitutions left_return right_return)
     | TOverloaded_fn left_arities, TOverloaded_fn right_arities
       when List.length left_arities = List.length right_arities ->
@@ -514,8 +618,7 @@ let rec unify substitutions left right =
               = List.length right_record.type_arguments ->
         Result.bind
           (unify_lists substitutions left_record.type_arguments
-             right_record.type_arguments)
-          (fun substitutions ->
+             right_record.type_arguments) (fun substitutions ->
             let fields =
               matching_fields left_record.fields right_record.fields
             in
@@ -524,21 +627,18 @@ let rec unify substitutions left right =
                 Result.bind result (fun substitutions ->
                     unify substitutions left right))
               (Ok substitutions) fields)
-    | ( TOcaml_app
-          ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]),
+    | ( TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]),
         (TRecord fields | TNamed_record { fields; nominal = false; _ }) )
     | ( (TRecord fields | TNamed_record { fields; nominal = false; _ }),
-        TOcaml_app
-          ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ) ->
-        Result.bind (unify substitutions key_ty TKeyword)
-          (fun substitutions ->
+        TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ) ->
+        Result.bind (unify substitutions key_ty TKeyword) (fun substitutions ->
             List.fold_left
               (fun result (field : field) ->
                 Result.bind result (fun substitutions ->
                     unify substitutions value_ty field.ty))
               (Ok substitutions) fields)
-    | (TRecord left_fields | TNamed_record { fields = left_fields; _ }),
-      (TRecord right_fields | TNamed_record { fields = right_fields; _ }) ->
+    | ( (TRecord left_fields | TNamed_record { fields = left_fields; _ }),
+        (TRecord right_fields | TNamed_record { fields = right_fields; _ }) ) ->
         let fields = matching_fields left_fields right_fields in
         List.fold_left
           (fun result (left, right) ->
@@ -555,14 +655,9 @@ and unify_lists substitutions left right =
 
 and unify_arities substitutions left right =
   if List.length left.fixed_params <> List.length right.fixed_params then
-    Error
-      {
-        left = TOverloaded_fn [ left ];
-        right = TOverloaded_fn [ right ];
-      }
+    Error { left = TOverloaded_fn [ left ]; right = TOverloaded_fn [ right ] }
   else
-    Result.bind
-      (unify_lists substitutions left.fixed_params right.fixed_params)
+    Result.bind (unify_lists substitutions left.fixed_params right.fixed_params)
       (fun substitutions ->
         let rest =
           match (left.rest_param, right.rest_param) with
@@ -585,6 +680,7 @@ let infer_all substitutions ~templates ~actuals =
   else unify_lists substitutions templates actuals
 
 let rec freshen_unknowns = function
+  | TPoly_variant _ as ty -> Semantic_type.map_children freshen_unknowns ty
   | TUnknown -> fresh ()
   | TNullable ty -> TNullable (freshen_unknowns ty)
   | TArray ty -> TArray (freshen_unknowns ty)
@@ -622,17 +718,16 @@ let rec freshen_unknowns = function
           record with
           type_arguments = List.map freshen_unknowns record.type_arguments;
         }
-  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-    | TKeyword | TBool | TUnit | TNil | TMeta _ | TVar _ | TOcaml _ ) as ty ->
+  | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+    | TBool | TUnit | TNil | TMeta _ | TVar _ | TOcaml _ ) as ty ->
       ty
-
 
 let generalize ty =
   let declared_names =
     variables ty
     |> List.filter_map (function
-         | Declared name -> Some name
-         | Metavariable _ -> None)
+      | Declared name -> Some name
+      | Metavariable _ -> None)
   in
   let inferred_name id =
     let rec available suffix =
@@ -652,14 +747,11 @@ let generalize ty =
                (Declared_variable name :: quantified, substitutions)
            | Metavariable id ->
                let name = inferred_name id in
-               ( Inferred_variable { metavariable_id = id; name }
-                 :: quantified,
+               ( Inferred_variable { metavariable_id = id; name } :: quantified,
                  add (Metavariable id) (TVar name) substitutions ))
          ([], empty)
   in
-  let quantified =
-    List.rev quantified
-  in
+  let quantified = List.rev quantified in
   { quantified; body = apply substitutions ty }
 
 let instantiate scheme =
@@ -690,3 +782,12 @@ let canonical_scheme_body scheme =
     |> snd
   in
   apply substitutions scheme.body
+
+let canonical ty =
+  let substitutions =
+    variables ty
+    |> List.mapi (fun index variable ->
+        (variable, TMeta { id = -index - 1; location = None }))
+    |> of_list
+  in
+  apply substitutions ty

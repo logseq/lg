@@ -1893,6 +1893,7 @@ let add_type_name_reference add name references =
 
 let rec add_type_references add ty references =
   match ty with
+  | Types.TPoly_variant row -> List.fold_left (fun refs ty -> add_type_references add ty refs) references (List.filter_map snd row.tags)
   | Types.TOcaml name -> add_type_name_reference add name references
   | TOcaml_app (name, arguments) ->
       let references =

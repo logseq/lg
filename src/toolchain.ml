@@ -2078,7 +2078,12 @@ let analyze ?(target = Target.default) ?(filename = "<string>") source =
               if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
                 Printf.eprintf "%s\n%!"
                   (Ocaml_parsetree.print_implementation parsetree.structure);
-              match Ocaml_typechecker.analyze parsetree.structure with
+              let structure =
+                Lg_compiler_support.Ocaml_module.mark_private_values
+                  ~is_private:(Compiler_environment.export_is_private typed.typecheck_state.env)
+                  parsetree.structure
+              in
+              match Ocaml_typechecker.analyze structure with
               | Error _ as err -> err
               | Ok analysis ->
                   Ok
@@ -2097,7 +2102,10 @@ let interface ?(target = Target.default) ?(filename = "<string>") source =
         (Printtyp.wrap_printing_env ~error:false analysis.compiler_env
            (fun () ->
              Format.asprintf "%a@." Printtyp.signature
-               analysis.typed_structure.str_type))
+               (Lg_compiler_support.Ocaml_module.public_signature
+                  ~compiler_env:analysis.compiler_env
+                  ~is_private:(fun name -> Compiler_environment.export_is_private analysis.typecheck_state.env name)
+                  analysis.typed_structure.str_type)))
 
 let order_workspace_from_state ?(target = Target.default) ?reader_target
     initial_state sources =
@@ -2328,7 +2336,7 @@ let typecheck_parsetree ?(target = Target.default) ?(filename = "<string>")
           | Error _ as err -> err
           | Ok _ -> Ok ()))
 
-let print_parsetree = Ocaml_parsetree_backend.print
+let print_parsetree structure = Ocaml_parsetree_backend.print structure
 
 let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
     prepared =
@@ -2355,8 +2363,16 @@ let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
               let state =
                 { state with located_items = []; requested_set_modules }
               in
+              let reserved_modules =
+                state.typecheck_state.env |> Compiler_environment.modules
+                |> Module_registry.module_bindings
+                |> List.map (fun (name, _) ->
+                    match String.split_on_char '.' name with
+                    | root :: _ -> root
+                    | [] -> name)
+              in
               let ocaml_source =
-                Ocaml_parsetree_backend.print result.structure
+                Ocaml_parsetree_backend.print ~reserved_modules result.structure
               in
               if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
                 Printf.eprintf "%s\n%!" ocaml_source;

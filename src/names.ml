@@ -290,3 +290,12 @@ let compact_generated_source source =
       loop (index + 1))
   in
   loop 0
+
+let type_path_to_ocaml path =
+  match List.rev (String.split_on_char '.' path) with
+  | [] -> path
+  | name :: reversed_modules ->
+      let name = sanitize_name name in
+      match List.rev reversed_modules with
+      | [] -> name
+      | modules -> module_path_to_ocaml (String.concat "." modules) ^ "." ^ name

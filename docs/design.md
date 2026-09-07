@@ -870,6 +870,54 @@ that erase the payload type are not supported.
 
 ## Compiler architecture
 
+### Recursive functions and inferred interfaces
+
+`letfn` accepts a nonempty vector of fixed-arity local function definitions.
+Every name is visible in every definition and in the enclosing body. Dependency
+components are inferred before their users: a mutually recursive component is
+monomorphic internally and generalized after checking, while independent
+components retain independent polymorphic uses. Lexically bound parameter and
+local names are not dependencies on names they shadow. Duplicate function
+names and incompatible recursive applications are errors.
+
+Recursive inference retains equations between call arguments, parameters, and
+branch results. Capability evidence constrains the underlying value; it must
+not create a recursive storage equation between a value and its witness pair.
+Concrete result information is preserved when a result follows a parameter,
+including a typed collection passed an initially empty collection.
+
+Module-local recursive `defn` and `defn-` support inferred parameters and return
+types. An explicit return annotation remains a checked contract and does not
+require otherwise inferable parameter annotations.
+
+Inferred OCaml interfaces omit private `defn-` values, including their generated
+arity helpers, inside nested modules and functor results. The implementation
+retains those values for internal calls. Public signatures continue to come
+from OCaml's checked types, preserving polymorphism and abstract type identity.
+
+A signature include can constrain a type declared by the included signature:
+
+```clojure
+(module-signature ValueSig (type item) (val value :item))
+(module-signature IntSig (include ValueSig (with-type item :int)))
+(module-signature IntValue (include ValueSig (substitute-type item :int)))
+```
+
+`with-type` preserves the type declaration and makes its equality explicit.
+`substitute-type` replaces its uses and removes the declaration from the result.
+Parameterized declarations use the same optional parameter vector as type
+definitions, for example `(substitute-type box [a] :option<a>)`. These constraints
+lower to OCaml signature constraints; OCaml checks compatibility with the
+original declaration. Frontend metadata applies the same substitutions so
+functor calls retain the concrete parameter and result relationships. Unknown
+type names and mismatched parameter arities are errors. Nested module paths are
+supported, for example `(with-type Inner.item :int)` and
+`(substitute-type Inner.item :int)`. Functor applications substitute actual
+argument module paths into exported values and type aliases. Private values
+remain hidden through module aliases, applications, and explicit ascriptions;
+a named signature is expanded in the inferred interface when filtering requires
+it.
+
 Prefer direct, typed elaboration:
 
 ```text
@@ -950,3 +998,82 @@ Before merging a compiler or runtime change, verify:
 - when the change affects persistent sorted sets, the standalone
   `persistent-sorted-set-lg` Native, Melange, js_of_ocaml, audit, and benchmark
   gates pass.
+
+### First-class module values
+
+`(pack-module Implementation Signature)` creates a statically typed OCaml
+module package. Its annotation is `:module<Signature>`. Packages can be returned
+from functions, selected by ordinary control flow, and stored in homogeneous
+collections. `(let-module [M package] body...)` unpacks a package into a lexical
+module binding. Signature members retain their declared types, including abstract
+members qualified by the local module. The OCaml checker enforces signature
+inclusion and prevents these local abstract types from escaping. This is the
+traditional first-class module mechanism shared by Native and Melange; it does
+not use OCaml 5.5 module-dependent functions.
+
+### Explicitly polymorphic record fields
+
+A field declaration `(run (forall [a] :fn<a;a>))` quantifies `a` within that
+field. One record value can expose the function at multiple argument types.
+Construction must supply an implementation that is general enough for every
+quantified type; OCaml checks this against an explicitly polymorphic record
+label. Field quantifiers are excluded from the containing record's free type
+variables, and substitution preserves their scope and avoids variable capture.
+A field quantifier must have a different name from the record's own type
+parameters.
+
+### GADT constructor indices and existential payloads
+
+A `type-variant` constructor can end with `(returns :family<index>)` to specify
+its result index. For example, `(IntExpression :int (returns :expression<int>))`
+constructs only an `expression<int>`. An optional constructor-local parameter
+vector, such as `(Pack [a] :a :fn<a;string> (returns :packed))`, scopes payload
+type variables to that constructor. Variables absent from the result are
+existential when the constructor is matched.
+
+A generic eliminator uses an explicit signature, for example
+`(signature evaluate [a] :fn<expression<a>;a>)`. GADT patterns introduce
+branch-local type equations; they do not specialize the enclosing recursive
+function. Generated explicitly polymorphic bindings that use these equations
+introduce OCaml locally abstract types. OCaml checks index consistency and
+rejects existential types that escape their pattern scope. Constructors and
+payloads retain ordinary static OCaml representations on Native and Melange.
+
+### Polymorphic variants and row types
+
+`(tag Ready)` constructs a constant tag; `(tag Value 42)` constructs a tag with
+one statically typed payload. Patterns use the same forms. Matching can infer an
+upper row and its payload types from the branches, without a parameter annotation.
+An exhaustive match limits admissible tags; a catch-all permits additional tags.
+The generated representation is an OCaml polymorphic variant, not a runtime
+map or universal value.
+
+Annotations use `:variant<Ready;Value:int>` for a closed row,
+`:variant-open<Value:int>` for a lower bound that permits additional tags, and
+`:variant-upper<Ready;Value:int>` for an upper bound. Payload types can contain
+declared type parameters. Functions can accept and return open rows, and OCaml
+checks the final row constraints and shared return relationships. Compiler type
+metadata preserves ordinary variant rows, including required tags inside an
+upper bound read from an OCaml interface.
+
+Known tags print as `(tag Name)` or `(tag Name payload)`. A tag outside the known
+part of an open row uses the opaque `<variant>` display; printing does not inspect
+or erase an unknown payload.
+
+### Library-selected literals
+
+`lg.literal/build` accepts a literal map from kinds to constructor symbols and a
+source form. It expands that explicit form into ordinary statically checked
+constructor calls. Scalar kinds are `:nil`, `:bool`, `:int`, `:float`, `:string`,
+`:keyword`, `:symbol`, and `:char`. Collection kinds are `:vector`, `:list`,
+`:set`, and `:map`; collection constructors take an OCaml list, and map entries
+are tuples. Keyword payloads retain their namespace without the leading colon.
+A library supplies only the kinds its closed representation supports.
+
+`(unquote expression)` embeds an already constructed value. `(unquote :kind
+expression)` passes a typed expression to the selected scalar constructor.
+Generated lexical bindings evaluate expressions once in source order, including
+nested map keys and values. Unsupported kinds/forms are expansion errors;
+constructor argument compatibility is checked normally. Ordinary collection and
+quote semantics do not change. The compiler contains no DataScript-specific
+literal handling.

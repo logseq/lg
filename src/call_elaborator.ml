@@ -432,6 +432,7 @@ let rec materialize_protocol_unknown = function
   | ty -> ty
 
 let rec concrete_nominal_type_argument = function
+  | TPoly_variant row -> List.for_all concrete_nominal_type_argument (List.filter_map snd row.tags)
   | TUnknown | TMeta _ | TVar _ -> false
   | ty when Types.is_dynamic ty -> false
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
@@ -477,6 +478,7 @@ let specialize_dynamic_nominal_unpack expected expression =
   | _ -> None
 
 let rec contains_unresolved_type = function
+  | TPoly_variant row -> List.exists contains_unresolved_type (List.filter_map snd row.tags)
   | ty when Types.is_dynamic ty -> false
   | TUnknown | TMeta _ | TVar _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
@@ -1258,6 +1260,7 @@ let rec resolve_named_record_application env ty =
     }
   in
   match ty with
+  | TPoly_variant _ -> Semantic_type.map_children (resolve_named_record_application env) ty
   | TOcaml_app (name, arguments) ->
       let arguments =
         List.map (resolve_named_record_application env) arguments
@@ -20651,8 +20654,11 @@ let create ~compile_expr =
                             } )
                         when Option.is_none (optional_payload parameter_ty)
                              && argument_compatible parameter_ty actual_ty ->
-                          Types.constraint_value_type actual_ty
-                      | _, Some arg -> Types.constraint_value_type arg.ty
+                          Type_inference.refine_type
+                            (Types.constraint_value_type actual_ty) ret
+                      | _, Some arg ->
+                          Type_inference.refine_type
+                            (Types.constraint_value_type arg.ty) ret
                       | _, None -> ret)
                   | _ -> ret
                 in

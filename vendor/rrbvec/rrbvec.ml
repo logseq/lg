@@ -127,14 +127,14 @@ let radix_child_index height index =
   let shift = radix_shift height in
   if shift >= Sys.int_size then 0 else (index lsr shift) land (width - 1)
 
+let rec find_child_from sizes index child_index =
+  if index < Array.unsafe_get sizes child_index then child_index
+  else find_child_from sizes index (child_index + 1)
+
 let find_child sizes height index =
   let length = Array.length sizes in
   let start = min (length - 1) (radix_child_index height index) in
-  let rec loop child_index =
-    if index < Array.unsafe_get sizes child_index then child_index
-    else loop (child_index + 1)
-  in
-  loop start
+  find_child_from sizes index start
 
 let radix_offset height child_index =
   let shift = radix_shift height in
@@ -705,9 +705,12 @@ let rec get_node node index =
   | Empty -> invalid_index ()
   | Leaf values -> Array.unsafe_get values index
   | Branch branch ->
-      let child_index, previous_size =
-        child_range branch.sizes branch.height index
-      in
+      let child_index = match branch.sizes with
+        | None -> radix_child_index branch.height index
+        | Some sizes -> find_child sizes branch.height index in
+      let previous_size = match branch.sizes with
+        | None -> radix_offset branch.height child_index
+        | Some sizes -> if child_index = 0 then 0 else Array.unsafe_get sizes (child_index - 1) in
       get_node
         (Array.unsafe_get branch.children child_index)
         (index - previous_size)

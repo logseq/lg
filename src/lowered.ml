@@ -5,6 +5,14 @@ type value_pattern =
   | Ignore_pattern
   | Located_value of Source_node_id.t * Location.t * value_pattern
 
+type signature_type_constraint = {
+  constrained_name : string;
+  constrained_parameters : string list;
+  replacement : Types.ty;
+  destructive : bool;
+  constraint_location : Location.t option;
+}
+
 type signature_item =
   | Signature_value of {
       source_name : string;
@@ -25,13 +33,21 @@ type signature_item =
       location : Location.t option;
       signature_location : Location.t option;
     }
+  | Signature_inline_module of {
+      source_name : string;
+      module_name : string;
+      items : signature_item list;
+      location : Location.t option;
+    }
   | Signature_include of {
       module_signature : string;
       signature_location : Location.t option;
+      type_constraints : signature_type_constraint list;
     }
 
 type variant_constructor = {
   constructor_name : string;
+  result_type : Types.ty option;
   payload_types : Types.ty list;
   location : Location.t option;
 }

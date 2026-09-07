@@ -47,5 +47,5 @@ let of_type = function
   | TNullable _ -> Some (Host_receiver "option")
   | TNamed_record record -> Some (Record_receiver record.type_id)
   | TFn _ | TOverloaded_fn _ -> Some (Host_receiver "fn")
-  | TUnknown | TMeta _ | TMap_keys | TVar _ | TRecord _ | TConstraint _ ->
+  | TPoly_variant _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TRecord _ | TConstraint _ ->
       None

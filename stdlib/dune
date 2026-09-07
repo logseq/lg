@@ -202,6 +202,7 @@
  (package lg)
  (section lib)
  (files
+  (lg/literal.cljc as stdlib/lg/literal.cljc)
   (clojure/core.cljc as stdlib/clojure/core.cljc)
   (clojure/core.lgi as stdlib/clojure/core.lgi)
   (clojure/string.cljc as stdlib/clojure/string.cljc)

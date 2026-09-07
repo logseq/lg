@@ -37,6 +37,7 @@ type t = {
   inline_macros : Macro_definition.t String_map.t;
   macro_functions : Macro_definition.t String_map.t;
   macro_values : Ast.form String_map.t;
+  private_exports : unit String_map.t;
   expected_type : Types.ty option;
   source_macros_expanded : bool;
   closed_sum_constructors :
@@ -76,6 +77,7 @@ let empty =
     inline_macros = String_map.empty;
     macro_functions = String_map.empty;
     macro_values = String_map.empty;
+    private_exports = String_map.empty;
     expected_type = None;
     source_macros_expanded = false;
     closed_sum_constructors = [];
@@ -396,11 +398,29 @@ let add_closed_sum_constructors result_ty constructors env =
       (result_ty, constructors) :: env.closed_sum_constructors;
   }
 
+let closed_sum_head = function
+  | Types.TOcaml name -> Some name
+  | Types.TOcaml_app (name, _) -> Some name
+  | _ -> None
+
 let variant_constructors result_ty env =
   env.closed_sum_constructors
   |> List.filter_map (fun (candidate, constructors) ->
          if Types.equal result_ty candidate then Some constructors else None)
   |> List.flatten |> List.sort_uniq compare
+
+let is_closed_sum ty env =
+  variant_constructors ty env <> []
+  ||
+  match closed_sum_head ty with
+  | None -> false
+  | Some name ->
+      List.exists
+        (fun (candidate, _) ->
+          match closed_sum_head candidate with
+          | Some candidate_name -> String.equal candidate_name name
+          | None -> false)
+        env.closed_sum_constructors
 
 let closed_sum_candidates_for_payloads payload_types env =
   let rec compatible visited expected actual =
@@ -904,3 +924,19 @@ let find_unique_anonymous_record_by_layout fields env =
 
 let add_anonymous_record ~owner record env =
   { env with anonymous_records = (owner, record) :: env.anonymous_records }
+
+let hide_export name env =
+  { env with private_exports = String_map.add name () env.private_exports }
+
+let export_is_private env name = String_map.mem name env.private_exports
+
+let inherit_private_exports source env =
+  { env with private_exports = source.private_exports }
+
+let remap_private_exports ~from_module ~to_module env =
+  let prefix = from_module ^ "." in
+  String_map.fold (fun name () env ->
+    if String.starts_with ~prefix name then
+      hide_export (to_module ^ String.sub name (String.length from_module)
+        (String.length name - String.length from_module)) env
+    else env) env.private_exports env

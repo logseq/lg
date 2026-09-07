@@ -28,7 +28,6 @@ dynamic_files=$(rg -l 'Runtime_dynamic' "$root/src" "$root/runtime" \
   --glob '*.ml' --glob '*.mli' | sed "s|$root/||" | sort)
 allowed_dynamic_files='runtime/runtime_map.ml
 runtime/runtime_multimethod.ml
-runtime/runtime_tap.ml
 runtime/runtime_test_report.ml
 runtime/runtime_transient.ml
 src/call_elaborator.ml
@@ -54,7 +53,6 @@ src/semantic_lowering.ml
 src/sequence_call_elaborator.ml
 src/special_form_elaborator.ml
 src/structural_map.ml
-src/tap_dynamic_boundary.ml
 src/top_level_elaborator.ml
 src/type_annotation.ml
 src/types.ml'

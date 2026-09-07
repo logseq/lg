@@ -169,6 +169,11 @@ let exposes_internal_compilation_unit = function
 let rec of_compiler_type =
   let open Lg_compiler_support.Ocaml_value in
   function
+  | Variant (tags, closed, required) ->
+      let bound = if not closed then Lower_row
+        else if List.length tags = List.length required then Exact_row
+        else if required = [] then Upper_row else Bounded_row required in
+      TPoly_variant {tags = List.map (fun (tag, payload) -> (tag, Option.map of_compiler_type payload)) tags; bound}
   | Variable id -> TVar ("ocaml_" ^ string_of_int id)
   | Arrow (Unlabelled, argument, result) ->
       let arguments, result = function_parts result in

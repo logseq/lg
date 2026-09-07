@@ -6,6 +6,7 @@ type state = Compiler_state.t
 let empty_state = Compiler_state.empty
 
 let rec contains_inferred_type = function
+  | Types.TPoly_variant row -> List.exists contains_inferred_type (List.filter_map snd row.tags)
   | Types.TUnknown | Types.TMeta _ | Types.TVar _ -> true
   | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
   | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
@@ -37,6 +38,7 @@ let rec contains_inferred_type = function
 
 let deferred_type_variables ty =
   let rec collect variables = function
+    | Types.TPoly_variant row -> List.fold_left collect variables (List.filter_map snd row.tags)
     | Types.TUnknown | Types.TMeta _ | Types.TNil -> "a" :: variables
     | Types.TVar name -> name :: variables
     | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
@@ -77,6 +79,7 @@ let freshen_deferred_type ?return_param_index ty =
     Types.TVar name
   in
   let rec freshen = function
+    | Types.TPoly_variant _ as ty -> Semantic_type.map_children freshen ty
     | Types.TUnknown -> fresh_variable ()
     | Types.TMeta meta -> Type_solver.fresh ?location:meta.location ()
     | Types.TVar _ as ty -> ty
@@ -146,6 +149,7 @@ let freshen_deferred_type ?return_param_index ty =
       | _ -> None
     in
     let rec dynamic_unknowns = function
+      | Types.TPoly_variant _ as ty -> ty
       | Types.TUnknown -> Types.dynamic_constraint Types.TUnknown
       | Types.TMeta _ as ty -> ty
       | Types.TVar _ as ty -> ty
@@ -764,6 +768,7 @@ let remove_resolved_names names form =
 
 let resolve_anonymous_record_patterns env items =
   let rec resolve_pattern = function
+    | Semantic_ir.PPolyTag (name, payload) -> Semantic_ir.PPolyTag (name, Option.map resolve_pattern payload)
     | Semantic_ir.PLocated (node_id, location, pattern) ->
         Semantic_ir.PLocated
           (node_id, location, resolve_pattern pattern)
@@ -817,6 +822,10 @@ let resolve_anonymous_record_patterns env items =
                    (resolve_pattern pattern, value))
                  bindings,
                body)
+        | Semantic_ir.LetRecGroup (bindings, body) ->
+            Semantic_ir.LetRecGroup
+              (List.map (fun (pattern, value) -> (resolve_pattern pattern, value))
+                 bindings, body)
         | Semantic_ir.LetRec (name, patterns, body, arguments) ->
             Semantic_ir.LetRec
               (name, List.map resolve_pattern patterns, body, arguments)
@@ -984,6 +993,11 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
                 ((index, form) :: deferred) first_error made_progress rest
             else Error error
         | Ok (scope, env, next_type, item) ->
+            let env = match form with
+              | Ast.FList (Ast.FSymbol "defn-" :: _) ->
+                  Interface_visibility.mark_private env item
+              | _ -> env
+            in
             let unresolved_names =
               remove_resolved_names unresolved_names form
             in

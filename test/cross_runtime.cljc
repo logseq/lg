@@ -1,5 +1,24 @@
 (require [clojure.string :as string])
 
+(letfn [(even-local? [value]
+          (if (zero? value) true (odd-local? (dec value))))
+        (odd-local? [value]
+          (if (zero? value) false (even-local? (dec value))))]
+  (assert (even-local? 20))
+  (assert (odd-local? 19)))
+
+(letfn [(first-step [remaining value]
+          (if (zero? remaining) value (second-step (dec remaining) value)))
+        (second-step [remaining value] (first-step remaining value))]
+  (assert (= "42:ok" (str (first-step 3 42) ":" (first-step 3 "ok")))))
+
+(module InferredRecursion
+  (defn pass [remaining value]
+    (if (zero? remaining) value (pass (dec remaining) value))))
+(assert (= "42:ok"
+           (str (InferredRecursion/pass 3 42) ":"
+                (InferredRecursion/pass 3 "ok"))))
+
 (assert (= "   中" (format "%4.1s" "中文")))
 (assert (= "  😀" (format "%4.2s" "😀x")))
 (assert (= "item:0007:2.50" (format "%s:%04d:%.2f" "item" 7 2.5)))
@@ -76,3 +95,38 @@
 (println
   (str environment ":" (selected-sum 1 2 3 4) ":" lazy-total ":" stopped ":"
        (contains? values 3) ":" joined ":" regex-matched ":" hash-matched))
+
+(module-signature RuntimeTransform (val run :fn<int;int>))
+(module RuntimeIncrement (defn run [x] (+ x 1)))
+(module RuntimeDouble (defn run [x] (* x 2)))
+(defn select-runtime-transform [flag]
+  (if flag (pack-module RuntimeIncrement RuntimeTransform)
+           (pack-module RuntimeDouble RuntimeTransform)))
+(defn apply-runtime-transform [^:module<RuntimeTransform> package ^:int value]
+  (let-module [M package] (M/run value)))
+(assert (= 42 (apply-runtime-transform (select-runtime-transform true) 41)))
+(assert (= 42 (apply-runtime-transform (select-runtime-transform false) 21)))
+
+(type-record RuntimeUniversal (run (forall [a] :fn<a;a>)))
+(def runtime-universal (record RuntimeUniversal (run (fn [x] x))))
+(assert (= 42 ((:run runtime-universal) 42)))
+(assert (= "static" ((:run runtime-universal) "static")))
+
+(type-variant runtime-expression [a]
+  (RuntimeInt :int (returns :runtime-expression<int>))
+  (RuntimeString :string (returns :runtime-expression<string>)))
+(signature evaluate-runtime-expression [a] :fn<runtime-expression<a>;a>)
+(defn evaluate-runtime-expression [expression]
+  (match expression (RuntimeInt value) value (RuntimeString value) value))
+(assert (= 42 (evaluate-runtime-expression (RuntimeInt 42))))
+(assert (= "static" (evaluate-runtime-expression (RuntimeString "static"))))
+
+(defn read-runtime-status [status]
+  (match status (tag Ready) 0 (tag Value value) (+ value 1)))
+(assert (= 42 (read-runtime-status (tag Value 41))))
+(assert (= 0 (read-runtime-status (tag Ready))))
+(signature extract-runtime-status [a] :fn<variant-upper<Ready;Value:a>;option<a>>)
+(defn extract-runtime-status [status]
+  (match status (tag Ready) nil (tag Value value) (Some value)))
+(assert (= "static" (Option.get (extract-runtime-status (tag Value "static")))))
+(assert (= 42 (Option.get (extract-runtime-status (tag Value 42)))))

@@ -47,6 +47,15 @@ let type_constructor name args =
   Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) args
 
 let rec core_type ?(inference_variables = []) ?(type_variables = []) = function
+  | Types.TOcaml_app (name, [Types.TOcaml signature]) when name = Types.module_package_name ->
+      Ast_helper.Typ.package ~loc (Ast_helper.Typ.package_type ~loc (lid (longident_of_string signature)) [])
+  | Types.TPoly_variant row ->
+      let fields = List.map (fun (tag, payload) ->
+        Ast_helper.Rf.tag ~loc (Location.mkloc tag loc) (Option.is_none payload)
+          (Option.to_list (Option.map (core_type ~inference_variables ~type_variables) payload))) row.tags in
+      Ast_helper.Typ.variant ~loc fields
+        (if row.bound = Types.Lower_row then Open else Closed)
+        (match row.bound with Types.Upper_row -> Some [] | Types.Bounded_row tags -> Some tags | _ -> None)
   | Types.TInt -> type_constructor "int" []
   | Types.TFloat -> type_constructor "float" []
   | Types.TChar -> type_constructor "char" []
@@ -312,6 +321,7 @@ let type_parameters parameters =
 let declaration_location = Option.value ~default:loc
 
 let rec type_mentions name = function
+  | Types.TPoly_variant row -> List.exists (type_mentions name) (List.filter_map snd row.tags)
   | Types.TOcaml candidate -> candidate = name
   | Types.TOcaml_app (candidate, args) ->
       candidate = name || List.exists (type_mentions name) args
@@ -367,7 +377,10 @@ let record_type_definition type_name parameters fields location =
            Ast_helper.Type.field ~loc:field_loc
              ~mut:(if field.mutable_ then Mutable else Immutable)
              (named_loc field.ocaml_name field_loc)
-             (core_type ~type_variables:parameters field.ty))
+             (let ty = core_type ~type_variables:(field.quantified @ parameters) field.ty in
+              if field.quantified = [] then ty
+              else Ast_helper.Typ.poly ~loc:field_loc
+                (List.map (fun name -> named_loc name field_loc) field.quantified) ty))
   in
   let type_declaration =
     if fields = [] then
@@ -423,6 +436,7 @@ let type_variant_definition type_name parameters constructors location =
            in
            Ast_helper.Type.constructor ~loc:constructor_loc
              ~args:(Pcstr_tuple (List.map core_type constructor.payload_types))
+             ?res:(Option.map core_type constructor.result_type)
              (named_loc constructor.constructor_name constructor_loc))
   in
   let type_declaration =
@@ -433,7 +447,7 @@ let type_variant_definition type_name parameters constructors location =
   in
   Ast_helper.Str.type_ ~loc Recursive [ type_declaration ]
 
-let signature_item = function
+let rec signature_item = function
   | Signature_value { value_name; value_type; location; _ } ->
       let item_loc = declaration_location location in
       Ast_helper.Sig.value ~loc:item_loc
@@ -463,11 +477,31 @@ let signature_item = function
       Ast_helper.Sig.module_ ~loc:item_loc
         (Ast_helper.Md.mk ~loc:item_loc
            (Location.mkloc (Some module_name) item_loc) module_type)
-  | Signature_include { module_signature; signature_location } ->
+  | Signature_inline_module {module_name; items; location; _} ->
+      let loc = declaration_location location in
+      Ast_helper.Sig.module_ ~loc (Ast_helper.Md.mk ~loc (Location.mkloc (Some module_name) loc)
+        (Ast_helper.Mty.signature ~loc (List.map signature_item items)))
+  | Signature_include { module_signature; signature_location; type_constraints } ->
       let signature_loc = declaration_location signature_location in
       let module_type =
         Ast_helper.Mty.ident ~loc:signature_loc
           (Location.mkloc (longident_of_string module_signature) signature_loc)
+      in
+      let module_type = match type_constraints with
+        | [] -> module_type
+        | constraints ->
+            let constraints = List.map
+              (fun (constraint_ : Lowered.signature_type_constraint) ->
+                let loc = declaration_location constraint_.constraint_location in
+                let name = constraint_.constrained_name in
+                let declaration_name = List.hd (List.rev (String.split_on_char '.' name)) in
+                let declaration = Ast_helper.Type.mk ~loc
+                  ~params:(type_parameters constraint_.constrained_parameters)
+                  ~manifest:(core_type constraint_.replacement) (named_loc declaration_name loc) in
+                let path = Location.mkloc (longident_of_string name) loc in
+                if constraint_.destructive then Parsetree.Pwith_typesubst (path, declaration)
+                else Parsetree.Pwith_type (path, declaration)) constraints in
+            Ast_helper.Mty.with_ ~loc:signature_loc module_type constraints
       in
       Ast_helper.Sig.include_ ~loc:signature_loc
         (Ast_helper.Incl.mk ~loc:signature_loc module_type)
@@ -585,6 +619,7 @@ let qualify_generated_module module_path module_name =
   else String.concat "." (module_path @ [ module_name ])
 
 let rec collect_set_modules_from_type module_path modules = function
+  | Types.TPoly_variant row -> List.fold_left (collect_set_modules_from_type module_path) modules (List.filter_map snd row.tags)
   | Types.TSet element_ty ->
       let modules =
         match Types.set_module_name element_ty with
@@ -693,7 +728,7 @@ let rec collect_set_modules_from_items module_path modules items =
             (fun modules (constructor : variant_constructor) ->
               List.fold_left
                 (collect_set_modules_from_type module_path)
-                modules constructor.payload_types)
+                modules (constructor.payload_types @ Option.to_list constructor.result_type))
             modules constructors
       | Group items -> collect_set_modules_from_items module_path modules items
       | Module_def { module_name; items; _ } ->
@@ -709,7 +744,7 @@ let rec collect_set_modules_from_items module_path modules items =
                   collect_set_modules_from_type module_path modules value_type
               | Signature_type { manifest = Some manifest; _ } ->
                   collect_set_modules_from_type module_path modules manifest
-              | Signature_type { manifest = None; _ } | Signature_module _
+              | Signature_type { manifest = None; _ } | Signature_inline_module _ | Signature_module _
               | Signature_include _ ->
                   modules)
             modules items
@@ -927,7 +962,7 @@ let value_binding pattern expression =
   | Ok expression ->
       let binding =
         Ast_helper.Vb.mk ~loc ?value_constraint:(value_pattern_constraint pattern)
-          (value_pattern pattern) expression
+          (value_pattern pattern) expression |> Gadt_parsetree.binding
       in
       Ok [ Ast_helper.Str.value ~loc Nonrecursive [ binding ] ]
 
@@ -942,7 +977,7 @@ let recursive_value_binding name identity type_annotation semantic_expression =
         recursive_value_pattern_and_constraint name identity type_annotation
       in
       let binding =
-        Ast_helper.Vb.mk ~loc ?value_constraint pattern expression
+        Ast_helper.Vb.mk ~loc ?value_constraint pattern expression |> Gadt_parsetree.binding
       in
       Ok [ Ast_helper.Str.value ~loc Recursive [ binding ] ]
 
@@ -961,7 +996,7 @@ let recursive_value_bindings bindings =
                 binding.identity binding.type_annotation
             in
             compile
-              (Ast_helper.Vb.mk ~loc ?value_constraint pattern expression
+              ((Ast_helper.Vb.mk ~loc ?value_constraint pattern expression |> Gadt_parsetree.binding)
               :: acc)
               rest)
   in
@@ -1393,7 +1428,7 @@ and structure_of_items_with_sets ?(prune = true) requested_sets module_path item
     | Type_variant { constructors; _ } ->
         List.concat_map
           (fun (constructor : variant_constructor) ->
-            constructor.payload_types)
+            constructor.payload_types @ Option.to_list constructor.result_type)
           constructors
     | _ -> []
   in
@@ -1668,7 +1703,7 @@ let structure_of_incremental_located_items ~previous_items items =
       (requested_set_modules_from_located_items previous_items)
     items
 
-let print_implementation structure =
+let print_implementation ?(reserved_modules = []) structure =
   let mapper =
     {
       Ast_mapper.default_mapper with
@@ -1691,6 +1726,32 @@ let print_implementation structure =
   let declaration name target =
     "open struct module " ^ name ^ " = " ^ target ^ " end\n"
   in
+  let occupied_modules = Hashtbl.create 16 in
+  let add name = Hashtbl.replace occupied_modules name () in
+  List.iter add reserved_modules;
+  let rec path = function
+    | Longident.Lident name -> add name
+    | Ldot (parent, _) -> path parent.txt
+    | Lapply (left, right) -> path left.txt; path right.txt in
+  let parameter = function
+    | Parsetree.Named (name, _) -> Option.iter add name.txt
+    | Unit -> () in
+  let base = Ast_iterator.default_iterator in
+  let iterator = {base with
+    module_binding = (fun self binding -> Option.iter add binding.Parsetree.pmb_name.txt; base.module_binding self binding);
+    module_expr = (fun self expression ->
+      (match expression.Parsetree.pmod_desc with Pmod_ident name -> path name.txt | Pmod_functor (argument, _) -> parameter argument | _ -> ());
+      base.module_expr self expression);
+    module_type = (fun self ty ->
+      (match ty.Parsetree.pmty_desc with Pmty_ident name | Pmty_alias name -> path name.txt | Pmty_functor (argument, _) -> parameter argument | _ -> ());
+      base.module_type self ty);
+    expr = (fun self expression ->
+      (match expression.Parsetree.pexp_desc with Pexp_ident {txt = Ldot (parent, _); _} | Pexp_construct ({txt = Ldot (parent, _); _}, _) -> path parent.txt | _ -> ());
+      base.expr self expression);
+    typ = (fun self ty ->
+      (match ty.Parsetree.ptyp_desc with Ptyp_constr ({txt = Ldot (parent, _); _}, _) -> path parent.txt | _ -> ());
+      base.typ self ty)} in
+  iterator.structure iterator structure;
   let aliases =
     [
       (let name = "S" in
@@ -1705,7 +1766,7 @@ let print_implementation structure =
        ("Rrbvec", name, declaration name "Rrbvec"));
       (let name = "B" in
        ("Stdlib", name, declaration name "Stdlib"));
-    ]
+    ] |> List.filter (fun (_, alias, _) -> not (Hashtbl.mem occupied_modules alias))
   in
   let identifier_char = function
     | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '\'' -> true

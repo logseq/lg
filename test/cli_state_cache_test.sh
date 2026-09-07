@@ -152,7 +152,15 @@ printf 'LG-COMPILER-STATE\n19\n' >"$test_dir/previous-19.state"
 expect_state_failure "$test_dir/previous-19.state" \
   "unsupported compiler state version 19" "$test_dir/previous-19.stderr"
 
-printf 'LG-COMPILER-STATE\n20\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
+printf 'LG-COMPILER-STATE\n20\n' >"$test_dir/previous-20.state"
+expect_state_failure "$test_dir/previous-20.state" \
+  "unsupported compiler state version 20" "$test_dir/previous-20.stderr"
+
+printf 'LG-COMPILER-STATE\n21\n' >"$test_dir/previous-21.state"
+expect_state_failure "$test_dir/previous-21.state" \
+  "unsupported compiler state version 21" "$test_dir/previous-21.stderr"
+
+printf 'LG-COMPILER-STATE\n22\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
   >"$test_dir/oversized.state"
 expect_state_failure "$test_dir/oversized.state" \
   "compiler state artifact exceeds maximum size" "$test_dir/oversized.stderr"

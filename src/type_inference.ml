@@ -1187,7 +1187,14 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
           TArray element_ty
       | _ -> target_ty)
   | FList (callee :: arguments) ->
-      let actual_tys = List.map (inferred_form_type params) arguments in
+      let actual_tys =
+        List.map
+          (fun argument ->
+            match inferred_form_type params argument with
+            | TUnknown -> inferred_call_return_type ~lookup_function_ty params argument
+            | ty -> ty)
+          arguments
+      in
       let instantiate parameter_tys return_ty =
         if List.length parameter_tys <> List.length actual_tys then TUnknown
         else
@@ -1354,7 +1361,7 @@ let restore_explicit_parameter_types ~resolve_named_record specs inferred =
     inferred
 
 let infer_params ?expected_return_ty ?(materialize_open_equality = false)
-    ?observe_call
+    ?observe_constraint ?observe_call
     ?(lookup_closed_sum_candidates = fun _ -> [])
     ?(lookup_closed_sum_constructors = fun _ -> [])
     ?(lookup_successful_call_refinement = fun _ -> None)
@@ -1696,7 +1703,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | _ -> expected
   in
   let rec infer_expected expected_ty params = function
-    | FSymbol name -> constrain_symbol expected_ty params name
+    | FSymbol name ->
+        Option.iter (fun observe ->
+            Option.iter (observe expected_ty) (string_assoc_opt name params))
+          observe_constraint;
+        constrain_symbol expected_ty params name
     | FList (FSymbol "do" :: body_forms) -> (
         match List.rev body_forms with
         | result :: reversed_prefix ->
@@ -2271,6 +2282,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList (FSymbol name :: args) -> (
         let form = FList (FSymbol name :: args) in
         let infer_call parameter_tys return_ty =
+          Option.iter (fun observe -> observe return_ty expected_ty) observe_constraint;
+          Option.iter (fun observe ->
+              observe name args (List.map (inferred_form_type params) args)) observe_call;
           if List.length parameter_tys <> List.length args then
             infer_form params form
           else
@@ -2308,7 +2322,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 let substitutions =
                   List.fold_left2
                     (fun substitutions parameter_ty argument ->
-                      let actual_ty = inferred_form_type params argument in
+                      let actual_ty =
+                        inferred_form_or_call_type ~lookup_function_ty params argument
+                      in
                       if
                         Types.equal actual_ty TUnknown
                         || Types.is_dynamic actual_ty
@@ -3583,6 +3599,66 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         infer_expected target_ty params target)))
   and infer_match params target clauses =
+    let rec pairs acc = function
+      | pattern :: result :: rest -> pairs ((pattern, result) :: acc) rest
+      | [] -> Some (List.rev acc)
+      | _ -> None in
+    let is_tag = function FList (FSymbol "tag" :: _) -> true | _ -> false in
+    match pairs [] clauses with
+    | Some clauses when List.exists (fun (pattern, _) -> is_tag pattern) clauses
+      && List.for_all (function (FSymbol _, _) -> true | (pattern, _) -> is_tag pattern) clauses ->
+        let initial = match resolve_named_record (inferred_form_type params target) with
+          | TPoly_variant row -> Some row | _ -> None in
+        let bound = match initial with
+          | Some row -> row.bound
+          | None -> if List.exists (function FSymbol _, _ -> true | _ -> false) clauses then Lower_row else Upper_row in
+        let rec bind pattern ty = match pattern, ty with
+          | FSymbol "_", _ -> (ty, [])
+          | FSymbol name, _ -> (ty, [name, ty])
+          | FList (FSymbol "tuple" :: patterns), _ ->
+              let types = match ty with TTuple types when List.length types = List.length patterns -> types
+                | _ -> List.map (fun _ -> Type_solver.fresh ()) patterns in
+              let refined = List.map2 bind patterns types in
+              (TTuple (List.map fst refined), List.concat_map snd refined)
+          | _ -> (ty, []) in
+        let rec refined_payload pattern ty bindings = match pattern, ty with
+          | FSymbol name, _ -> Option.value (List.assoc_opt name bindings) ~default:ty
+          | FList (FSymbol "tuple" :: patterns), TTuple types when List.length patterns = List.length types ->
+              TTuple (List.map2 (fun pattern ty -> refined_payload pattern ty bindings) patterns types)
+          | _ -> ty in
+        let rec infer params tags = function
+          | [] -> infer_expected (TPoly_variant {tags = List.sort compare tags; bound}) params target
+          | (FList (FSymbol "tag" :: FSymbol tag :: payload), result) :: rest ->
+              let previous = Option.bind initial (fun row -> List.assoc_opt tag row.tags) in
+              let payload = match payload, previous with
+                | [], _ -> Ok (None, [])
+                | [pattern], _ ->
+                    let ty = Option.join previous |> Option.value ~default:(Type_solver.fresh ()) in
+                    let ty, bindings = bind pattern ty in
+                    Ok (Some (pattern, ty), bindings)
+                | _ -> Error.error "polymorphic variant pattern expects at most one payload" in
+              Result.bind payload (fun (payload, bindings) ->
+                let names = List.map fst bindings in
+                let shadowed = List.filter (fun (name, _) -> List.mem name names) params in
+                Result.bind (infer_form (bindings @ List.filter (fun (name, _) -> not (List.mem name names)) params) result)
+                  (fun inferred ->
+                    let payload = Option.map (fun (pattern, ty) -> refined_payload pattern ty inferred) payload in
+                    let tags = (tag, payload) :: List.remove_assoc tag tags in
+                    let params = shadowed @ List.filter (fun (name, _) -> not (List.mem name names)) inferred in
+                    infer params tags rest))
+          | (FSymbol name, result) :: rest ->
+              let row = TPoly_variant {tags; bound} in
+              let shadowed = List.assoc_opt name params in
+              let params = if name = "_" then params else (name, row) :: List.remove_assoc name params in
+              Result.bind (infer_form params result) (fun params ->
+                let params = if name = "_" then params else
+                  let params = List.remove_assoc name params in
+                  match shadowed with None -> params | Some ty -> (name, ty) :: params in
+                infer params tags rest)
+          | _ -> Error.error "invalid polymorphic variant pattern" in
+        infer params (Option.fold ~none:[] ~some:(fun row -> row.tags) initial) clauses
+    | _ -> infer_nominal_match params target clauses
+  and infer_nominal_match params target clauses =
     let pattern_type = function
       | FInt _ -> Some TInt
       | FString _ -> Some TString
@@ -4582,6 +4658,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                | Some ((`Optional | `Optional_sequential), _, _) -> true
                | Some (`Required, _, _) | None -> false) ->
             Ok (replace_param name ty params)
+        | FSymbol name, TConstraint (Seqable_constraint {element; storage; _}) ->
+            Ok (replace_param name
+              (Types.optional_seqable_constraint element storage) params)
         | ( FSymbol name,
             ((TNullable _ | TOcaml_app ("option", [ _ ])) as ty) ) ->
             Ok (replace_param name ty params)
@@ -6099,6 +6178,18 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       |> Option.value
                            ~default:(inferred_form_type inferred else_form)
                     in
+                    let inferred =
+                      match then_ty, else_ty with
+                      | TMeta _, TMeta _ -> (
+                          match Type_solver.unify Type_solver.empty then_ty else_ty with
+                          | Error _ -> inferred
+                          | Ok substitutions ->
+                              List.map
+                                (fun (name, ty) ->
+                                  (name, Type_solver.apply substitutions ty))
+                                inferred)
+                      | _ -> inferred
+                    in
                     inferred
                     |> fun params ->
                     refine_returned_seqable_vector params then_form else_ty
@@ -6525,24 +6616,21 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (fun (name, _) -> not (string_mem name local_names))
                   params
             in
-            let rec infer_local remaining local_params =
+            let state params =
+              (List.map fst params,
+               Type_solver.canonical (TTuple (List.map snd params))) in
+            let rec infer_local seen local_params =
               Result.bind (infer_all local_params body_forms) (fun inferred ->
                   let inferred =
                     restore_explicit_parameter_types ~resolve_named_record specs
                       inferred
                   in
-                  if remaining = 0 then Ok inferred
-                  else
-                    let stable =
-                      List.length local_params = List.length inferred
-                      && List.for_all2
-                           (fun (left_name, left_ty) (right_name, right_ty) ->
-                             left_name = right_name
-                             && Types.equal left_ty right_ty)
-                           local_params inferred
-                    in
-                    if stable then Ok inferred
-                    else infer_local (remaining - 1) inferred)
+                  if local_params = inferred then Ok inferred else
+                  let current = state local_params and next = state inferred in
+                  if current = next then Ok inferred
+                  else if List.mem next seen then
+                    Error.error "local parameter type constraints do not converge"
+                  else infer_local (current :: seen) inferred)
             in
             Result.map
               (fun inferred ->
@@ -6550,7 +6638,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 @ List.filter
                     (fun (name, _) -> not (string_mem name local_names))
                     inferred)
-              (infer_local 3 local_params))
+              (infer_local [] local_params))
     | FList
         [
           FSymbol "__lg_into";
@@ -6700,14 +6788,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FSymbol _ | FCoreSymbol _ ->
         Ok params
   in
-  let same_params left right =
-    List.length left = List.length right
-    && List.for_all2
-         (fun (left_name, left_ty) (right_name, right_ty) ->
-           left_name = right_name && Types.equal left_ty right_ty)
-         left right
-  in
-  let rec stabilize remaining params =
+  let state params =
+    (List.map fst params, Type_solver.canonical (TTuple (List.map snd params))) in
+  let rec stabilize seen params =
     branch_hint_symbols := [];
     let infer_body =
       match (expected_return_ty, List.rev body_forms) with
@@ -6730,8 +6813,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             (fun (name, ty) -> (name, deduplicate_protocol_constraints ty))
             inferred
         in
-        if remaining = 0 || same_params params inferred then Ok inferred
-        else stabilize (remaining - 1) inferred))
+        if params = inferred then Ok inferred else
+        let current = state params and next = state inferred in
+        if current = next then Ok inferred
+        else if List.mem next seen then
+          Error.error "parameter type constraints do not converge"
+        else stabilize (current :: seen) inferred))
   in
   Result.map
     (fun inferred ->
@@ -6739,4 +6826,4 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       match (Type_solver.generalize (TTuple types)).body with
       | TTuple generalized -> List.combine names generalized
       | _ -> assert false)
-    (stabilize 3 (constrain_maybe_reduced_callbacks params body_forms))
+    (stabilize [] (constrain_maybe_reduced_callbacks params body_forms))

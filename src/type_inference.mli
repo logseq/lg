@@ -17,6 +17,7 @@ val inferred_call_return_type :
 val infer_params :
   ?expected_return_ty:Types.ty ->
   ?materialize_open_equality:bool ->
+  ?observe_constraint:(Types.ty -> Types.ty -> unit) ->
   ?observe_call:(string -> Ast.form list -> Types.ty list -> unit) ->
   ?lookup_closed_sum_candidates:(Types.ty list -> Types.ty list) ->
   ?lookup_closed_sum_constructors:(Types.ty -> (string * Types.ty list) list) ->

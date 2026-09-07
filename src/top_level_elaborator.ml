@@ -229,6 +229,7 @@ let allocate_function_local_records env next_type
   let current_next_type = ref next_type in
   let items = ref [] in
   let rec materialize_type = function
+    | TPoly_variant _ as ty -> Semantic_type.map_children materialize_type ty
     | TRecord fields when Types.is_homogeneous_record fields ->
         TRecord
           (List.map
@@ -555,6 +556,7 @@ let unresolved_contextual_type = Expression_support.unresolved_contextual_type
 let record_type_key = Resolver.record_type_key
 
 let rec unresolved_record_hint = function
+  | TPoly_variant row -> List.find_map unresolved_record_hint (List.filter_map snd row.tags)
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       Some
         (String.sub name (String.length "__lg_record:")
@@ -714,6 +716,7 @@ let reset_runtime_root root_name expression =
       [ Semantic_ir.Ident root_name; expression ] )
 
 let rec contains_unresolved_type = function
+  | TPoly_variant row -> List.exists contains_unresolved_type (List.filter_map snd row.tags)
   | TUnknown | TMeta _ | TVar _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
@@ -972,6 +975,9 @@ let add_defined_function scope env_key binding params body_forms env =
   | None -> env
 
 let rec concrete_defrecord_field_type = function
+  | TPoly_variant row as ty ->
+      if List.for_all (fun payload -> Option.is_some (concrete_defrecord_field_type payload)) (List.filter_map snd row.tags)
+      then Some ty else None
   | TUnknown | TMeta _ | TVar _ | TRecord _ -> None
   | ty when Types.is_dynamic ty -> None
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> None
@@ -1077,6 +1083,7 @@ let merge_defrecord_field_types previous inferred =
   | None, None -> merge_payload previous inferred
 
 let rec type_parameters_of_type = function
+  | TPoly_variant row -> List.concat_map type_parameters_of_type (List.filter_map snd row.tags)
   | TVar name -> [ name ]
   | TNullable ty
   | TArray ty
@@ -4792,6 +4799,7 @@ and compile_resolved scope env next_type form =
             |> Env.with_protocols (Env.protocols module_env)
             |> Env.with_modules (Env.modules module_env)
             |> Env.with_types (Env.types module_env)
+            |> Env.inherit_private_exports module_env
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))
@@ -4808,6 +4816,7 @@ and compile_resolved scope env next_type form =
             |> Env.with_protocols (Env.protocols module_env)
             |> Env.with_modules (Env.modules module_env)
             |> Env.with_types (Env.types module_env)
+            |> Env.inherit_private_exports module_env
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))

@@ -1,6 +1,7 @@
 open Types
 
 let rec contains_unresolved_type = function
+  | TPoly_variant row -> List.exists contains_unresolved_type (List.filter_map snd row.tags)
   | TUnknown | TMeta _ | TVar _ -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->

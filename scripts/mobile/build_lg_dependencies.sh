@@ -133,42 +133,78 @@ printf '%s\n' "$re_objects/re.cmx" >>"$re_objects/link-objects.txt"
 rrbvec_source="$source_root/rrbvec"
 rrbvec_objects="$object_root/rrbvec"
 copy_sources lg.rrbvec "$rrbvec_source"
-compile_sources "$rrbvec_source" "$rrbvec_objects"
+mkdir -p "$rrbvec_objects"
+cp "$(ocamlfind query lg.rrbvec)/rrbvec.cmi" "$rrbvec_objects/rrbvec.cmi"
+"$ocamlopt" -I "$rrbvec_objects" -cmi-file "$rrbvec_objects/rrbvec.cmi" \
+  -c "$rrbvec_source/rrbvec.ml" -o "$rrbvec_objects/rrbvec.cmx"
+printf '%s\n' "$rrbvec_objects/rrbvec.cmx" >"$rrbvec_objects/link-objects.txt"
 
 backend_source="$source_root/lg-edn-backend"
 backend_objects="$object_root/lg-edn-backend"
-mkdir -p "$backend_source"
-cp "$(ocamlfind query lg.edn-backend)/edn_backend.mli" \
-  "$backend_source/lg_edn_backend.mli"
-cp "$(ocamlfind query lg.edn-backend.native)/edn_backend.ml" \
-  "$backend_source/lg_edn_backend.ml"
-compile_sources "$backend_source" "$backend_objects" \
-  "$edn_core_objects" "$edn_native_objects" "$yojson_objects" "$re_objects"
+mkdir -p "$backend_source" "$backend_objects"
+backend_package=$(ocamlfind query lg.edn-backend)
+cp "$backend_package/edn_backend.mli" "$backend_source/edn_backend.mli"
+cp "$(ocamlfind query lg.edn-backend.native)/edn_backend.ml" "$backend_source/edn_backend.ml"
+cp "$backend_package/lg_edn_backend__.ml" "$backend_source/lg_edn_backend__.ml"
+cp "$backend_package/lg_edn_backend.ml" "$backend_source/lg_edn_backend.ml"
+# Compile target implementations against the exact interfaces used by clients.
+# The compiler checks these contracts; do not regenerate or retag their digests.
+cp "$backend_package"/*.cmi "$backend_objects/"
+backend_includes=(-I "$backend_objects" -I "$edn_core_objects"
+  -I "$edn_native_objects" -I "$yojson_objects" -I "$re_objects")
+# Preserve the virtual library's wrapped module identity for precompiled clients.
+"$ocamlopt" "${backend_includes[@]}" -no-alias-deps -opaque -w -49 -c \
+  "$backend_source/lg_edn_backend__.ml" -cmi-file "$backend_objects/lg_edn_backend__.cmi" -o "$backend_objects/lg_edn_backend__.cmx"
+"$ocamlopt" "${backend_includes[@]}" -open Lg_edn_backend__ -c \
+  "$backend_source/edn_backend.ml" -cmi-file "$backend_objects/lg_edn_backend__Edn_backend.cmi" -o "$backend_objects/lg_edn_backend__Edn_backend.cmx"
+"$ocamlopt" "${backend_includes[@]}" -open Lg_edn_backend__ -c \
+  "$backend_source/lg_edn_backend.ml" -cmi-file "$backend_objects/lg_edn_backend.cmi" -o "$backend_objects/lg_edn_backend.cmx"
+printf '%s\n' "$backend_objects/lg_edn_backend__.cmx" \
+  "$backend_objects/lg_edn_backend__Edn_backend.cmx" \
+  "$backend_objects/lg_edn_backend.cmx" >"$backend_objects/link-objects.txt"
 
 runtime_source="$source_root/lg-runtime"
 runtime_objects="$object_root/lg-runtime"
 copy_sources lg.runtime "$runtime_source"
-rm -f "$runtime_source/lg_runtime.ml"
 for source in "$runtime_source"/*_melange.ml "$runtime_source"/*_melange.mli; do
   [[ -f $source ]] || continue
   [[ $(basename "$source") == runtime_int_melange.ml ]] && continue
   rm -f "$source"
 done
-compile_sources "$runtime_source" "$runtime_objects" \
-  "$backend_objects" "$rrbvec_objects"
+mkdir -p "$runtime_objects"
+cp "$(ocamlfind query lg.runtime)"/*.cmi "$runtime_objects/"
+runtime_includes=(-I "$runtime_objects" -I "$backend_objects" -I "$rrbvec_objects")
+# Keep the public aliases intact, including unused target-specific aliases.
+# Removing aliases changes the interface imported by external OCaml libraries.
+"$ocamlopt" "${runtime_includes[@]}" -no-alias-deps -opaque -w -49 -c \
+  "$runtime_source/lg_runtime.ml" -cmi-file "$runtime_objects/lg_runtime.cmi" -o "$runtime_objects/lg_runtime.cmx"
+printf '%s\n' "$runtime_objects/lg_runtime.cmx" >"$runtime_objects/link-objects.txt"
+runtime_sources=()
+for source in "$runtime_source"/*.ml "$runtime_source"/*.mli; do
+  [[ $(basename "$source") == lg_runtime.ml ]] && continue
+  runtime_sources+=("$source")
+done
+runtime_ordered_sources=$("$ocamldep" -sort "${runtime_sources[@]}")
+for source in $runtime_ordered_sources; do
+  source_file=$(basename "$source")
+  source_name=${source_file%.*}
+  module_name="${source_name^}"
+  case "$source" in
+    *.mli) continue ;;
+    *.ml)
+      output="$runtime_objects/lg_runtime__$module_name.cmx"
+      printf '%s\n' "$output" >>"$runtime_objects/link-objects.txt"
+      ;;
+  esac
+  "$ocamlopt" "${runtime_includes[@]}" -open Lg_runtime -no-alias-deps -w -9-49 \
+    -cmi-file "${output%.cmx}.cmi" -c "$source" -o "$output"
+done
 
-runtime_wrapper="$runtime_source/lg_runtime.ml"
-awk 'BEGIN { RS=""; ORS="\n\n" } $0 !~ /_melange/ { gsub(/Lg_runtime__/, ""); print }' \
-  "$(ocamlfind query lg.runtime)/lg_runtime.ml" >"$runtime_wrapper"
-"$ocamlopt" \
-  -I "$runtime_objects" \
-  -I "$backend_objects" \
-  -I "$rrbvec_objects" \
-  -no-alias-deps \
-  -opaque \
-  -c "$runtime_wrapper" \
-  -o "$runtime_objects/lg_runtime.cmx"
-echo "$runtime_objects/lg_runtime.cmx" >>"$runtime_objects/link-objects.txt"
+# Build the clock primitive for the target instead of linking the host archive.
+cp "$(ocamlfind query lg.runtime)/runtime_time_stubs.c" "$runtime_source/"
+"$ocamlopt" -ccopt -fPIC -c "$runtime_source/runtime_time_stubs.c" \
+  -o "$runtime_objects/runtime_time_stubs.o"
+printf '%s\n' "$runtime_objects/runtime_time_stubs.o" >>"$runtime_objects/link-objects.txt"
 
 : >"$build_root/link-objects.txt"
 for list in \

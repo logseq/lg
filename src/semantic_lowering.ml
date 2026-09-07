@@ -8,6 +8,7 @@ let rec pattern = function
   | PInt64 value -> PInt64 value
   | PString value -> PString value
   | PBool value -> PBool value
+  | PPolyTag (name, payload) -> PPolyTag (name, Option.map pattern payload)
   | PConstructor (name, payload) ->
       PConstructor (name, Option.map pattern payload)
   | PTuple patterns -> PTuple (List.map pattern patterns)
@@ -31,6 +32,7 @@ let rec pattern = function
 
 let rec expression = function
   | Semantic_ir.Typed (_, value) -> expression value
+  | Semantic_ir.GadtScope value -> Ocaml_ir.GadtScope (expression value)
   | Semantic_ir.Located (node_id, location, value) ->
       Ocaml_ir.Located (node_id, location, expression value)
   | Int value -> Int value
@@ -40,6 +42,7 @@ let rec expression = function
   | Char value -> Char value
   | Bool value -> Bool value
   | Unit -> Unit
+  | PolyTag (name, payload) -> PolyTag (name, Option.map expression payload)
   | Constructor (name, payload) ->
       Constructor (name, Option.map expression payload)
   | Tuple values -> Tuple (List.map expression values)
@@ -82,6 +85,13 @@ let rec expression = function
   | LetRecIn (name, params, body, next) ->
       LetRecIn
         (name, List.map pattern params, expression body, expression next)
+  | LetRecGroup (bindings, body) ->
+      LetRecGroup
+        (List.map (fun (pat, value) -> (pattern pat, expression value)) bindings,
+         expression body)
+  | PackModule (name, signature) -> PackModule (name, signature)
+  | UnpackModule (name, signature, value, body) ->
+      UnpackModule (name, signature, expression value, expression body)
   | Match (target, cases) ->
       Match
         ( expression target,

@@ -14,8 +14,11 @@ let compile_opaque_type ?location scope env next_type name =
   match declare_type scope env name Opaque with
   | Error _ as error -> error
   | Ok (_, env) ->
-      Ok (scope, env, next_type,
-          Opaque_type { type_name = Names.sanitize_name name; location })
+      Ok
+        ( scope,
+          env,
+          next_type,
+          Opaque_type { type_name = Names.sanitize_name name; location } )
 
 let compile_type_alias ?location scope env next_type name type_parameters
     manifest_form =
@@ -26,7 +29,9 @@ let compile_type_alias ?location scope env next_type name type_parameters
       with
       | Error _ as error -> error
       | Ok manifest -> (
-          let manifest = Function_elaborator.infer_named_record scope env manifest in
+          let manifest =
+            Function_elaborator.infer_named_record scope env manifest
+          in
           let type_name = Names.sanitize_name name in
           match
             declare_type ~type_parameters ~manifest scope env name Alias
@@ -74,64 +79,81 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
         if not compatible_fields then
           Error.error ("defrecord does not match declared type " ^ name)
         else Ok (scope, env, next_type, Group [])
-    | None ->
-    match declare_type scope env name Record with
-    | Error _ as err -> err
-    | Ok (type_id, env) ->
-        let record_ty =
-          Types.named_record ~type_id ~nominal ~type_name ~type_parameters
-            ~set_module_name:("Set_" ^ type_name) fields
-        in
-        let env =
-          Env.add
-            (record_type_key scope name)
-            (Types.binding type_name record_ty)
-            env
-        in
-        let env =
-          match record_ty with
-          | TNamed_record record ->
-              Env.fold
-                (fun key (binding : Types.binding) env ->
-                  let ty = Types.refresh_named_record record binding.ty in
-                  Env.add key { binding with ty } env)
-                env env
-          | _ -> env
-        in
-        Ok
-          ( scope,
-            env,
-            next_type,
-            Type_def
-              {
-                type_id;
-                type_name;
-                type_parameters;
-                fields;
-                nominal;
-                location;
-              }
-          )
+    | None -> (
+        match declare_type scope env name Record with
+        | Error _ as err -> err
+        | Ok (type_id, env) ->
+            let record_ty =
+              Types.named_record ~type_id ~nominal ~type_name ~type_parameters
+                ~set_module_name:("Set_" ^ type_name) fields
+            in
+            let env =
+              Env.add
+                (record_type_key scope name)
+                (Types.binding type_name record_ty)
+                env
+            in
+            let env =
+              match record_ty with
+              | TNamed_record record ->
+                  Env.fold
+                    (fun key (binding : Types.binding) env ->
+                      let ty = Types.refresh_named_record record binding.ty in
+                      Env.add key { binding with ty } env)
+                    env env
+              | _ -> env
+            in
+            Ok
+              ( scope,
+                env,
+                next_type,
+                Type_def
+                  {
+                    type_id;
+                    type_name;
+                    type_parameters;
+                    fields;
+                    nominal;
+                    location;
+                  } ))
 
 let compile_type_record ?location ?(allow_empty = false) ?emitted_name
     ?(nominal = true) scope env next_type name type_parameters field_forms =
   let field_spec = function
-    | FList [ (FSymbol field_name as name_form); FKeyword keyword ] -> (
-        match
-          Type_annotation.of_keyword_with_parameters type_parameters keyword
-        with
-        | Error _ as error -> error
-        | Ok ty ->
-            let ty = Function_elaborator.infer_named_record scope env ty in
-            Ok
-              {
-                keyword = ":" ^ field_name;
-                ocaml_name = Names.sanitize_name field_name;
-                ty;
-                mutable_ = false;
-                runtime_map = false;
-                location = Source_context.find name_form;
-              })
+    | FList [ (FSymbol field_name as name_form); type_form ] ->
+        let annotation =
+          match type_form with
+          | FKeyword keyword -> Ok ([], keyword)
+          | FList [ FSymbol "forall"; parameters; FKeyword keyword ] ->
+              Result.map
+                (fun parameters -> (parameters, keyword))
+                (Type_parameters.parse parameters)
+          | _ ->
+              Error.error
+                "record field type must be :type or (forall [parameters] :type)"
+        in
+        Result.bind annotation (fun (quantified, keyword) ->
+            if
+              List.exists (fun name -> List.mem name type_parameters) quantified
+            then
+              Error.error
+                "record field quantifiers must not shadow record type \
+                 parameters"
+            else
+              Result.map
+                (fun ty ->
+                  {
+                    keyword = ":" ^ field_name;
+                    ocaml_name = Names.sanitize_name field_name;
+                    ty = Function_elaborator.infer_named_record scope env ty;
+                    quantified;
+                    mutable_ = false;
+                    runtime_map = false;
+                    location = Source_context.find name_form;
+                  })
+                (Type_annotation.of_keyword_with_parameters
+                   (quantified @ type_parameters)
+                   keyword))
     | _ -> Error.error "type-record fields must be (name :type)"
   in
   let rec parse (fields : field list) = function
@@ -158,8 +180,15 @@ let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
   match Env.find_opt key env with
   | Some binding ->
-      Ok (key, {binding with ty = Types.qualify_module_type
-        (Names.module_path_to_ocaml module_path) binding.ty})
+      Ok
+        ( key,
+          {
+            binding with
+            ty =
+              Types.qualify_module_type
+                (Names.module_path_to_ocaml module_path)
+                binding.ty;
+          } )
   | None -> Error.error ("internal error: missing record metadata for " ^ name)
 
 let compile_type_variant ?location scope env next_type name type_parameters
@@ -168,13 +197,10 @@ let compile_type_variant ?location scope env next_type name type_parameters
     | FSymbol constructor as form -> Ok (constructor, Source_context.find form)
     | _ -> Error.error "type-variant constructors must be symbols"
   in
-  let payload_type = function
+  let payload_type parameters = function
     | FKeyword keyword -> (
-        match
-          Type_annotation.of_keyword_with_parameters type_parameters keyword
-        with
-        | Ok ty ->
-            Ok (Function_elaborator.infer_named_record scope env ty)
+        match Type_annotation.of_keyword_with_parameters parameters keyword with
+        | Ok ty -> Ok (Function_elaborator.infer_named_record scope env ty)
         | Error _ as error -> error)
     | _ -> Error.error "type-variant payload types must be keywords"
   in
@@ -184,22 +210,54 @@ let compile_type_variant ?location scope env next_type name type_parameters
           {
             constructor_name = constructor;
             payload_types = [];
+            result_type = None;
             location = Source_context.find form;
           }
     | FList (constructor_form :: payload_forms) -> (
         match constructor_name constructor_form with
         | Error _ as err -> err
         | Ok (constructor_name, location) ->
-            let rec parse_payloads acc = function
-              | [] -> Ok (List.rev acc)
-              | payload_form :: rest -> (
-                  match payload_type payload_form with
-                  | Error _ as err -> err
-                  | Ok payload_ty -> parse_payloads (payload_ty :: acc) rest)
+            let local_parameters =
+              match payload_forms with
+              | (FVector _ as parameters) :: rest ->
+                  Result.map
+                    (fun parameters -> (parameters, rest))
+                    (Type_parameters.parse parameters)
+              | _ -> Ok ([], payload_forms)
             in
-            parse_payloads [] payload_forms
-            |> Result.map (fun payload_types ->
-                   { constructor_name; payload_types; location }))
+            Result.bind local_parameters
+              (fun (local_parameters, payload_forms) ->
+                let payload_type =
+                  payload_type (local_parameters @ type_parameters)
+                in
+                let rec parse_payloads acc = function
+                  | [] -> Ok (List.rev acc)
+                  | payload_form :: rest -> (
+                      match payload_type payload_form with
+                      | Error _ as err -> err
+                      | Ok payload_ty -> parse_payloads (payload_ty :: acc) rest
+                      )
+                in
+                let payload_forms, result_form =
+                  match List.rev payload_forms with
+                  | FList [ FSymbol "returns"; result ] :: rest ->
+                      (List.rev rest, Some result)
+                  | _ -> (payload_forms, None)
+                in
+                let result_type =
+                  match result_form with
+                  | None -> Ok None
+                  | Some form -> Result.map Option.some (payload_type form)
+                in
+                Result.bind result_type (fun result_type ->
+                    parse_payloads [] payload_forms
+                    |> Result.map (fun payload_types ->
+                        {
+                          constructor_name;
+                          payload_types;
+                          result_type;
+                          location;
+                        }))))
     | _ -> Error.error "type-variant constructors must be symbols"
   in
   let rec parse constructors = function
@@ -232,9 +290,14 @@ let compile_type_variant ?location scope env next_type name type_parameters
       let constructor_bindings =
         constructors
         |> List.map (fun constructor ->
-               ( Names.scoped_key scope constructor.constructor_name,
-                 Types.binding constructor.constructor_name
-                   (TFn (constructor.payload_types, result_type)) ))
+            ( Names.scoped_key scope constructor.constructor_name,
+              Types.binding
+                ~gadt_constructor:(Option.is_some constructor.result_type)
+                constructor.constructor_name
+                (TFn
+                   ( constructor.payload_types,
+                     Option.value constructor.result_type ~default:result_type
+                   )) ))
       in
       match declare_type scope env name Variant with
       | Error _ as err -> err

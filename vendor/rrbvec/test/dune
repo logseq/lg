@@ -1,0 +1,3 @@
+(tests
+ (names access_semantics access_allocation)
+ (libraries rrbvec))
