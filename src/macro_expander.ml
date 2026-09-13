@@ -36,7 +36,8 @@ let is_unqualified_compile_time_primitive = function
   | "meta" | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat"
   | "filter"
   | "into" | "juxt" | "reduce" | "apply" | "volatile!" | "deref"
-  | "volatile-reset" | "gensym" | "clojure.test/expand-are" ->
+  | "volatile-reset" | "throw" | "raise" | "gensym"
+  | "clojure.test/expand-are" ->
       true
   | _ -> false
 
@@ -82,6 +83,26 @@ let rec string_of_form = function
           entries
       in
       "{" ^ String.concat ", " entries ^ "}"
+
+let macro_exception_message form =
+  match form with
+  | FString message -> message
+  | FList
+      [ FSymbol ("IllegalArgumentException." | "Invalid_argument"); FString message ]
+  | FList
+      [
+        FSymbol
+          ( "Exception."
+          | "Failure"
+          | "Invalid_argument"
+          | "js/Error."
+          | "ex-info"
+          | "clojure.core/ex-info" );
+        FString message;
+        _;
+      ] ->
+      message
+  | form -> "macro raised " ^ string_of_form form
 
 let string_of_value = function
   | Form (FSymbol "nil") -> Ok ""
@@ -1169,6 +1190,10 @@ and eval_builtin context name arg_forms =
       | Ok _ ->
           Error.error "volatile reset expects a volatile and a macro value"
       | Error _ as error -> error)
+  | "throw" | "raise" -> (
+      match arg_forms with
+      | [ exception_form ] -> Error.error (macro_exception_message exception_form)
+      | _ -> Error.error (name ^ " expects one macro argument"))
   | "System/getProperty" -> (
       match eval_args () with
       | Ok [ Form (FString "line.separator") ] ->
