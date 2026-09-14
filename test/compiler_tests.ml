@@ -16955,6 +16955,11 @@ module Codec = struct
   let int = Int
   let read = function Int -> 7
 end
+module Json = struct
+  type t = [ `Assoc of (string * t) list | `List of t list | `String of string | `Int of int ]
+  let sample = `List [`Assoc ["title", `String "hello"]]
+  let accept (value : t) = value
+end
 |};
     if Sys.command (compile_only_command dir ml) <> 0 then failwith "host tuple fixture did not compile";
     Lg.Ocaml_signature.set_melange_target false;
@@ -16964,6 +16969,14 @@ end
   (:require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec]
             [ocaml.Host_tuple_fixture.Codec :as codec]))
 (assert (= (codec/read codec/int) 7))
+(defn json-title [^:map<string;Host_tuple_fixture.Json.t> fields]
+  (match (get fields "title") (Some (tag String title)) (Some title) _ nil))
+(defn json-titles [^:Host_tuple_fixture.Json.t source]
+  (match source
+    (tag List values) (vec (keep (fn [value]
+                                  (match value (tag Assoc entries) (json-title (into {} entries)) _ nil)) values))
+    _ []))
+(assert (= (json-titles host/Json.sample) ["hello"]))
 (defn schema-attr? [attr] (contains? #{"index" "unique"} attr))
 (defn select [tx]
   (match tx
@@ -17020,6 +17033,12 @@ end
 |} with
      | Error _ -> ()
      | Ok _ -> failwith "unrelated host records must not be identity compatible");
+    (match compile_string_with_stdlib {|
+(ns wrong-json-payload (:require [ocaml.Host_tuple_fixture.Json :as json]))
+(json/accept (tag List (list (tag String 42))))
+|} with
+     | Error _ -> ()
+     | Ok _ -> failwith "recursive host aliases must retain their payload types");
     let generated = Filename.concat dir "host_tuple_generated.ml" in
     write_file generated (native_stdlib_prelude () ^ "\n" ^ strip_native_stdlib_prelude compiled);
     if Sys.command (compile_only_command dir generated) <> 0 then failwith "host tuple generated code did not compile";

@@ -2517,6 +2517,8 @@ let rec concrete_constraint_type = function
 
 let param_constraint_name = function
   | TConstraint (Seqable_constraint { requirement = Required; _ }) -> None
+  | TPoly_variant { bound = Exact_row; _ } as ty
+    when concrete_constraint_type ty -> Some (Types.ocaml_name ty)
   | TFn _ as ty when concrete_constraint_type ty -> Some (Types.ocaml_name ty)
   | (TNullable _ | TList _ | TVector _ | TSet _ | TSeq _) as ty
     when concrete_constraint_type ty ->

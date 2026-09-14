@@ -369,56 +369,72 @@ let nested_non_seqable_element ~sequence_satisfies expected_element actual =
   | Some actual_element -> find expected_element actual_element
   | None -> None
 
-let rec identity_compatible expected actual =
-  Types.equal expected actual
-  ||
-  match (expected, actual) with
-  | (TUnknown | TMeta _ | TVar _), (TUnknown | TMeta _ | TVar _) -> true
-  | TOcaml expected, TOcaml actual ->
-      Ocaml_signature.same_type_path expected actual
-  | TPoly_variant expected, TPoly_variant actual ->
-      Variant_row.compatible_payloads identity_compatible expected actual
-  | TNullable expected, TNullable actual
-  | TArray expected, TArray actual
-  | TRef expected, TRef actual
-  | TList expected, TList actual
-  | TVector expected, TVector actual
-  | TSet expected, TSet actual
-  | TSeq expected, TSeq actual ->
-      identity_compatible expected actual
-  | TNullable expected, TOcaml_app ("option", [ actual ])
-  | TOcaml_app ("option", [ expected ]), TNullable actual ->
-      identity_compatible expected actual
-  | TOcaml_app (expected_name, expected_args),
-    TOcaml_app (actual_name, actual_args)
-    when Ocaml_signature.same_type_path expected_name actual_name
-         && List.length expected_args = List.length actual_args ->
-      List.for_all2
-        (fun expected actual ->
-          open_leaf expected || open_leaf actual
-          || identity_compatible expected actual)
-        expected_args actual_args
-  | TTuple expected, TTuple actual
-    when List.length expected = List.length actual ->
-      List.for_all2 identity_compatible expected actual
-  | TNamed_record expected, TNamed_record actual ->
-      (Type_id.equal expected.type_id actual.type_id
-       || (not (String.equal expected.type_name actual.type_name)
-           && Ocaml_signature.same_type_path expected.type_name actual.type_name))
-      && List.length expected.type_arguments = List.length actual.type_arguments
-      && List.for_all2 identity_compatible expected.type_arguments
-           actual.type_arguments
-  | TNamed_record record, TOcaml_app (name, arguments)
-  | TOcaml_app (name, arguments), TNamed_record record ->
-      (Ocaml_signature.same_type_path name record.type_name
-      || String.equal name (Type_id.name record.type_id))
-      && List.length record.type_arguments = List.length arguments
-      && List.for_all2 identity_compatible record.type_arguments arguments
-  | TNamed_record record, TOcaml name | TOcaml name, TNamed_record record ->
-      record.type_arguments = []
-      && (Ocaml_signature.same_type_path name record.type_name
-         || String.equal name (Type_id.name record.type_id))
-  | _ -> false
+let identity_compatible expected actual =
+  (* Recursive host aliases may revisit a pair while their variant rows are expanded. *)
+  let rec compatible seen expected actual =
+    Types.equal expected actual
+    || List.exists (fun (left, right) -> Types.equal left expected && Types.equal right actual) seen
+    ||
+    let identity_compatible = compatible ((expected, actual) :: seen) in
+    match (expected, actual) with
+    | (TUnknown | TMeta _ | TVar _), (TUnknown | TMeta _ | TVar _) -> true
+    | TOcaml expected, TOcaml actual ->
+        Ocaml_signature.same_type_path expected actual
+    | TPoly_variant _, TOcaml name -> (
+        match Ocaml_signature.of_compiler_type
+                (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
+        | TPoly_variant _ as manifest -> identity_compatible expected manifest
+        | _ -> false)
+    | TOcaml name, TPoly_variant _ -> (
+        match Ocaml_signature.of_compiler_type
+                (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
+        | TPoly_variant _ as manifest -> identity_compatible manifest actual
+        | _ -> false)
+    | TPoly_variant expected, TPoly_variant actual ->
+        Variant_row.compatible_payloads identity_compatible expected actual
+    | TNullable expected, TNullable actual
+    | TArray expected, TArray actual
+    | TRef expected, TRef actual
+    | TList expected, TList actual
+    | TVector expected, TVector actual
+    | TSet expected, TSet actual
+    | TSeq expected, TSeq actual ->
+        identity_compatible expected actual
+    | TNullable expected, TOcaml_app ("option", [ actual ])
+    | TOcaml_app ("option", [ expected ]), TNullable actual ->
+        identity_compatible expected actual
+    | TOcaml_app (expected_name, expected_args),
+      TOcaml_app (actual_name, actual_args)
+      when Ocaml_signature.same_type_path expected_name actual_name
+           && List.length expected_args = List.length actual_args ->
+        List.for_all2
+          (fun expected actual ->
+            open_leaf expected || open_leaf actual
+            || identity_compatible expected actual)
+          expected_args actual_args
+    | TTuple expected, TTuple actual
+      when List.length expected = List.length actual ->
+        List.for_all2 identity_compatible expected actual
+    | TNamed_record expected, TNamed_record actual ->
+        (Type_id.equal expected.type_id actual.type_id
+         || (not (String.equal expected.type_name actual.type_name)
+             && Ocaml_signature.same_type_path expected.type_name actual.type_name))
+        && List.length expected.type_arguments = List.length actual.type_arguments
+        && List.for_all2 identity_compatible expected.type_arguments
+             actual.type_arguments
+    | TNamed_record record, TOcaml_app (name, arguments)
+    | TOcaml_app (name, arguments), TNamed_record record ->
+        (Ocaml_signature.same_type_path name record.type_name
+        || String.equal name (Type_id.name record.type_id))
+        && List.length record.type_arguments = List.length arguments
+        && List.for_all2 identity_compatible record.type_arguments arguments
+    | TNamed_record record, TOcaml name | TOcaml name, TNamed_record record ->
+        record.type_arguments = []
+        && (Ocaml_signature.same_type_path name record.type_name
+           || String.equal name (Type_id.name record.type_id))
+    | _ -> false
+  in
+  compatible [] expected actual
 
 let overload_covers_variadic_identity expected_arity actual_arities =
   match expected_arity.rest_param with
