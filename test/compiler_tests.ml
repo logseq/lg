@@ -1129,16 +1129,19 @@ let test_source_record_step_function_needs_no_sidecar_signature () =
           (step-index index)
           (step-result result)))
 
-(defn to-text-step [tag-title ref-title ^:string title ^:int length ^:int index ^:string result]
+(defn char-at [^:string value ^:int index]
+  (subs value index (inc index)))
+
+(defn to-text-step [tag-title ref-title title ^:int length ^:int index ^:string result]
   (if (< index length)
     (match (if false None (tag-title title))
       (Some label)
-      (text-step (inc index) (str result label))
+      (text-step (inc index) (str result label (char-at title index)))
       None
-      (text-step (inc index) result))
+      (text-step (inc index) (str result (char-at title index))))
     (text-step index result)))
 
-(defn to-text [tag-title ref-title ^:string title]
+(defn to-text [tag-title ref-title title]
   (let [length (count title)]
     (loop [index 0
            result ""]
@@ -1154,7 +1157,7 @@ let test_source_record_step_function_needs_no_sidecar_signature () =
     compile_with_stdlib Lg.Target.Native "app/ref_text_without_lgi.cljc" source
   in
   assert_ocaml_runs "source_record_step_function_needs_no_sidecar_signature"
-    "A\n" native;
+    "AA\n" native;
   ignore
     (compile_with_stdlib Lg.Target.Melange "app/ref_text_without_lgi.cljc"
        source)

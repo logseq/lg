@@ -183,8 +183,16 @@ let rec refine_type existing inferred =
                 (refine_type existing_value inferred_value)
           | _ -> refine_nonmatching_type existing inferred))
 
+and open_seqable_constraint ty =
+  match Types.seqable_constraint_info ty with
+  | Some (_, element_ty, storage_ty) ->
+      Type_solver.is_open element_ty && Type_solver.is_open storage_ty
+  | None -> false
+
 and refine_nonmatching_type existing inferred =
   match (existing, inferred) with
+  | existing, TString when open_seqable_constraint existing -> TString
+  | TString, inferred when open_seqable_constraint inferred -> TString
   | existing, inferred
     when Option.is_some (Types.truthy_constraint_info existing) ->
       let value_ty = Types.truthy_constraint_info existing |> Option.get in
