@@ -3831,7 +3831,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             false
       in
       let rec form_uses_symbol_in_string_str params name = function
-        | FList (FSymbol "__lg_str" :: args) ->
+        | FList (FSymbol operation :: args)
+          when has_source_name operation "str"
+               || has_source_name operation "__lg_str" ->
+            List.exists (form_contains_symbol name) args
+            && List.exists
+                 (fun arg -> Types.equal (inferred_form_type params arg) TString)
+                 args
+        | FList
+            (FSymbol "__lg_apply" :: FSymbol operation :: args)
+          when has_source_name operation "str"
+               || has_source_name operation "__lg_str" ->
             List.exists (form_contains_symbol name) args
             && List.exists
                  (fun arg -> Types.equal (inferred_form_type params arg) TString)
