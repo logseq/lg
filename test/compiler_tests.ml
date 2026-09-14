@@ -5622,30 +5622,44 @@ let test_inferred_symbols_distinguish_nullary_constructors_from_functions () =
 
 let test_keyword_callbacks_preserve_mutable_signal_item_types () =
   let source = {|
+(ns signal-fixture)
 (type-record Row (uuid :string) (depth :int) (is-asset :bool))
 (type-record Block (uuid :string) (is-asset :bool))
-(type-record Signal [value] (current :ref<value>))
+(type-record Subscriber [value] (callback :fn<value;bool>))
+(type-record Signal [value] (current :ref<value>) (subscribers :ref<vector<Subscriber<value>>>))
+(type-record Scope (id :int))
+(type-record Context (scope :Scope))
 (signature sample [value] :fn<Signal<value>;value>)
 (defn sample [source] @(:current source))
-(signature own [value] :fn<Signal<value>;Signal<value>>)
-(defn own [source] source)
+(signature own [value] :fn<Scope;Signal<value>;Signal<value>>)
+(defn own [scope source] source)
 (signature signal-map [left right output]
   :overload<fn<fn<left;output>;Signal<left>;Signal<output>>;fn<fn<left;right;output>;Signal<left>;Signal<right>;Signal<output>>>)
 (defn signal-map
-  ([f source] (record Signal (current (atom (f (sample source))))))
-  ([f left right] (record Signal (current (atom (f (sample left) (sample right)))))))
-(defn row-uuid [row] (let [_depth (:depth row)] (:uuid row)))
-(defn render [source]
-  (let [row (sample source)
-        uuid (own (signal-map row-uuid source))
-        asset (own (signal-map :is-asset source))]
-    (sample asset)))
-(assert (= (render (record Signal (current (atom (record Row (uuid "a") (depth 0) (is-asset true)))))) true))
-(assert (= (render (record Signal (current (atom (record Row (uuid "b") (depth 0) (is-asset false)))))) false))
+  ([f source] (record Signal (current (atom (f (sample source)))) (subscribers (atom []))))
+  ([f left right] (record Signal (current (atom (f (sample left) (sample right)))) (subscribers (atom [])))))
 |} in
-  let native = compile_with_stdlib Lg.Target.Native "test/keyword_mutable_signal.cljc" source in
+  let consumer = {|
+(ns signal-consumer (:require [signal-fixture :refer [Row Signal Scope Context sample own signal-map]]))
+(defn row-uuid [row] (let [_depth (:depth row)] (:uuid row)))
+(defn render [context ^:signal<row> source]
+  (let [row (sample source)
+        uuid (own (:scope context) (signal-map row-uuid source))
+        asset (own (:scope context) (signal-map :is-asset source))]
+    (sample asset)))
+(def context (record Context (scope (record Scope (id 1)))))
+(assert (= (render context (record Signal (current (atom (record Row (uuid "a") (depth 0) (is-asset true)))) (subscribers (atom [])))) true))
+(assert (= (render context (record Signal (current (atom (record Row (uuid "b") (depth 0) (is-asset false)))) (subscribers (atom [])))) false))
+|} in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, provider = Lg.Compiler.compile_chunk ~target stdlib.state source |> expect_ok in
+    let _, consumer = Lg.Compiler.compile_chunk ~target state consumer |> expect_ok in
+    stdlib.ocaml_source ^ "\n" ^ provider ^ "\n" ^ consumer
+  in
+  let native = compile Lg.Target.Native in
   assert_ocaml_runs "keyword_callbacks_preserve_mutable_signal_item_types" "" native;
-  ignore (compile_with_stdlib Lg.Target.Melange "test/keyword_mutable_signal.cljc" source)
+  ignore (compile Lg.Target.Melange)
 
 let test_declared_defn_signature_contextualizes_parameters () =
   let source =

@@ -18366,10 +18366,20 @@ let create ~compile_expr =
                       Env.with_expected_type (Some expected) env
                   | _ -> Env.with_expected_type None env
                 in
-                match expected with
-                | TFn _ | TOverloaded_fn _ ->
-                    compile_function_arg scope argument_env form
-                | _ -> compile_expr scope argument_env form
+                let compiled =
+                  match expected with
+                  | TFn _ | TOverloaded_fn _ ->
+                      compile_function_arg scope argument_env form
+                  | _ -> compile_expr scope argument_env form
+                in
+                Result.map
+                  (fun argument ->
+                    match argument.ty with
+                    | TOcaml_app _ ->
+                        { argument with
+                          ty = Function_elaborator.infer_named_record scope env argument.ty }
+                    | _ -> argument)
+                  compiled
               in
               let rec compile_non_callbacks index =
                 if index = Array.length forms then Ok ()

@@ -233,7 +233,14 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
           else infer_named_record ~allow_dynamic_fields scope env resolved
       | Some { kind = Alias; _ } -> TOcaml_app (name, arguments)
       | Some { kind = (Record | Variant | Opaque); _ } | None ->
-      (match Resolver.lookup_record_type scope env record_name with
+      (match
+         (match Resolver.lookup_record_type scope env record_name with
+         | Ok _ as record -> record
+         | Error _ as error ->
+             match Collection_capability.find_canonical_record env record_name with
+             | Some record -> Ok record
+             | None -> error)
+       with
       | Ok record
         when List.length record.type_parameters = List.length arguments ->
           let parameters = List.map (fun _ -> Type_solver.fresh ()) arguments in
