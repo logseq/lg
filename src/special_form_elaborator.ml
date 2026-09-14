@@ -593,6 +593,8 @@ let rec false_nil_predicate_names = function
   | _ -> []
 
 let narrow_non_nil_name scope env name body =
+  if not (List.mem name (Local_function_elaborator.free_symbols [] body)) then body
+  else
   match Resolver.lookup_binding scope env name with
   | Ok (binding : Types.binding) -> (
       match Types.constraint_value_type binding.ty with

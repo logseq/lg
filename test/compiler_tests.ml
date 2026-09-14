@@ -23348,6 +23348,22 @@ let test_or_infers_optional_resolver_return () =
   assert_ocaml_runs "or_infers_optional_resolver_return" "" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange filename source)
 
+let test_nil_narrowing_does_not_bind_unused_payloads () =
+  let source =
+    {|
+(defn missing [^:option<string> name] (if (nil? name) 1 0))
+(defn size [^:option<string> name] (if (nil? name) 0 (count name)))
+(assert (= (missing nil) 1))
+(assert (= (missing (Some "abc")) 0))
+(assert (= (size nil) 0))
+(assert (= (size (Some "abc")) 3))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nil_narrowing_does_not_bind_unused_payloads" ""
+    ("[@@@warning \"+26\"]\n[@@@warnerror \"+26\"]\n" ^ native_source);
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_callback_preserves_nominal_record_after_field_rendering () =
   let source =
     {|
@@ -52290,6 +52306,8 @@ let tests =
       test_record_preserves_optional_calls_after_required_fields );
     ( "callback preserves nominal record after field rendering",
       test_callback_preserves_nominal_record_after_field_rendering );
+    ( "nil narrowing does not bind unused payloads",
+      test_nil_narrowing_does_not_bind_unused_payloads );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",
