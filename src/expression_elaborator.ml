@@ -164,6 +164,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
       let reference_name = String.sub name 1 (String.length name - 1) in
       compile_expr scope env (FList [ FSymbol "deref"; FSymbol reference_name ])
   | FSymbol name -> (
+      let name = Resolver.canonical_core_binding_name scope env name in
+      let name = Resolver.canonical_host_binding_name scope env name in
       match Env.find_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); ocaml_name; _ }
         when is_constructor_name name ->

@@ -16950,13 +16950,20 @@ let read = Internal.read
 let tokens = Internal.tokens
 let configs () = ["enabled", Some Internal.Config.{ enabled = true }]
 module Other = struct type t = { enabled : bool } end
+module Codec = struct
+  type t = Int
+  let int = Int
+  let read = function Int -> 7
+end
 |};
     if Sys.command (compile_only_command dir ml) <> 0 then failwith "host tuple fixture did not compile";
     Lg.Ocaml_signature.set_melange_target false;
     Lg.Ocaml_signature.add_include_dirs [dir];
     let source = {|
 (ns host-tuple-client
-  (:require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec]))
+  (:require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec]
+            [ocaml.Host_tuple_fixture.Codec :as codec]))
+(assert (= (codec/read codec/int) 7))
 (defn schema-attr? [attr] (contains? #{"index" "unique"} attr))
 (defn select [tx]
   (match tx
@@ -17000,7 +17007,13 @@ module Other = struct type t = { enabled : bool } end
   (assert (has-value? entries "old"))
   (assert (not (has-value? entries "missing"))))
 |} in
-    let compiled = compile_string_with_stdlib source |> expect_ok in
+    let state, previous = Lg.Compiler.compile_chunk ~target:Lg.Target.Native
+      (stdlib_state Lg.Target.Native) {|
+(ns earlier-codec (:require [clojure.core :as codec]))
+(defn cast-int [value] (codec/int value))
+|} |> expect_ok in
+    let _, compiled = Lg.Compiler.compile_chunk ~target:Lg.Target.Native state source |> expect_ok in
+    let compiled = previous ^ "\n" ^ compiled in
     (match compile_string_with_stdlib {|
 (ns wrong-host-record (:require [ocaml.Host_tuple_fixture :as host]))
 (host/read (record Host_tuple_fixture.Other.t (enabled true)))
