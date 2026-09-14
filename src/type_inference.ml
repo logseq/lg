@@ -1874,9 +1874,30 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     infer_expected item_ty params item))
               (Ok params) item_tys items
         | _ -> infer_all params items)
+    | FList [ FSymbol "tag"; FSymbol tag; payload ] ->
+        let expected_ty =
+          match expected_ty with
+          | TOcaml name ->
+              Ocaml_signature.of_compiler_type
+                (Lg_compiler_support.Ocaml_value.Constructor (name, []))
+          | ty -> ty
+        in
+        (match expected_ty with
+        | TPoly_variant row -> (
+            match List.assoc_opt tag row.tags with
+            | Some (Some payload_ty) -> infer_expected payload_ty params payload
+            | _ -> infer_form params payload)
+        | _ -> infer_form params payload)
     | FList [ FSymbol "__lg_nth"; collection; index ] ->
         Result.bind (infer_sequence_form expected_ty params collection)
           (fun params -> infer_expected TInt params index)
+    | FList [ FSymbol "__lg_into"; target; source ] -> (
+        match expected_ty with
+        | TVector element | TList element | TSet element
+          when not (Types.is_dynamic element) ->
+            Result.bind (infer_expected expected_ty params target)
+              (fun params -> infer_sequence_form element params source)
+        | _ -> infer_all params [target; source])
     | FList
         (FSymbol "__lg_conj"
         :: (FList [ FSymbol "__lg_get"; _; _ ] as target)
@@ -2093,6 +2114,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         Result.bind (infer_expected (TRef value_ty) params reference)
           (fun params -> infer_expected TKeyword params key)
+    | FList (FSymbol "__lg_list" :: values) -> (
+        let element_ty =
+          match expected_ty with
+          | TList element_ty -> Some element_ty
+          | _ -> Types.seqable_constraint_element expected_ty
+        in
+        match element_ty with
+        | Some element_ty when not (Types.is_dynamic element_ty) ->
+            infer_expected_all element_ty params values
+        | Some _ | None -> infer_all params values)
     | FVector values -> (
         let element_ty =
           match expected_ty with
@@ -2478,6 +2509,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                              return_ty) ->
                   TSeq element_ty
               | _ -> expected_ty
+            in
+            let expected_return_ty =
+              Expression_support.contextual_variant_type expected_return_ty
+                return_ty_for_unification
             in
             match
               Type_solver.unify Type_solver.empty return_ty_for_unification

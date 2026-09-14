@@ -3,6 +3,32 @@ open Lowered
 module Env = Compiler_environment
 module String_map = Map.Make (String)
 
+(* Unfold host recursive rows only along the finite constructed value. *)
+let rec contextual_variant_type expected actual =
+  match (expected, actual) with
+  | TOcaml name, TPoly_variant _ -> (
+      match Ocaml_signature.of_compiler_type
+              (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
+      | TPoly_variant _ as manifest -> contextual_variant_type manifest actual
+      | _ -> expected)
+  | TPoly_variant expected_row, TPoly_variant actual_row ->
+      TPoly_variant
+        { expected_row with
+          tags = List.map (fun (tag, payload) ->
+            let payload = match (payload, List.assoc_opt tag actual_row.tags) with
+              | Some expected, Some (Some actual) -> Some (contextual_variant_type expected actual)
+              | _ -> payload in
+            tag, payload) expected_row.tags }
+  | TList expected, TList actual -> TList (contextual_variant_type expected actual)
+  | TVector expected, TVector actual -> TVector (contextual_variant_type expected actual)
+  | TArray expected, TArray actual -> TArray (contextual_variant_type expected actual)
+  | TTuple expected, TTuple actual when List.length expected = List.length actual ->
+      TTuple (List.map2 contextual_variant_type expected actual)
+  | TNullable expected, TNullable actual -> TNullable (contextual_variant_type expected actual)
+  | TOcaml_app ("option", [expected]), TOcaml_app ("option", [actual]) ->
+      TOcaml_app ("option", [contextual_variant_type expected actual])
+  | _ -> expected
+
 let is_identity_expr name expression =
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Ident candidate -> String.equal candidate name

@@ -7350,6 +7350,29 @@ let test_namespace_require_aliases_local_modules_across_files () =
     "42\n"
     (math_ocaml ^ "\n" ^ main_ocaml)
 
+let test_host_aliases_are_scoped_to_namespaces () =
+  let compile target =
+    let state, first = Lg.Compiler.compile_chunk ~target (stdlib_state target) {|
+(ns aliases.text (:require [ocaml.String :as bytes]))
+(defn first-char [text] (bytes/get text 0))
+(println (first-char "abc"))
+|} |> expect_ok in
+    let state, second = Lg.Compiler.compile_chunk ~target state {|
+(ns aliases.binary (:require [ocaml.Bytes :as bytes]))
+(defn read []
+  (let [buffer (bytes/of-string "abc")]
+    (bytes/sub-string buffer 0 (bytes/length buffer))))
+(println (read))
+|} |> expect_ok in
+    let _, third = Lg.Compiler.compile_chunk ~target state {|
+(ns aliases.text)
+(println (bytes/length "abcdef"))
+|} |> expect_ok in
+    first ^ "\n" ^ second ^ "\n" ^ third
+  in
+  assert_ocaml_runs "host_aliases_are_scoped_to_namespaces" "a\nabc\n6\n" (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let test_namespace_load_only_require_exposes_qualified_clojure_string () =
   let source =
     {|
@@ -17966,6 +17989,15 @@ let consume (value : Public.t) = Inner.size value
 (println (check))
 (println (fixture/consume (tag Children (list (tag Leaf "abc")
                                              (tag Children (list (tag Leaf "de")))))))
+(defn leaf [value] (tag Leaf value))
+(defn parent-size [value] (fixture/consume (tag Children (list (leaf value)))))
+(println (parent-size "four"))
+(println (match (fixture/make)
+  (tag Children [child & _]) (match child (tag Leaf text) (count text) _ 0)
+  _ 0))
+(println (match (fixture/make)
+  (tag Children [(tag Leaf text) & _]) (count text)
+  _ 0))
 |} in
       let compiled = compile_string_with_stdlib source |> expect_ok in
       write_file generated
@@ -17977,7 +18009,7 @@ let consume (value : Public.t) = Inner.size value
            Filename.concat dir "recursive_alias_fixture.cmo";
            Filename.concat dir "recursive_alias_generated.cmo"] output_path) <> 0 then
         failwith "recursive alias generated code did not run";
-      if read_file output_path <> "15\n5\n" then failwith "recursive alias traversal changed";
+      if read_file output_path <> "15\n5\n4\n3\n3\n" then failwith "recursive alias traversal changed";
       List.iter
         (fun value ->
           compile_string_with_stdlib
@@ -48113,6 +48145,41 @@ let test_polymorphic_variants_preserve_static_payloads () =
   assert_ocaml_runs "polymorphic_variant_payloads" "ready\n42\n7\n" compiled;
   ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_vectors_merge_tuple_variant_rows () =
+  let source = {|
+(defn entries [title ready]
+  [(tuple "title" (tag String title))
+   (tuple "ready" (tag Bool ready))
+   (tuple "pending" (tag Bool false))])
+(defn describe [^:vector<tuple<string;variant<String:string;Bool:bool>>> fields]
+  (reduce (fn [text [key value]]
+            (str text key "=" (match value
+                                 (tag String value) value
+                                 (tag Bool value) (if value "yes" "no")) ";"))
+          "" fields))
+(println (describe (entries "note" true)))
+(println (describe [(tuple "title" (tag String "direct")) (tuple "ready" (tag Bool false))]))
+(defn send-fields [title ready]
+  (describe [(tuple "title" (tag String title)) (tuple "ready" (tag Bool ready))]))
+(println (send-fields "forward" true))
+(defn describe-list [^:list<tuple<string;variant<String:string;Bool:bool>>> fields]
+  (describe (vec fields)))
+(defn send-list [title ready]
+  (describe-list (list (tuple "title" (tag String title)) (tuple "ready" (tag Bool ready)))))
+(println (send-list "list" false))
+(defn send-more [title ready]
+  (describe (into [(tuple "title" (tag String title))] [(tuple "ready" (tag Bool ready))])))
+(println (send-more "into" true))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "vectors_merge_tuple_variant_rows"
+    "title=note;ready=yes;pending=no;\ntitle=direct;ready=no;\ntitle=forward;ready=yes;\ntitle=list;ready=no;\ntitle=into;ready=yes;\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    Lg.Compiler.compile_string ~target
+      (source ^ "(describe [(tuple \"bad\" (tag Bool 42))])")
+    |> expect_error_contains "cannot adapt") [Lg.Target.Native; Lg.Target.Melange]
+
 let test_polymorphic_variants_reject_unknown_tags_and_payloads () =
   let prefix = "(defn consume [^:variant<Ready;Value:int> value] value)" in
   List.iter (fun source ->
@@ -50412,6 +50479,7 @@ let tests =
       test_namespace_scopes_following_forms_without_ocaml_modules );
     ( "namespace require aliases local modules across files",
       test_namespace_require_aliases_local_modules_across_files );
+    ( "host aliases are scoped to namespaces", test_host_aliases_are_scoped_to_namespaces );
     ( "namespace load-only require exposes qualified clojure.string",
       test_namespace_load_only_require_exposes_qualified_clojure_string );
     ( "Clojure and CLJS core namespace aliases dispatch to core",
@@ -50483,6 +50551,7 @@ let tests =
     ( "OCaml metadata preserves polymorphic variant rows", test_ocaml_type_metadata_preserves_variant_rows );
     ( "polymorphic variants infer rows from patterns", test_polymorphic_variants_infer_rows_from_patterns );
     ( "polymorphic variants support generic and open rows", test_polymorphic_variants_support_generic_and_open_rows );
+    ( "vectors merge tuple variant rows", test_vectors_merge_tuple_variant_rows );
     ( "polymorphic variants reject unknown tags and payloads", test_polymorphic_variants_reject_unknown_tags_and_payloads );
     ( "GADT matching refines generic results", test_gadt_matching_refines_generic_results );
     ( "functor application preserves argument type equalities", test_functor_application_preserves_argument_type_equalities );

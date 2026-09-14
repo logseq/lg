@@ -21,6 +21,14 @@ let canonical_core_binding_name scope env name =
       | Some _ | None -> name)
   | _ -> name
 
+let canonical_host_binding_name scope env name =
+  match String.split_on_char '/' name with
+  | [alias; member] -> (
+      match Env.resolve_namespace_alias ~scope alias env with
+      | Some target when String.starts_with ~prefix:"ocaml." target -> target ^ "/" ^ member
+      | _ -> name)
+  | _ -> name
+
 let lookup_type_declaration scope env type_name =
   let registry = Env.types env in
   let lookup owner local_name =
@@ -116,6 +124,7 @@ let lookup_record_type scope env type_name =
 
 let lookup_binding scope env name =
   let name = canonical_core_binding_name scope env name in
+  let name = canonical_host_binding_name scope env name in
   match Env.find_opt (Names.scoped_key scope name) env with
   | Some (binding : binding) -> Ok binding
   | None -> (
@@ -150,6 +159,7 @@ let check_emitted_name_collision env ~source_key ~ocaml_name =
        ^ " both emit " ^ ocaml_name)
 
 let lookup_host_reference scope env name =
+  let name = canonical_host_binding_name scope env name in
   match Env.find_opt (Names.scoped_key scope name) env with
   | Some _ as binding -> binding
   | None -> Env.find_opt name env

@@ -1387,6 +1387,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   when Type_solver.is_open element_ty
                                        || Type_solver.is_open expression.ty ->
                                     true
+                                | TTuple _, TTuple _
+                                | TPoly_variant _, TPoly_variant _ ->
+                                    Types.assignable ~policy:Host_boundary
+                                      ~expected:element_ty ~actual:expression.ty
                                 | _ -> false)
                               expressions) ->
                       if
@@ -2798,6 +2802,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | _ -> Error.error "invalid GADT constructor type"
     in
     let rec compile_pattern target_ty pattern =
+      let target_ty =
+        match (target_ty, pattern) with
+        | TOcaml name, FList (FSymbol "tag" :: _) -> (
+            match Ocaml_signature.of_compiler_type
+                    (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
+            | TPoly_variant _ as manifest -> manifest
+            | _ -> target_ty)
+        | _ -> target_ty
+      in
       let result =
         match (target_ty, pattern) with
       | TPoly_variant row, FList (FSymbol "tag" :: FSymbol tag :: payload) ->

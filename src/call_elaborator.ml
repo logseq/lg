@@ -6868,43 +6868,7 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
   in
   let expected = resolve_named_record_application env expected in
   let actual = resolve_named_record_application env actual in
-  let rec contextual_variant_type expected actual =
-    match (expected, actual) with
-    | TOcaml name, TPoly_variant _ -> (
-        match
-          Ocaml_signature.of_compiler_type
-            (Lg_compiler_support.Ocaml_value.Constructor (name, []))
-        with
-        | TPoly_variant _ as manifest -> contextual_variant_type manifest actual
-        | _ -> expected)
-    | TPoly_variant expected_row, TPoly_variant actual_row ->
-        TPoly_variant
-          { expected_row with
-            tags =
-              List.map
-                (fun (tag, payload) ->
-                  let payload =
-                    match (payload, List.assoc_opt tag actual_row.tags) with
-                    | Some expected, Some (Some actual) ->
-                        Some (contextual_variant_type expected actual)
-                    | _ -> payload
-                  in
-                  (tag, payload))
-                expected_row.tags }
-    | TList expected, TList actual ->
-        TList (contextual_variant_type expected actual)
-    | TArray expected, TArray actual ->
-        TArray (contextual_variant_type expected actual)
-    | TTuple expected, TTuple actual when List.length expected = List.length actual ->
-        TTuple (List.map2 contextual_variant_type expected actual)
-    | TNullable expected, TNullable actual ->
-        TNullable (contextual_variant_type expected actual)
-    | TOcaml_app ("option", [expected]), TOcaml_app ("option", [actual]) ->
-        TOcaml_app ("option", [contextual_variant_type expected actual])
-    | _ -> expected
-  in
-  (* Unfold host recursive rows only along the finite constructed argument. *)
-  let expected = contextual_variant_type expected actual in
+  let expected = Expression_support.contextual_variant_type expected actual in
   let rec resolve_external_record_for_expected expected actual =
     match (expected, actual) with
     | TNamed_record record, _ when not record.nominal ->

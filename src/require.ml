@@ -262,14 +262,15 @@ let add_lg_refer_bindings env scope module_name names =
 
 let add_ocaml_alias_bindings env module_name alias =
   let module_path = ocaml_module_path module_name in
-  let bindings =
+  let bindings alias =
     ( alias,
       Types.binding ~host_reference:(Ocaml_module module_path) module_path
         (TOcaml "__module") )
     :: (ocaml_host_functions module_name
        |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding)))
   in
-  Env.add_bindings bindings env
+  let env = Env.add_bindings (bindings module_name) env in
+  if alias = module_name then env else Env.add_bindings (bindings alias) env
 
 let add_ocaml_refer_bindings env scope module_name names =
   let host_functions = ocaml_host_functions module_name in
