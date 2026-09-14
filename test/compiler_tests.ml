@@ -29639,6 +29639,9 @@ let test_group_by_map_entry_destructuring_preserves_named_record_keys () =
             (recur pending seen ordered)
             (recur (into pending (reverse (sort compare-outline (get children (:uuid block) []))))
                    (conj seen (:uuid block)) (conj ordered block))))))))
+(defn render-outline-ids [rows]
+  (mapv (fn [row] (str "block/" (:uuid row))) rows))
+(assert (= (render-outline-ids [(record OutlineBlock (uuid "root") (parent-id nil) (order nil) (created-at 0))]) ["block/root"]))
 (assert (= (mapv :uuid (preorder "page" [(record OutlineBlock (uuid "root") (parent-id (Some "page")) (order nil) (created-at 0))])) ["root"]))
 (assert (= (count (preorder "page" [])) 0))
 (assert (= (mapv :uuid (preorder "page" [(record OutlineBlock (uuid "page") (parent-id (Some "page")) (order nil) (created-at 0))])) ["page"]))
