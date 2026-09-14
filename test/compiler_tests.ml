@@ -5707,10 +5707,14 @@ let test_keyword_callbacks_preserve_mutable_signal_item_types () =
   let consumer = {|
 (ns signal-consumer (:require [signal-fixture :refer [Row Signal Scope Context sample own signal-map]]))
 (defn row-uuid [row] (let [_depth (:depth row)] (:uuid row)))
+(defn asset-is? [row expected] (= (:is-asset row) expected))
+(defn asset? [row] (asset-is? row true))
 (defn render [context ^:signal<row> source]
   (let [row (sample source)
         uuid (own (:scope context) (signal-map row-uuid source))
-        asset (own (:scope context) (signal-map :is-asset source))]
+        keyword-asset (own (:scope context) (signal-map :is-asset source))
+        asset (own (:scope context) (signal-map asset? source))]
+    (assert (= (sample keyword-asset) (sample asset)))
     (sample asset)))
 (def context (record Context (scope (record Scope (id 1)))))
 (assert (= (render context (record Signal (current (atom (record Row (uuid "a") (depth 0) (is-asset true)))) (subscribers (atom [])))) true))

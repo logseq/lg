@@ -17660,15 +17660,16 @@ let create ~compile_expr =
     let compiled =
       match form with
       | FSymbol name
-        when (match Env.find_inline_macro ~scope name env with
-              | Some definition ->
-                  not (Env.source_callable_shadowed ~scope name definition env)
-                  && (match lookup_binding scope env name with
-                      | Ok binding ->
-                          binding.ocaml_name
-                          = Names.ocaml_binding_name definition.namespace definition.name
-                      | Error _ -> false)
-              | None -> false)
+        when (match lookup_binding scope env name with
+              | Ok binding ->
+                  List.exists Option.is_some binding.row_param_types
+                  || (match Env.find_inline_macro ~scope name env with
+                      | Some definition ->
+                          not (Env.source_callable_shadowed ~scope name definition env)
+                          && binding.ocaml_name
+                             = Names.ocaml_binding_name definition.namespace definition.name
+                      | None -> false)
+              | Error _ -> false)
              && (match Env.expected_type env with
                  | Some (TFn (parameter_tys, _)) ->
                      parameter_tys <> []
