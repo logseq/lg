@@ -29577,6 +29577,22 @@ let test_group_by_map_entry_destructuring_preserves_named_record_keys () =
 (assert (= (mapv :uuid (preorder "page" [(record OutlineBlock (uuid "root") (parent-id (Some "page")) (order nil) (created-at 0))])) ["root"]))
 (assert (= (count (preorder "page" [])) 0))
 (assert (= (mapv :uuid (preorder "page" [(record OutlineBlock (uuid "page") (parent-id (Some "page")) (order nil) (created-at 0))])) ["page"]))
+(defn block-day [block] (:created-at block))
+(defn sorted-groups [blocks]
+  (let [groups (group-by :parent-id blocks)
+        day (fn [[page-id blocks]]
+              (if-some [block (first blocks)] (block-day block) 0))
+        groups (sort (fn [[left-page left-blocks] [right-page right-blocks]]
+                       (compare (day (tuple left-page left-blocks))
+                                (day (tuple right-page right-blocks)))) groups)]
+    (vec (mapcat (fn [[page-id blocks]] blocks) groups))))
+(assert (= (mapv :uuid (sorted-groups [(record OutlineBlock (uuid "root") (parent-id nil) (order nil) (created-at 0))])) ["root"]))
+(assert (= (count (sorted-groups [])) 0))
+(assert (= (mapv :uuid
+                (sorted-groups
+                 [(record OutlineBlock (uuid "late") (parent-id (Some "later")) (order nil) (created-at 20))
+                  (record OutlineBlock (uuid "early") (parent-id (Some "earlier")) (order nil) (created-at 10))]))
+           ["early" "late"]))
 (def labels
   (for [[name branches] (group-by :name rows)]
     (str (= (key-symbol name) 'alpha) ":" (count branches))))

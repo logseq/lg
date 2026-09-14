@@ -11969,7 +11969,15 @@ let create ~compile_expr =
               Result.bind
                 (compile_expr scope
                    (Env.with_expected_type (List.nth_opt expected_items index) env) form)
-                (fun value -> compile_items (index + 1) (value :: values) rest)
+                (fun value ->
+                  let expression =
+                    if has_capability_constraint value.ty then
+                      pack_constrained_value env value.ty value
+                    else Ok value.semantic_expr
+                  in
+                  Result.bind expression (fun semantic_expr ->
+                      compile_items (index + 1)
+                        ({ value with semantic_expr } :: values) rest))
         in
         match compile_items 0 [] arg_forms with
         | Error _ as err -> err
@@ -17289,7 +17297,9 @@ let create ~compile_expr =
                                       ( comparator.semantic_expr,
                                         [ left; right ] ) ))
                               (pack_dynamic_value env right_ty right))
-                      else Ok comparator.semantic_expr
+                      else
+                        plan_and_emit_argument env
+                          ~expected:(TFn ([ inner; inner ], TInt)) comparator
                     in
                     Result.map
                       (fun comparator_expression ->

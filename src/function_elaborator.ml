@@ -1030,7 +1030,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                 (fun ty ->
                   let ty = infer_named_record scope env ty in
                   refine_destructured_type spec.pattern ty)
-                (Destructure.infer_pattern_type spec.pattern lookup_inferred)
+                (Destructure.infer_generator_pattern_type spec.pattern lookup_inferred)
             else Ok (lookup_inferred spec.source_name)
           in
           let rec build acc = function
