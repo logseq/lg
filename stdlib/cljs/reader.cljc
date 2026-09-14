@@ -3,6 +3,7 @@
 ; Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php).
 
 (ns cljs.reader
+  (:refer-clojure :exclude [read-string])
   (:require [ocaml.Lg_runtime.Runtime_edn :as runtime]
             [ocaml.Lg_runtime.Runtime_string :as runtime-string]))
 

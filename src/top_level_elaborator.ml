@@ -1399,18 +1399,31 @@ let rec compile scope env next_type form =
       compile_resolved scope env next_type form)
 
 and compile_resolved scope env next_type form =
-  let env =
+  let definition_name =
     match form with
     | FList
-        (FSymbol ("defn" | "defn-") :: FSymbol "^:dynamic" :: FSymbol name
+        (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol "^:dynamic" :: FSymbol name
         :: _) ->
-        Require.remove_source_core_macro_alias env scope name
+        Some name
     | FList
-        (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
+        (FSymbol ("def" | "defonce" | "defn" | "defn-" | "defmacro") :: FSymbol name :: _)
       ->
-        Require.remove_source_core_macro_alias env scope name
-    | _ -> env
+        Some name
+    | _ -> None
   in
+  match definition_name with
+  | Some name
+    when scope <> "clojure.core" && scope <> "cljs.core"
+         && not (Env.core_excluded ~scope name env)
+         && (Option.is_some (Env.find_opt (Names.scoped_key "clojure.core" name) env)
+             || Option.is_some (Env.find_macro ~scope:"clojure.core" name env)
+             || Option.is_some (Env.find_inline_macro ~scope:"clojure.core" name env)) ->
+      Error.error
+        ("definition " ^ Names.scoped_key scope name ^ " conflicts with clojure.core/" ^ name
+         ^ "; add (:refer-clojure :exclude [" ^ name ^ "]) to the namespace")
+  | _ -> compile_definition scope env next_type form
+
+and compile_definition scope env next_type form =
   let env = refine_mutable_bindings scope env form in
   match form with
   | FList [ FSymbol "ffi"; (FSymbol name as name_form);

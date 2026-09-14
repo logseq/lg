@@ -4,6 +4,7 @@
 ; This LG port follows ClojureScript's clojure.string public API.
 
 (ns clojure.string
+  (:refer-clojure :exclude [replace reverse])
   (:require [ocaml.Lg_runtime.Runtime_string :as runtime]))
 
 (defn blank? [source]

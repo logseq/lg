@@ -857,7 +857,7 @@ let stable_order ?(external_signature_dependencies = []) forms =
   let order = release 0 ready [] in
   let is_namespace index =
     match forms.(index) with
-    | FList (FSymbol ("ns" | "namespace-scope") :: _) -> true
+    | FList (FSymbol ("ns" | "namespace-scope" | "refer-clojure-exclude") :: _) -> true
     | _ -> false
   in
   let is_declaration index =

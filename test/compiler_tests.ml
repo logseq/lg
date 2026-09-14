@@ -4384,6 +4384,7 @@ let test_unresolved_type_scan_stops_at_nominal_records () =
 let test_deferred_forward_calls_keep_nominal_receiver_evidence () =
   let source =
     {|
+(refer-clojure-exclude indexed?)
 (declare indexed?)
 
 (defprotocol IIndexAccess
@@ -4992,12 +4993,12 @@ let test_heterogeneous_sets_use_closed_edn_or_require_a_sum () =
 
 let test_heterogeneous_computed_maps_use_closed_edn_or_require_a_sum () =
   Lg.Compiler.compile_string
-    {|(def key :left) (def value (__lg_hash-map key 1 :right "two"))|}
+    {|(refer-clojure-exclude key) (def key :left) (def value (__lg_hash-map key 1 :right "two"))|}
   |> expect_error_contains "define a closed sum type";
   Lg.Compiler.compile_string {|(def value (__lg_hash-map :left 1 "right" 2))|}
   |> expect_ok |> ignore;
   Lg.Compiler.compile_string
-    {|(def key :left) (def value (__lg_hash-map key 1 :right 2.0))|}
+    {|(refer-clojure-exclude key) (def key :left) (def value (__lg_hash-map key 1 :right 2.0))|}
   |> expect_error_contains "define a closed sum type";
   Lg.Compiler.compile_string
     {|(def value (__lg_hash-map (fn [x] x) 1 :right 2))|}
@@ -5040,7 +5041,7 @@ let test_sequence_cons_requires_sum_elements () =
 let test_map_updates_require_sum_values () =
   compile_with_stdlib_result Lg.Target.Native
     "test/map_assoc_requires_sum.cljc"
-    {|(def key :left)
+    {|(refer-clojure-exclude key) (def key :left)
 (def value (assoc (__lg_hash-map key 1) :right "two"))|}
   |> expect_error_contains "define a closed sum type"
 
@@ -5585,6 +5586,40 @@ let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
   let ocaml = compile_with_stdlib Lg.Target.Native "test/keyword_signal.cljc" source in
   assert_ocaml_runs "generic_call_infers_nested_host_container_for_keyword_callbacks" "" ocaml
 
+let test_core_name_conflicts_require_explicit_exclusion () =
+  List.iter (fun definition ->
+    let stdlib = compiled_stdlib Lg.Target.Native in
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native stdlib.state
+      ("(ns collision-check)\n" ^ definition)
+    |> expect_error_contains ":refer-clojure :exclude")
+    ["(defn update [current event] (+ current event))";
+     "(def first 42)"; "(defn map [x] x)";
+     "(defonce first 42)";
+     "(def ^:dynamic first 42)";
+     "(defmacro update [x] x)"];
+  let provider = {|(ns update-model (:refer-clojure :exclude [update]))
+(defn update [current event] (+ current event))
+|} in
+  let wrapper = {|(ns app-wrapper)
+(macro-helper-defn wrap-expansion [value]
+  `(let [result# ~value] result#))
+(defmacro wrap [value] (wrap-expansion value))
+|} in
+  let consumer = {|(ns update-app (:require [update-model :as model] [app-wrapper :as app]))
+(assert (= (app/wrap (model/update 20 22)) 42))
+|} in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, declarations = Lg.Compiler.compile_chunk ~target stdlib.state
+      {|(ns update-model (:refer-clojure :exclude [update])) (signature update-model/update :fn<int;int;int>)|} |> expect_ok in
+    let state, provider = Lg.Compiler.compile_chunk ~target state provider |> expect_ok in
+    let state, wrapper = Lg.Compiler.compile_chunk ~target state wrapper |> expect_ok in
+    let _, consumer = Lg.Compiler.compile_chunk ~target state consumer |> expect_ok in
+    stdlib.ocaml_source ^ "\n" ^ declarations ^ "\n" ^ provider ^ "\n" ^ wrapper ^ "\n" ^ consumer
+  in
+  assert_ocaml_runs "core_name_conflicts_require_explicit_exclusion" "" (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let test_sort_by_first_projects_tuple_keys () =
   let source = {|
 (assert (= (mapv second (sort-by first [(tuple "b" 1) (tuple "a" 2)])) [2 1]))
@@ -5684,7 +5719,7 @@ let test_declared_defn_signature_contextualizes_parameters () =
 
 let test_explicit_sum_constructors_keep_collections_static () =
   let source =
-    {|
+    {|(refer-clojure-exclude key)
 (type-variant value
   (KeywordValue :keyword)
   (IntValue :int))
@@ -10120,7 +10155,7 @@ let test_var_quote_dereferences_qualified_chunk_values () =
 
 let test_reader_conditional_accepts_metadata_branch_values () =
   let source =
-    {|
+    {|(refer-clojure-exclude keep)
 (defn keep
   [#?(:cljs value
       :clj ^:int value)]
@@ -11705,9 +11740,9 @@ let test_ocaml_errors_include_lg_source_locations () =
 let test_parsetree_items_preserve_top_level_source_locations () =
   let structure =
     Lg.Compiler.compile_parsetree {|
-(def first 1)
+(def first-value 1)
 
-(def second 2)
+(def second-value 2)
 |}
     |> expect_ok
   in
@@ -14104,7 +14139,7 @@ let test_special_float_literals_are_portable () =
 
 let test_numeric_equality_rejects_dynamic_parameters () =
   Lg.Compiler.compile_string
-    {|
+    {|(refer-clojure-exclude infinite?)
 (defn infinite? [^:dynamic value]
   (== ##Inf value))
 |}
@@ -15028,7 +15063,7 @@ let test_successful_parser_predicate_refines_argument_across_chunks () =
 
 let test_concat_injects_nested_collection_elements_into_recursive_sum () =
   let source =
-    {|
+    {|(refer-clojure-exclude flatten)
 (type-variant value
   (SymbolValue :symbol)
   (VectorValue :vector<value>))
@@ -20001,7 +20036,7 @@ let test_defrecord_protocol_methods_support_forward_calls () =
 let test_qualified_record_hints_survive_forward_protocol_dependencies () =
   let source =
     {|
-(ns model.state)
+(ns model.state (:refer-clojure :exclude [replace-value]))
 (defprotocol Resettable
   (reset-value [value]))
 (declare rebuild)
@@ -21557,7 +21592,7 @@ let test_sequence_protocol_witnesses_keep_protocol_identity () =
   | Ok _ -> failwith "different protocol witnesses cannot be reused as sequence elements"
 
 let test_imported_ocaml_constants_are_static_values () =
-  let source = {|(ns app.constants
+  let source = {|(ns app.constants (:refer-clojure :exclude [empty])
   (:require [ocaml.Stdlib :as stdlib] [ocaml.String :as text]))
 (def empty text/empty)
 (def maximum stdlib/max_int)
@@ -22585,7 +22620,7 @@ let test_native_field_access_preserves_explicit_ref_record_field () =
 
 let test_concise_external_type_paths_defer_to_ocaml () =
   Lg.Compiler.compile_string
-    {|
+    {|(refer-clojure-exclude identity)
 (defn identity [^:External/value value] value)
 |}
   |> expect_error_contains "Unbound module External"
@@ -23541,7 +23576,7 @@ let test_assoc_adapts_record_collection_fields () =
 
 let test_assoc_accepts_protocol_constrained_named_records () =
   let source =
-    {|
+    {|(refer-clojure-exclude replace-value)
 (defprotocol HasValue
   (read-value [value] :int))
 (defrecord state [^int value ^:vector<int> items]
@@ -27534,7 +27569,7 @@ let test_namespace_value_shadows_automatic_core_macro () =
       [
         ( "test/source_macro_shadow_provider.cljc",
           {|
-(ns source-macro-shadow.provider)
+(ns source-macro-shadow.provider (:refer-clojure :exclude [seqable?]))
 (defn seqable? [_value] true)
 |} );
         ( "test/source_macro_shadow_consumer.cljc",
@@ -28118,7 +28153,7 @@ let test_source_range_shuffle_and_any_preserve_clojurescript_contracts () =
 
 let test_source_array_helpers_preserve_generic_array_types () =
   let source =
-    {|
+    {|(refer-clojure-exclude ints)
 (def array-length clojure.core/alength)
 (def copy-range clojure.core/acopy)
 (def slice-array clojure.core/aslice)
@@ -28152,7 +28187,7 @@ let test_source_array_helpers_preserve_generic_array_types () =
 
 let test_source_array_map_and_sort_preserve_upstream_contracts () =
   let source =
-    {|
+    {|(refer-clojure-exclude ints)
 (def ints (array 3 1 2))
 (def mapped
   (cljs.core/amap ints index result
@@ -31651,7 +31686,7 @@ let test_source_printing_function_cluster_is_source_owned () =
 let test_source_numeric_operator_cluster_matches_target_semantics () =
   let source =
     {|
-(ns app.source-numeric-operators
+(ns app.source-numeric-operators (:refer-clojure :exclude [divide])
   (:require [cljs.core :as core
              :refer [+ - * / < <= > >= ==]]))
 
@@ -33362,7 +33397,7 @@ let test_reduce_stops_without_realizing_remaining_values () =
 
 let test_nil_initialized_reduce_returns_nullable_reduced_value () =
   let source =
-    {|
+    {|(refer-clojure-exclude find)
 (defn find [pred xs]
   (reduce
     (fn [_ x]
@@ -39334,7 +39369,7 @@ let test_closed_array_sources_preserve_nominal_elements_for_sorting () =
 let test_namespaced_array_macros_preserve_closed_sources () =
   let arrays_source =
     {|
-(ns arrays)
+(ns arrays (:refer-clojure :exclude [array? into-array asort]))
 (defmacro array? [value]
   `(array-value? ~value))
 (defmacro into-array [values]
@@ -40854,7 +40889,7 @@ let test_select_keys_projects_open_row_extension_fields () =
 
 let test_structural_options_preserve_heterogeneous_fields () =
   let source =
-    {|
+    {|(refer-clojure-exclude comparator)
 (defn comparator [^:int left ^:int right] (compare left right))
 (defn sorted-set-options [opts]
   (let [cmp (:cmp opts)]
@@ -42242,6 +42277,7 @@ let test_sequence_core_api_on_vectors () =
 let test_function_helpers () =
   let source =
     {|
+(refer-clojure-exclude double)
 (def add10 (partial + 10))
 (def double (fn [x] (* x 2)))
 (def add10-after-double (comp add10 double))
@@ -43610,7 +43646,7 @@ let test_sets_generate_comparators_for_closed_composite_elements () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_set_accepts_a_char_as_a_singleton_on_melange () =
-  let source = {|(def chars (set \space))|} in
+  let source = {|(refer-clojure-exclude chars) (def chars (set \space))|} in
   compile_string_with_stdlib source
   |> expect_error "set expects a seqable value";
   ignore
@@ -45649,7 +45685,7 @@ let test_peek_rejects_unsupported_collections () =
   |> expect_error_contains "no protocol implementation"
 
 let test_result_let_star_sequences_and_short_circuits () =
-  let source = {|
+  let source = {|(refer-clojure-exclude empty)
 (defn step [x]
   (println x)
   (if (= x 0) (Error "stop") (Ok (+ x 1))))
@@ -48058,7 +48094,7 @@ let test_formatter_rejects_unbalanced_delimiters () =
 let test_match_delegates_opaque_module_constructor_payload_patterns_to_ocaml ()
     =
   let source =
-    {|
+    {|(refer-clojure-exclude empty)
 (module Msg
   (type-variant message Empty (Named :string)))
 (def named (Msg/Named "Ada"))
@@ -48334,7 +48370,7 @@ let test_module_definitions_reject_expressions () =
 
 let test_module_definitions_support_type_aliases () =
   let source =
-    {|
+    {|(refer-clojure-exclude keep)
 (module UserIds
   (type-alias user-id :int)
   (defn keep [^:user_id x] x)
@@ -48486,7 +48522,7 @@ let test_module_signature_ascription_is_checked_by_ocaml () =
 
 let test_module_signatures_support_type_items () =
   let source =
-    {|
+    {|(refer-clojure-exclude keep)
 (module-signature UserSig
   (type user-id :int)
   (val answer :user_id))
@@ -49063,7 +49099,7 @@ let test_module_signature_type_items_are_checked_by_ocaml () =
 
 let test_module_signatures_support_abstract_type_items () =
   let source =
-    {|
+    {|(refer-clojure-exclude keep)
 (module-signature UserSig
   (type user-id)
   (val answer :user_id))
@@ -50837,6 +50873,8 @@ let tests =
       test_ocaml_list_map_contextualizes_external_record_callback );
     ( "generic call infers nested host container for keyword callbacks",
       test_generic_call_infers_nested_host_container_for_keyword_callbacks );
+    ( "core name conflicts require explicit exclusion",
+      test_core_name_conflicts_require_explicit_exclusion );
     ( "sort-by first projects tuple keys",
       test_sort_by_first_projects_tuple_keys );
     ( "inferred callback captures shadow global functions",

@@ -917,6 +917,15 @@ that erase the payload type are not supported.
 
 ## Compiler architecture
 
+### Core name conflicts
+
+Top-level value, function, and macro definitions that reuse a core name must
+explicitly declare `(:refer-clojure :exclude [name])` in their namespace. The
+compiler reports the collision at the definition instead of silently removing
+a core binding or macro. Namespace exclusions are processed before definitions
+are dependency-ordered. Lexical parameter and local-binding shadowing remains
+unchanged; qualified core calls remain available after exclusion.
+
 ### Recursive functions and inferred interfaces
 
 `letfn` accepts a nonempty vector of fixed-arity local function definitions.
