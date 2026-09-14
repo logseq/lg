@@ -240,6 +240,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         expected
     | _ -> field_ty
   in
+  let external_record_type = function
+    | TOcaml type_name -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record) -> Some record
+        | Ok _ | Error _ -> None)
+    | TOcaml_app (type_name, arguments) -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record)
+          when List.length record.type_parameters = List.length arguments ->
+            Some { record with type_arguments = arguments }
+        | Ok _ | Error _ -> None)
+    | _ -> None
+  in
   let external_field type_name target keyword =
     let field_name = Names.keyword_to_ocaml_name keyword in
     let field_expr = Semantic_ir.Field (target.semantic_expr, field_name) in
@@ -2392,6 +2405,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   ty =
                     Function_elaborator.infer_named_record scope env target.ty;
                 }
+              in
+              let target =
+                match external_record_type target.ty with
+                | Some record -> { target with ty = TNamed_record record }
+                | None -> target
               in
               let target = unwrap_protocol_value target in
               if pair_forms = [] || List.length pair_forms mod 2 <> 0 then

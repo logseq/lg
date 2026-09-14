@@ -16,6 +16,14 @@ type constructor_type = {
   result : value_type;
 }
 
+type record_field = {
+  label_name : string;
+  label_type : value_type;
+  mutable_ : bool;
+}
+
+type record_type = { fields : record_field list }
+
 let initialized = ref false
 let initial_env_cache = ref None
 let configured_melange = ref None
@@ -157,6 +165,32 @@ let lookup_label ~include_dirs name =
             env
         in
         Ok (normalize description.lbl_arg)
+  with exn -> Error (exception_message exn)
+
+let lookup_record ~include_dirs name =
+  try
+    let env = init include_dirs in
+    match Longident.unflatten (String.split_on_char '.' name) with
+    | None -> Error ("invalid OCaml record type name " ^ name)
+    | Some longident ->
+        let _, declaration =
+          Env.lookup_type ~use:false ~loc:Location.none longident env
+        in
+        (match declaration.type_kind with
+        | Type_record (labels, _) ->
+            Ok
+              {
+                fields =
+                  List.map
+                    (fun (label : Types.label_declaration) ->
+                      {
+                        label_name = Ident.name label.ld_id;
+                        label_type = normalize label.ld_type;
+                        mutable_ = label.ld_mutable = Asttypes.Mutable;
+                      })
+                    labels;
+              }
+        | _ -> Error ("OCaml type " ^ name ^ " is not a record"))
   with exn -> Error (exception_message exn)
 
 let lookup_type_manifest ~include_dirs name =

@@ -150,6 +150,9 @@ let constructor_signature_cache =
 let type_manifest_cache =
   Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
 
+let record_type_cache =
+  Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
+
 let type_manifest_resolution_stack = Domain.DLS.new_key (fun () -> ref [])
 
 let string_contains_substring source substring =
@@ -325,6 +328,42 @@ let type_manifest name =
       in
       Lookup_cache.add cache key manifest;
       manifest
+
+let keyword_of_label_name label_name =
+  ":"
+  ^ String.map
+      (function
+        | '_' -> '-'
+        | character -> character)
+      label_name
+
+let set_module_name name = "Set_" ^ Names.sanitize_name name
+
+let record_type name =
+  let include_dirs = include_dirs () in
+  let cache = Domain.DLS.get record_type_cache in
+  let key = (include_dirs, name) in
+  match Lookup_cache.find_opt cache key with
+  | Some record -> record
+  | None ->
+      let record =
+        match Lg_compiler_support.Ocaml_value.lookup_record ~include_dirs name with
+        | Error message -> Error.error message
+        | Ok record ->
+            let fields =
+              List.map
+                (fun (field : Lg_compiler_support.Ocaml_value.record_field) ->
+                  Types.make_field ~mutable_:field.mutable_
+                    (keyword_of_label_name field.label_name)
+                    (of_compiler_type field.label_type))
+                record.fields
+            in
+            Ok
+              (Types.named_record ~nominal:false ~type_name:name
+                 ~set_module_name:(set_module_name name) fields)
+      in
+      Lookup_cache.add cache key record;
+      record
 
 let field_type type_name field_name =
   let owner =

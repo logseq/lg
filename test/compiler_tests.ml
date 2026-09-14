@@ -23275,6 +23275,95 @@ let test_external_record_exposes_static_fields_without_redefinition () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_mli_record_exposes_static_fields_without_external_record () =
+  let dir = Filename.temp_dir "lg-mli-record-" "" in
+  let mli = Filename.concat dir "mli_record_fixture.mli" in
+  let ml = Filename.concat dir "mli_record_fixture.ml" in
+  let generated_ml = Filename.concat dir "mli_record_generated.ml" in
+  let output_path = Filename.concat dir "mli_record_generated.out" in
+  write_file mli
+    {|
+type row = {
+  name : string;
+  age : int;
+}
+
+val make : string -> int -> row
+|};
+  write_file ml
+    {|
+type row = {
+  name : string;
+  age : int;
+}
+
+let make name age = { name; age }
+|};
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun path -> if Sys.file_exists path then Sys.remove path)
+        [
+          Filename.concat dir "mli_record_fixture.cmi";
+          Filename.concat dir "mli_record_fixture.cmo";
+          Filename.concat dir "mli_record_generated.cmi";
+          Filename.concat dir "mli_record_generated.cmo";
+          output_path;
+          generated_ml;
+          mli;
+          ml;
+        ];
+      if Sys.file_exists dir then Unix.rmdir dir)
+    (fun () ->
+      let command =
+        Printf.sprintf "cd %s && ocamlc -c mli_record_fixture.mli && ocamlc -c mli_record_fixture.ml"
+          (Filename.quote dir)
+      in
+      (match Sys.command command with
+      | 0 -> ()
+      | code ->
+          failwith
+            (Printf.sprintf "could not compile OCaml mli fixture, exit code %d"
+               code));
+      Lg.Ocaml_signature.add_include_dirs [ dir ];
+      let source =
+        {|
+(require [ocaml.Mli_record_fixture :as fixture])
+(def row (fixture/make "Ada" 41))
+(def updated (assoc row :age 42))
+(println (str (:name updated) ":" (:age updated)))
+|}
+      in
+      let native_source = compile_string_with_stdlib source |> expect_ok in
+      if string_contains_substring native_source "external_record" then
+        failwith "test source must not declare an external record";
+      write_file generated_ml
+        (String.concat "\n"
+           [ native_stdlib_prelude (); strip_native_stdlib_prelude native_source ]);
+      (match Sys.command (compile_only_command dir generated_ml) with
+      | 0 -> ()
+      | code ->
+          failwith
+            (Printf.sprintf "generated OCaml did not compile, exit code %d"
+               code));
+      let run_cmd =
+        run_compiled_module_command dir
+          [
+            Filename.concat dir "mli_record_fixture.cmo";
+            Filename.concat dir "mli_record_generated.cmo";
+          ]
+          output_path
+      in
+      (match Sys.command run_cmd with
+      | 0 -> ()
+      | code ->
+          failwith
+            (Printf.sprintf "generated OCaml did not run, exit code %d" code));
+      let actual = read_file output_path in
+      if actual <> "Ada:42\n" then
+        failwith
+          (Printf.sprintf "expected %S, got %S" "Ada:42\n" actual))
+
 let test_external_record_alias_survives_incremental_namespaces () =
   let provider =
     {|
@@ -50840,6 +50929,8 @@ let tests =
       test_keyword_predicate_narrows_closed_sum_payload );
     ( "external record exposes static fields without redefinition",
       test_external_record_exposes_static_fields_without_redefinition );
+    ( "mli record exposes static fields without external record",
+      test_mli_record_exposes_static_fields_without_external_record );
     ( "external record alias survives incremental namespaces",
       test_external_record_alias_survives_incremental_namespaces );
     ( "parameterized external record alias survives function signature",
