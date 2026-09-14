@@ -1532,6 +1532,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
+  let lookup_function_ty name =
+    match string_assoc_opt name params with
+    | Some ty -> Ok ty
+    | None -> lookup_function_ty name
+  in
   let lookup_loop_initializer_type =
     let lookup = lookup_function_ty in
     fun name ->

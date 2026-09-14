@@ -5585,6 +5585,18 @@ let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
   let ocaml = compile_with_stdlib Lg.Target.Native "test/keyword_signal.cljc" source in
   assert_ocaml_runs "generic_call_infers_nested_host_container_for_keyword_callbacks" "" ocaml
 
+let test_inferred_callback_captures_shadow_global_functions () =
+  let source = {|
+(type-record Block (uuid :string))
+(defn contains-block? [blocks uuid]
+  (some (fn [block] (= (:uuid block) uuid)) blocks))
+(assert (if (contains-block? [(record Block (uuid "a"))] "a") true false))
+(assert (not (contains-block? [(record Block (uuid "a"))] "b")))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native "test/captured_symbol.cljc" source in
+  assert_ocaml_runs "inferred_callback_captures_shadow_global_functions" "" native;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/captured_symbol.cljc" source)
+
 let test_inferred_symbols_distinguish_nullary_constructors_from_functions () =
   let source = {|
 (type-variant NodeKind (Dialog) (Drawer) (Text))
@@ -50802,6 +50814,8 @@ let tests =
       test_ocaml_list_map_contextualizes_external_record_callback );
     ( "generic call infers nested host container for keyword callbacks",
       test_generic_call_infers_nested_host_container_for_keyword_callbacks );
+    ( "inferred callback captures shadow global functions",
+      test_inferred_callback_captures_shadow_global_functions );
     ( "inferred symbols distinguish nullary constructors from functions",
       test_inferred_symbols_distinguish_nullary_constructors_from_functions );
     ( "keyword callbacks preserve mutable signal item types",
