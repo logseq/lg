@@ -18748,6 +18748,19 @@ let create ~compile_expr =
                       List.fold_left
                         (fun result (template, argument) ->
                           Result.bind result (fun substitutions ->
+                              let substitutions =
+                                (* Bind collection variables before specialization
+                                   erases their link to the return type. *)
+                                match
+                                  ( Types.seqable_constraint_element template,
+                                    Collection_capability.element_type env
+                                      argument )
+                                with
+                                | Some element, Some actual ->
+                                    Type_solver.unify substitutions element actual
+                                    |> Result.value ~default:substitutions
+                                | _ -> substitutions
+                              in
                               let template =
                                 specialize_expected substitutions template
                                   argument

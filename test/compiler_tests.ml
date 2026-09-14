@@ -16960,6 +16960,31 @@ module Json = struct
   let sample = `List [`Assoc ["title", `String "hello"]]
   let accept (value : t) = value
 end
+module Typed_codec : sig
+  type 'a t
+  val string : string t
+  val int : int t
+  val decode : 'a t -> 'a
+end = struct
+  type 'a t = { value : 'a }
+  let string = { value = "hello" }
+  let int = { value = 7 }
+  let decode codec = codec.value
+end
+module Attribute : sig
+  type 'a t
+  val make : string -> 'a Typed_codec.t -> bool -> 'a t
+  val string : string t
+  val int : int t
+  val read_one : 'a t -> string -> ('a option, string) result
+end = struct
+  type 'a t = { value : 'a }
+  let make _name codec _indexed = { value = Typed_codec.decode codec }
+  let string = make "title" Typed_codec.string false
+  let int = make "count" Typed_codec.int false
+  let read_one attr _entity = Ok (Some attr.value)
+end
+let or_raise = function Ok value -> value | Error message -> failwith message
 |};
     if Sys.command (compile_only_command dir ml) <> 0 then failwith "host tuple fixture did not compile";
     Lg.Ocaml_signature.set_melange_target false;
@@ -16967,8 +16992,26 @@ end
     let source = {|
 (ns host-tuple-client
   (:require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec]
+            [ocaml.Host_tuple_fixture.Attribute :as attribute]
             [ocaml.Host_tuple_fixture.Codec :as codec]))
 (assert (= (codec/read codec/int) 7))
+(defn read-attribute [attr entity]
+  (when-some [entity entity] (host/or-raise (attribute/read-one attr entity))))
+(defn text-attribute [name] (attribute/make name host/Typed_codec.string false))
+(def string-attribute (text-attribute "hello"))
+(type-record decoded-status (title :string))
+(type-record decoded-entry (status :option<decoded-status>) (count :int))
+(defn decode-status [source]
+  (when (not= source "") (record decoded-status (title (clojure.string/trim source)))))
+(defn read-entry [entity]
+  (when-some [uuid (read-attribute string-attribute entity)]
+    (record decoded-entry
+      (status (when-some [value (read-attribute string-attribute entity)] (decode-status value)))
+      (count (or (read-attribute host/Attribute.int entity) 0)))))
+(assert (match (read-entry (Some "entity"))
+          (Some entry) (and (= (:count entry) 7)
+                            (= (when-some [status (:status entry)] (:title status)) (Some "hello")))
+          _ false))
 (defn json-title [^:map<string;Host_tuple_fixture.Json.t> fields]
   (match (get fields "title") (Some (tag String title)) (Some title) _ nil))
 (defn json-titles [^:Host_tuple_fixture.Json.t source]
@@ -29504,6 +29547,36 @@ let test_group_by_map_entry_destructuring_preserves_named_record_keys () =
 (defn key-symbol [key] (:symbol key))
 (def rows [(record ParsedRow (name (GroupKey. 'alpha)) (value 1))
            (record ParsedRow (name (GroupKey. 'alpha)) (value 2))])
+(defn find-group [key] (get (group-by :name rows) key []))
+(assert (= (count (find-group (GroupKey. 'alpha))) 2))
+(assert (= (count (find-group (GroupKey. 'missing))) 0))
+(type-record OutlineSummary (uuid :string) (title :string))
+(type-record OutlineBlock (uuid :string) (parent-id :option<string>) (order :option<string>) (created-at :int))
+(defn compare-outline [left right]
+  (match (tuple (:order left) (:order right))
+    [(Some left-order) (Some right-order)]
+    (let [order (compare left-order right-order)] (if (zero? order) (compare (:uuid left) (:uuid right)) order))
+    [(Some _) None] -1 [None (Some _)] 1
+    [None None] (let [order (compare (:created-at left) (:created-at right))]
+                  (if (zero? order) (compare (:uuid left) (:uuid right)) order))))
+(defn preorder [page-id blocks]
+  (let [blocks (vec blocks)
+        by-uuid (into {} (map (fn [block] (tuple (:uuid block) block)) blocks))
+        children (group-by (fn [block]
+                             (if-some [parent (:parent-id block)]
+                               (if (or (contains? by-uuid parent) (= parent page-id)) parent page-id)
+                               page-id)) blocks)]
+    (loop [pending (vec (reverse (sort compare-outline (get children page-id [])))) seen #{} ordered []]
+      (if (empty? pending)
+        (into ordered (sort compare-outline (remove (fn [block] (contains? seen (:uuid block))) blocks)))
+        (let [block (nth pending (dec (count pending))) pending (pop pending)]
+          (if (contains? seen (:uuid block))
+            (recur pending seen ordered)
+            (recur (into pending (reverse (sort compare-outline (get children (:uuid block) []))))
+                   (conj seen (:uuid block)) (conj ordered block))))))))
+(assert (= (mapv :uuid (preorder "page" [(record OutlineBlock (uuid "root") (parent-id (Some "page")) (order nil) (created-at 0))])) ["root"]))
+(assert (= (count (preorder "page" [])) 0))
+(assert (= (mapv :uuid (preorder "page" [(record OutlineBlock (uuid "page") (parent-id (Some "page")) (order nil) (created-at 0))])) ["page"]))
 (def labels
   (for [[name branches] (group-by :name rows)]
     (str (= (key-symbol name) 'alpha) ":" (count branches))))

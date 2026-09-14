@@ -1672,6 +1672,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   })
     in
     let option_expression =
+      let env = Env.with_expected_type None env in
       match option_form with
       | FList [ FSymbol "first"; collection_form ] -> (
           match compile_expr scope env collection_form with
@@ -3870,6 +3871,20 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | Ok (names, identities, value_forms, values, param_tys) -> (
               let inferred_param_tys =
                 let local_tys = List.combine names param_tys in
+                let infer_form aliases form =
+                  let params =
+                    Dependency_graph.symbols form
+                    |> List.sort_uniq String.compare
+                    |> List.filter_map (fun name ->
+                           match List.assoc_opt name (aliases @ local_tys) with
+                           | Some ty -> Some (name, ty)
+                           | None -> (
+                               match Resolver.lookup_binding scope env name with
+                               | Ok (binding : Types.binding) -> Some (name, binding.ty)
+                               | Error _ -> None))
+                  in
+                  Type_inference.inferred_form_type params form
+                in
                 let rec form_type aliases = function
                   | FSymbol name -> (
                       match List.assoc_opt name aliases with
@@ -4002,18 +4017,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           inner
                       | _ -> TUnknown)
                   | FList (FSymbol name :: arguments) as form -> (
-                      let params =
-                        Dependency_graph.symbols form
-                        |> List.sort_uniq String.compare
-                        |> List.filter_map (fun name ->
-                               match List.assoc_opt name (aliases @ local_tys) with
-                               | Some ty -> Some (name, ty)
-                               | None -> (
-                                   match Resolver.lookup_binding scope env name with
-                                   | Ok (binding : Types.binding) -> Some (name, binding.ty)
-                                   | Error _ -> None))
-                      in
-                      match Type_inference.inferred_form_type params form with
+                      match infer_form aliases form with
                       | ty when not (Types.equal ty TUnknown) -> ty
                       | _ -> (
                       match Resolver.lookup_binding scope env name with
@@ -4053,10 +4057,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       in
                       TVector element_ty
                   | FList [] -> TList TUnknown
-                  | FList _ | FMap _ | FCoreSymbol _ -> TUnknown
                   | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
-                  | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
-                  | FChar _ | FBool _ -> TUnknown
+                  | (FList _ | FMap _ | FCoreSymbol _ | FKeyword _ | FString _
+                    | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _) as form ->
+                      infer_form aliases form
                 and recur_argument_types aliases = function
                   | FList (FSymbol "recur" :: arguments) ->
                       [ List.map (form_type aliases) arguments ]
@@ -4154,6 +4158,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             (merge_sequence_inner current_inner actual_inner)
                       | TVector current_inner, TVector actual_inner ->
                           TVector
+                            (merge_sequence_inner current_inner actual_inner)
+                      | TSet current_inner, TSet actual_inner ->
+                          TSet
                             (merge_sequence_inner current_inner actual_inner)
                       | ( (TList current_inner | TVector current_inner),
                           TSeq actual_inner )
