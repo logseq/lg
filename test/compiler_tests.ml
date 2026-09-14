@@ -5597,7 +5597,8 @@ let test_core_name_conflicts_require_explicit_exclusion () =
      "(defonce first 42)";
      "(def ^:dynamic first 42)";
      "(defmacro update [x] x)"];
-  let provider = {|(ns update-model (:refer-clojure :exclude [update]))
+  let provider = {|(ns update-model (:refer-clojure :exclude [update])
+  (:require [clojure.string :as string]))
 (defn update [current event] (+ current event))
 |} in
   let wrapper = {|(ns app-wrapper)
@@ -5614,6 +5615,8 @@ let test_core_name_conflicts_require_explicit_exclusion () =
       {|(ns update-model (:refer-clojure :exclude [update])) (signature update-model/update :fn<int;int;int>)|} |> expect_ok in
     let state, provider = Lg.Compiler.compile_chunk ~target state provider |> expect_ok in
     let state, wrapper = Lg.Compiler.compile_chunk ~target state wrapper |> expect_ok in
+    let state, _ = Lg.Compiler.compile_chunk ~target state
+      {|(ns unrelated (:require [clojure.core :as model]))|} |> expect_ok in
     let _, consumer = Lg.Compiler.compile_chunk ~target state consumer |> expect_ok in
     stdlib.ocaml_source ^ "\n" ^ declarations ^ "\n" ^ provider ^ "\n" ^ wrapper ^ "\n" ^ consumer
   in

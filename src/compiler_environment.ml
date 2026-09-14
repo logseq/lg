@@ -702,10 +702,25 @@ let remove_macro_alias ~alias definition env =
       { env with macros = String_map.remove alias env.macros }
   | Some _ | None -> env
 
+let find_source_callable ~scope name definitions env =
+  let qualified_alias =
+    match String.index_opt name '/' with
+    | Some index when index > 0 ->
+        let alias = String.sub name 0 index in
+        Option.map
+          (fun namespace -> namespace ^ String.sub name index (String.length name - index))
+          (resolve_namespace_alias ~scope alias env)
+    | _ -> None
+  in
+  match qualified_alias with
+  | Some canonical -> String_map.find_opt canonical definitions
+  | None -> (
+      match String_map.find_opt (Names.scoped_key scope name) definitions with
+      | Some _ as definition -> definition
+      | None -> String_map.find_opt name definitions)
+
 let find_macro ~scope name env =
-  match String_map.find_opt (Names.scoped_key scope name) env.macros with
-  | Some _ as definition -> definition
-  | None -> String_map.find_opt name env.macros
+  find_source_callable ~scope name env.macros env
 
 let namespace_macros namespace env =
   let prefix = namespace ^ "/" in
@@ -740,9 +755,7 @@ let remove_inline_macro_alias ~alias definition env =
   | Some _ | None -> env
 
 let find_inline_macro ~scope name env =
-  match String_map.find_opt (Names.scoped_key scope name) env.inline_macros with
-  | Some _ as definition -> definition
-  | None -> String_map.find_opt name env.inline_macros
+  find_source_callable ~scope name env.inline_macros env
 
 let namespace_inline_macros namespace env =
   let prefix = namespace ^ "/" in
