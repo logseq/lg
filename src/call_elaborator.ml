@@ -17659,6 +17659,35 @@ let create ~compile_expr =
   and compile_function_arg scope env form =
     let compiled =
       match form with
+      | FSymbol name
+        when (match Env.find_inline_macro ~scope name env with
+              | Some definition ->
+                  not (Env.source_callable_shadowed ~scope name definition env)
+                  && (match lookup_binding scope env name with
+                      | Ok binding ->
+                          binding.ocaml_name
+                          = Names.ocaml_binding_name definition.namespace definition.name
+                      | Error _ -> false)
+              | None -> false)
+             && (match Env.expected_type env with
+                 | Some (TFn (parameter_tys, _)) ->
+                     parameter_tys <> []
+                     && List.for_all
+                          (fun ty -> not (contains_unresolved_type ty)) parameter_tys
+                 | _ -> false) ->
+          let parameter_tys =
+            match Env.expected_type env with
+            | Some (TFn (parameters, _)) -> parameters
+            | _ -> []
+          in
+          let parameters =
+            List.mapi
+              (fun index _ -> FSymbol ("__lg_inline_callback_" ^ string_of_int index))
+              parameter_tys
+          in
+          compile_expr scope env
+            (FList
+               [ FSymbol "fn"; FVector parameters; FList (FSymbol name :: parameters) ])
       | FSymbol name -> (
           match lookup_binding scope env name with
           | Ok binding ->
@@ -18330,7 +18359,7 @@ let create ~compile_expr =
                     when Option.is_some
                            (Env.find_empty_map_default expected env) ->
                       Env.with_expected_type (Some expected) env
-                  | (TFn _ | TOverloaded_fn _), FList (FSymbol "fn" :: _) ->
+                  | (TFn _ | TOverloaded_fn _), (FList (FSymbol "fn" :: _) | FSymbol _) ->
                       Env.with_expected_type (Some expected) env
                   | _, (FVector _ | FMap _)
                     when needs_literal_context expected ->

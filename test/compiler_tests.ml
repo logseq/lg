@@ -5585,6 +5585,15 @@ let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
   let ocaml = compile_with_stdlib Lg.Target.Native "test/keyword_signal.cljc" source in
   assert_ocaml_runs "generic_call_infers_nested_host_container_for_keyword_callbacks" "" ocaml
 
+let test_sort_by_first_projects_tuple_keys () =
+  let source = {|
+(assert (= (mapv second (sort-by first [(tuple "b" 1) (tuple "a" 2)])) [2 1]))
+(assert (= (mapv second (sort-by first [(tuple "a" 1) (tuple "a" 2)])) [1 2]))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native "test/sort_tuple_keys.cljc" source in
+  assert_ocaml_runs "sort_by_first_projects_tuple_keys" "" native;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/sort_tuple_keys.cljc" source)
+
 let test_inferred_callback_captures_shadow_global_functions () =
   let source = {|
 (type-record Block (uuid :string))
@@ -50814,6 +50823,8 @@ let tests =
       test_ocaml_list_map_contextualizes_external_record_callback );
     ( "generic call infers nested host container for keyword callbacks",
       test_generic_call_infers_nested_host_container_for_keyword_callbacks );
+    ( "sort-by first projects tuple keys",
+      test_sort_by_first_projects_tuple_keys );
     ( "inferred callback captures shadow global functions",
       test_inferred_callback_captures_shadow_global_functions );
     ( "inferred symbols distinguish nullary constructors from functions",
