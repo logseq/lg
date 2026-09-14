@@ -2804,10 +2804,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     let rec compile_pattern target_ty pattern =
       let target_ty =
         match (target_ty, pattern) with
-        | TOcaml name, FList (FSymbol "tag" :: _) -> (
+        | TOcaml name, (FList (FSymbol ("tag" | "tuple") :: _) | FVector _) -> (
             match Ocaml_signature.of_compiler_type
                     (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
-            | TPoly_variant _ as manifest -> manifest
+            | (TPoly_variant _ | TTuple _ | TList _ | TVector _) as manifest -> manifest
             | _ -> target_ty)
         | _ -> target_ty
       in
@@ -2881,7 +2881,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           compile_fields [] [] [] field_patterns
       | _, FList (FSymbol "record" :: _) ->
           Error.error "record pattern expects a record target"
-        | TTuple payload_tys, FList (FSymbol "tuple" :: payload_patterns) ->
+        | TTuple payload_tys, FList (FSymbol "tuple" :: payload_patterns)
+        | TTuple payload_tys, FVector payload_patterns ->
           let rec compile_payloads patterns bindings = function
             | [], [] -> Ok (List.rev patterns, bindings)
             | payload_ty :: payload_tys, pattern :: payload_patterns -> (

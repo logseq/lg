@@ -7096,6 +7096,22 @@ let typed_nullable_row_argument env type_name expected_fields argument =
         (typed_row_argument env type_name expected_fields argument)
 
 let adapt_nullable_callback env expected arg =
+  let arg =
+    match expected, arg.ty with
+    | TFn (expected_params, _), TFn (actual_params, actual_return)
+      when List.length expected_params = List.length actual_params ->
+        let substitutions =
+          List.fold_left2
+            (fun substitutions actual expected ->
+              Type_solver.unify substitutions actual expected
+              |> Result.value ~default:substitutions)
+            Type_solver.empty actual_params expected_params
+        in
+        { arg with ty = TFn
+            (List.map (Type_solver.apply substitutions) actual_params,
+             Type_solver.apply substitutions actual_return) }
+    | _ -> arg
+  in
   match (expected, arg.ty) with
   | ( TFn (expected_params, TNullable expected_return),
       TFn (actual_params, actual_return) )

@@ -16312,6 +16312,11 @@ let test_truthy_callback_returns_are_adapted_for_source_functions () =
   (if (pred (nth values 0)) true false))
 (println (first-truthy? (fn [value] (> value 0)) [1]))
 (println (first-truthy? (fn [value] (+ value 1)) [1]))
+(type-variant optional-item (Item :int))
+(defn maybe-item [value] (when (pos? value) (Item value)))
+(assert (= (vec (keep identity [(maybe-item 1) nil (maybe-item 0)])) [(Item 1)]))
+(defn maybe-bool [value] (when (pos? value) (> value 1)))
+(assert (= (vec (keep identity [(maybe-bool 1) (maybe-bool 0) (maybe-bool 2)])) [false true]))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
@@ -16927,6 +16932,24 @@ let rows () = [{ added = true; value = "old" }; { added = false; value = "kept" 
 let entries () = List.map (fun row -> row.value, row) (rows ())
 type api = { all : unit -> datom list }
 let api = { all = rows }
+type pair = string * int
+type paired = Pair of pair
+let paired = Pair ("items", 2)
+module Internal = struct
+  module Config = struct type t = { enabled : bool } end
+  module Token : sig type t val make : unit -> t end = struct
+    type t = int
+    let make () = 7
+  end
+  let read (config : Config.t) = config.enabled
+  let tokens () = ["token", Some (Token.make ())]
+end
+module Config = Internal.Config
+module Token = Internal.Token
+let read = Internal.read
+let tokens = Internal.tokens
+let configs () = ["enabled", Some Internal.Config.{ enabled = true }]
+module Other = struct type t = { enabled : bool } end
 |};
     if Sys.command (compile_only_command dir ml) <> 0 then failwith "host tuple fixture did not compile";
     Lg.Ocaml_signature.set_melange_target false;
@@ -16945,6 +16968,14 @@ let api = { all = rows }
 (println (some? (select (host/make))))
 (assert (= (count ((:all host/api))) 2))
 (let [all (:all host/api)] (assert (= (count (all)) 2)))
+(assert (= (match host/paired (host/Pair [label size]) (str label ":" size)) "items:2"))
+(assert (host/read (record Host_tuple_fixture.Config.t (enabled true))))
+(defn read-configs [^:vector<tuple<string;option<Host_tuple_fixture.Config.t>>> configs]
+  (mapv (fn [[label config]] (if-some [config config] (host/read config) false)) configs))
+(assert (= (read-configs (vec (host/configs))) [true]))
+(defn count-tokens [^:vector<tuple<string;option<Host_tuple_fixture.Token.t>>> tokens]
+  (count tokens))
+(assert (= (count-tokens (vec (host/tokens))) 1))
 (defn rewrite []
   (let [rows (vec (host/rows))]
     (loop [index 0 result []]
@@ -16970,6 +17001,12 @@ let api = { all = rows }
   (assert (not (has-value? entries "missing"))))
 |} in
     let compiled = compile_string_with_stdlib source |> expect_ok in
+    (match compile_string_with_stdlib {|
+(ns wrong-host-record (:require [ocaml.Host_tuple_fixture :as host]))
+(host/read (record Host_tuple_fixture.Other.t (enabled true)))
+|} with
+     | Error _ -> ()
+     | Ok _ -> failwith "unrelated host records must not be identity compatible");
     let generated = Filename.concat dir "host_tuple_generated.ml" in
     write_file generated (native_stdlib_prelude () ^ "\n" ^ strip_native_stdlib_prelude compiled);
     if Sys.command (compile_only_command dir generated) <> 0 then failwith "host tuple generated code did not compile";

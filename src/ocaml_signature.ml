@@ -123,6 +123,16 @@ let add_include_dirs dirs =
 
 let init () = ensure_initialized ()
 
+let same_type_path left right =
+  if String.equal left right then true
+  else (
+    ensure_initialized ();
+    let canonical name =
+      Lg_compiler_support.Ocaml_value.canonical_type_path
+        ~include_dirs:(active_include_dirs ()) name
+    in
+    String.equal (canonical left) (canonical right))
+
 type parameter_label = Positional | Labelled of string | Optional of string
 type parameter = { label : parameter_label; ty : Types.ty }
 type value_signature = { parameters : parameter list; return_type : Types.ty }
