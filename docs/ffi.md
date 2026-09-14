@@ -11,6 +11,29 @@ The declaration is `(ffi name [argument-types ...] result-type options)`.
 All types are explicit. Use `[]` for a zero-argument function. Bindings can be
 aliased, exported from a module, and passed as typed function values.
 
+## OCaml Runtime Primitives
+
+Use `:ocaml` for existing C stubs written against the OCaml runtime API:
+
+```clojure
+(extern-type reader)
+(ffi open-reader [:string] :reader {:ocaml "app_reader_open"})
+(ffi read-reader [:reader :int] :option<string> {:ocaml "app_reader_read"})
+```
+
+This Native-only backend emits typed OCaml `external` declarations, without
+ctypes or conversion wrappers. Arguments and results use OCaml value layouts,
+including strings with embedded NULs, records, lists, options, and opaque
+handles. The binding author must match the actual stub signature and obey
+OCaml GC rooting and custom-block lifetime rules. Link the C stubs through your
+build system; they are not dynamically loaded by this declaration.
+
+Signatures must be statically closed. At most five parameters are supported;
+`[]` means one implicit OCaml unit argument, and explicit unit parameters are
+rejected. The selector takes a C identifier, not a `%` compiler primitive.
+No other FFI options can be combined with `:ocaml`. It is a different ABI from
+the ctypes backend below, even when both functions happen to accept strings.
+
 ## Native C
 
 The current implementation supports Native through ctypes. The function name

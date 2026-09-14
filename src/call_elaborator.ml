@@ -699,6 +699,10 @@ let rec argument_compatible expected actual =
                 argument_compatible expected_key actual_key
                 && argument_compatible expected_value actual_value
             | None -> false))
+    | TList expected_element, TList actual_element
+    | TVector expected_element, TVector actual_element
+    | TArray expected_element, TArray actual_element
+    | TSeq expected_element, TSeq actual_element
     | TSet expected_element, TSet actual_element ->
         argument_compatible expected_element actual_element
     | _ when Types.assignable ~policy:Host_boundary ~expected ~actual -> true
@@ -1247,6 +1251,12 @@ let is_sequential_type = function
           Option.is_some (Types.next_seq_element ty))
 
 let rec resolve_named_record_application env ty =
+  let find_record_by_source_name source_name ~argument_count =
+    match Resolver.lookup_record_type "" env source_name with
+    | Ok record when List.length record.type_parameters = argument_count ->
+        [ record ]
+    | Ok _ | Error _ -> []
+  in
   let resolve_field (field : field) =
     { field with ty = resolve_named_record_application env field.ty }
   in
@@ -1267,30 +1277,8 @@ let rec resolve_named_record_application env ty =
       in
       let unresolved = TOcaml_app (name, arguments) in
       let records =
-        Env.filter_record_bindings
-          (fun key (binding : binding) ->
-            if String.starts_with ~prefix:"__record/" key then
-              match binding.ty with
-              | TNamed_record record
-                when (record.type_name = name
-                     || Type_id.name record.type_id = name
-                     || Type_id.to_string record.type_id = name)
-                     && List.length record.type_parameters
-                        = List.length arguments ->
-                  Some record
-              | _ -> None
-            else None)
-          env
-        |> List.fold_left
-             (fun records record ->
-               if
-                 List.exists
-                   (fun existing ->
-                     Type_id.equal existing.type_id record.type_id)
-                   records
-               then records
-               else record :: records)
-             []
+        find_record_by_source_name name
+          ~argument_count:(List.length arguments)
       in
       (match records with
       | [ record ] ->
@@ -1307,34 +1295,12 @@ let rec resolve_named_record_application env ty =
         String.sub name (String.length "__lg_record:")
           (String.length name - String.length "__lg_record:")
       in
-      let records =
-        Env.filter_record_bindings
-          (fun key (binding : binding) ->
-            if String.starts_with ~prefix:"__record/" key then
-              match binding.ty with
-              | TNamed_record record
-                when record.type_parameters = []
-                     && (String.equal record.type_name source_name
-                        || String.equal (Type_id.name record.type_id) source_name
-                        || String.equal
-                             (Type_id.to_string record.type_id)
-                             source_name) ->
-                  Some record
-              | _ -> None
-            else None)
-          env
-        |> List.fold_left
-             (fun records record ->
-               if
-                 List.exists
-                   (fun existing ->
-                     Type_id.equal existing.type_id record.type_id)
-                   records
-               then records
-               else record :: records)
-             []
-      in
+      let records = find_record_by_source_name source_name ~argument_count:0 in
       (match records with
+      | [ record ] -> TNamed_record record
+      | [] | _ :: _ :: _ -> ty)
+  | TOcaml name -> (
+      match find_record_by_source_name name ~argument_count:0 with
       | [ record ] -> TNamed_record record
       | [] | _ :: _ :: _ -> ty)
   | TNullable inner ->
@@ -1367,7 +1333,7 @@ let rec resolve_named_record_application env ty =
           fields = List.map resolve_field record.fields;
         }
   | (TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-    | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _) as ty ->
+    | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _) as ty ->
       ty
 
 let compile_registered_hash env value =
@@ -2998,7 +2964,9 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                       when statically_empty_argument ->
                         Ok None
                     | actual_element
-                      when Types.equal actual_element expected_element ->
+                      when Types.equal actual_element expected_element
+                           && (Option.is_none row_type_name
+                               || match expected_element with TRecord _ -> false | _ -> true) ->
                         Ok None
                     | actual_element
                       when has_capability_constraint actual_element
@@ -3026,7 +2994,7 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                                    Some
                                      (Semantic_ir.Fun
                                         ( [
-                                            typed_item_pattern item_name
+                                            typed_dynamic_item_pattern env item_name
                                               actual_element;
                                           ],
                                           row )))
@@ -3044,7 +3012,7 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                                    Some
                                      (Semantic_ir.Fun
                                         ( [
-                                            typed_item_pattern item_name
+                                            typed_dynamic_item_pattern env item_name
                                               actual_element;
                                           ],
                                           row )))
@@ -6860,6 +6828,95 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
   in
   let expected = resolve_named_record_application env expected in
   let actual = resolve_named_record_application env actual in
+  let rec contextual_variant_type expected actual =
+    match (expected, actual) with
+    | TOcaml name, TPoly_variant _ -> (
+        match
+          Ocaml_signature.of_compiler_type
+            (Lg_compiler_support.Ocaml_value.Constructor (name, []))
+        with
+        | TPoly_variant _ as manifest -> contextual_variant_type manifest actual
+        | _ -> expected)
+    | TPoly_variant expected_row, TPoly_variant actual_row ->
+        TPoly_variant
+          { expected_row with
+            tags =
+              List.map
+                (fun (tag, payload) ->
+                  let payload =
+                    match (payload, List.assoc_opt tag actual_row.tags) with
+                    | Some expected, Some (Some actual) ->
+                        Some (contextual_variant_type expected actual)
+                    | _ -> payload
+                  in
+                  (tag, payload))
+                expected_row.tags }
+    | TList expected, TList actual ->
+        TList (contextual_variant_type expected actual)
+    | TArray expected, TArray actual ->
+        TArray (contextual_variant_type expected actual)
+    | TTuple expected, TTuple actual when List.length expected = List.length actual ->
+        TTuple (List.map2 contextual_variant_type expected actual)
+    | TNullable expected, TNullable actual ->
+        TNullable (contextual_variant_type expected actual)
+    | TOcaml_app ("option", [expected]), TOcaml_app ("option", [actual]) ->
+        TOcaml_app ("option", [contextual_variant_type expected actual])
+    | _ -> expected
+  in
+  (* Unfold host recursive rows only along the finite constructed argument. *)
+  let expected = contextual_variant_type expected actual in
+  let rec resolve_external_record_for_expected expected actual =
+    match (expected, actual) with
+    | TRecord _, TOcaml type_name -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record) -> TNamed_record record
+        | Ok _ | Error _ -> actual)
+    | TRecord _, TOcaml_app (type_name, arguments) -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record)
+          when List.length record.type_parameters = List.length arguments ->
+            let substitutions =
+              List.combine record.type_parameters arguments
+              |> List.map (fun (parameter, argument) ->
+                     (Type_solver.Declared parameter, argument))
+              |> Type_solver.of_list
+            in
+            Type_solver.apply substitutions (TNamed_record record)
+        | Ok _ | Error _ -> actual)
+    | TList expected, TList actual ->
+        TList (resolve_external_record_for_expected expected actual)
+    | TVector expected, TVector actual ->
+        TVector (resolve_external_record_for_expected expected actual)
+    | TSeq expected, TSeq actual ->
+        TSeq (resolve_external_record_for_expected expected actual)
+    | TArray expected, TArray actual ->
+        TArray (resolve_external_record_for_expected expected actual)
+    | TSet expected, TSet actual ->
+        TSet (resolve_external_record_for_expected expected actual)
+    | TNullable expected, TNullable actual ->
+        TNullable (resolve_external_record_for_expected expected actual)
+    | TOcaml_app ("option", [ expected ]), TOcaml_app ("option", [ actual ])
+    | TNullable expected, TOcaml_app ("option", [ actual ])
+    | TOcaml_app ("option", [ expected ]), TNullable actual ->
+        TOcaml_app ("option", [ resolve_external_record_for_expected expected actual ])
+    | TTuple expected_items, TTuple actual_items
+      when List.length expected_items = List.length actual_items ->
+        TTuple
+          (List.map2 resolve_external_record_for_expected expected_items
+             actual_items)
+    | TConstraint (Seqable_constraint { element; _ }), TList actual ->
+        TList (resolve_external_record_for_expected element actual)
+    | TConstraint (Seqable_constraint { element; _ }), TVector actual ->
+        TVector (resolve_external_record_for_expected element actual)
+    | TConstraint (Seqable_constraint { element; _ }), TSeq actual ->
+        TSeq (resolve_external_record_for_expected element actual)
+    | TConstraint (Seqable_constraint { element; _ }), TArray actual ->
+        TArray (resolve_external_record_for_expected element actual)
+    | TConstraint (Seqable_constraint { element; _ }), TSet actual ->
+        TSet (resolve_external_record_for_expected element actual)
+    | _ -> actual
+  in
+  let actual = resolve_external_record_for_expected expected actual in
   let actual = specialize_callback_record_placeholders expected actual in
   Adaptation.plan_argument ?row_type_name ~protocol_storage
       ~allow_optional_unwrap
@@ -7915,16 +7972,7 @@ let create ~compile_expr =
     | _ -> Error.error "print-meta? expects options and value"
   in
   let rec parse_ocaml_argument_forms forms =
-    let rec parse acc = function
-      | [] -> Ok (List.rev acc)
-      | FKeyword label :: [] ->
-          Error.error ("OCaml argument label " ^ label ^ " requires a value")
-      | FKeyword label :: value_form :: rest ->
-          let label = String.sub label 1 (String.length label - 1) in
-          parse ((Some label, value_form) :: acc) rest
-      | value_form :: rest -> parse ((None, value_form) :: acc) rest
-    in
-    parse [] forms
+    Ocaml_signature.parse_argument_forms forms
   and compile_ocaml_arguments ?expected_types scope env forms =
     let rec compile acc arguments expected_types =
       match (arguments, expected_types) with
@@ -16004,56 +16052,7 @@ let create ~compile_expr =
                   (List.length signature.payload_types)))
               | _ -> compile_named_function_call scope env name arg_forms)
   and compile_inferred_ocaml_call scope env function_name value_forms =
-    let expected_argument_types signature arguments =
-      let named_labels = List.filter_map fst arguments in
-      let remaining =
-        List.filter
-          (fun (parameter : Ocaml_signature.parameter) ->
-            match parameter.label with
-            | Ocaml_signature.Labelled label
-            | Ocaml_signature.Optional label ->
-                not (List.mem label named_labels)
-            | Ocaml_signature.Positional -> true)
-          signature.Ocaml_signature.parameters
-      in
-      let find_named label =
-        signature.parameters
-        |> List.find_opt (fun (parameter : Ocaml_signature.parameter) ->
-               match parameter.label with
-               | Ocaml_signature.Labelled name
-               | Ocaml_signature.Optional name ->
-                   String.equal name label
-               | Ocaml_signature.Positional -> false)
-        |> Option.map (fun (parameter : Ocaml_signature.parameter) ->
-               match (parameter.label, optional_payload parameter.ty) with
-               | Ocaml_signature.Optional _, Some ty -> ty
-               | _ -> parameter.ty)
-      in
-      let rec consume_positional prefix = function
-        | [] -> None
-        | { Ocaml_signature.label = Ocaml_signature.Optional _; _ }
-          :: parameters ->
-            consume_positional prefix parameters
-        | ({ label = Ocaml_signature.Labelled _; _ } as parameter)
-          :: parameters ->
-            consume_positional (parameter :: prefix) parameters
-        | { label = Ocaml_signature.Positional; ty } :: parameters ->
-            Some (ty, List.rev_append prefix parameters)
-      in
-      let rec collect collected remaining = function
-        | [] -> Some (List.rev collected)
-        | (Some label, _) :: rest -> (
-            match find_named label with
-            | Some ty -> collect (ty :: collected) remaining rest
-            | None -> None)
-        | (None, _) :: rest -> (
-            match consume_positional [] remaining with
-            | Some (ty, remaining) ->
-                collect (ty :: collected) remaining rest
-            | None -> None)
-      in
-      collect [] remaining arguments
-    in
+    let expected_argument_types = Ocaml_signature.expected_argument_types in
     let resolved_function_name =
       resolve_ocaml_call_target scope env function_name
     in
@@ -16116,6 +16115,59 @@ let create ~compile_expr =
         match Ocaml_signature.value_signature function_name with
         | Error _ as err -> err
         | Ok signature -> (
+            let can_implicitly_apply_trailing_unit arguments =
+              let named_labels = List.filter_map fst arguments in
+              let remaining =
+                List.filter
+                  (fun (parameter : Ocaml_signature.parameter) ->
+                    match parameter.label with
+                    | Ocaml_signature.Labelled label
+                    | Ocaml_signature.Optional label ->
+                        not (List.mem label named_labels)
+                    | Ocaml_signature.Positional -> true)
+                  signature.Ocaml_signature.parameters
+              in
+              let rec consume_positional prefix = function
+                | [] -> None
+                | { Ocaml_signature.label = Ocaml_signature.Optional _; _ }
+                  :: parameters ->
+                    consume_positional prefix parameters
+                | ({ label = Ocaml_signature.Labelled _; _ } as parameter)
+                  :: parameters ->
+                    consume_positional (parameter :: prefix) parameters
+                | { label = Ocaml_signature.Positional; ty } :: parameters ->
+                    Some (ty, List.rev_append prefix parameters)
+              in
+              let rec consume remaining = function
+                | [] ->
+                    let remaining =
+                      List.filter
+                        (fun (parameter : Ocaml_signature.parameter) ->
+                          match parameter.label with
+                          | Ocaml_signature.Optional _ -> false
+                          | Ocaml_signature.Labelled _
+                          | Ocaml_signature.Positional ->
+                              true)
+                        remaining
+                    in
+                    (match remaining with
+                    | [
+                        {
+                          Ocaml_signature.label =
+                            Ocaml_signature.Positional;
+                          ty = TUnit;
+                        };
+                      ] ->
+                        true
+                    | _ -> false)
+                | (Some _, _) :: rest -> consume remaining rest
+                | (None, _) :: rest -> (
+                    match consume_positional [] remaining with
+                    | Some (_ty, remaining) -> consume remaining rest
+                    | None -> false)
+              in
+              consume remaining arguments
+            in
             let arguments =
               match (arguments, signature.parameters) with
               | ( [],
@@ -16126,6 +16178,8 @@ let create ~compile_expr =
                       };
                   ] ) ->
                   [ (None, typed_ir TUnit Semantic_ir.Unit) ]
+              | _ when can_implicitly_apply_trailing_unit arguments ->
+                  arguments @ [ (None, typed_ir TUnit Semantic_ir.Unit) ]
               | _ -> arguments
             in
             let adapt_arguments expected_types =
@@ -19286,6 +19340,8 @@ let create ~compile_expr =
                           | (TSeq expected_item, TSeq actual_item)
                             when not (Types.equal expected_item actual_item) ->
                               plan_and_emit_argument env ~expected argument
+                          | TTuple _, TTuple _ when not (Types.equal expected argument.ty) ->
+                              plan_and_emit_argument env ~expected argument
                           | ( TFn (expected_params, expected_return),
                               TFn (actual_params, actual_return) )
                             when (Types.is_dynamic expected_return
@@ -19903,28 +19959,6 @@ let create ~compile_expr =
                     storage_param_tys
                 in
                 let param_tys = List.map materialize param_tys in
-                let callback_element_candidates =
-                  List.fold_left2
-                    (fun candidates expected argument ->
-                      match (expected, argument.ty) with
-                      | TFn (expected_params, _), TFn (actual_params, _)
-                        when List.length expected_params
-                             = List.length actual_params ->
-                          List.fold_left2
-                            (fun candidates expected actual ->
-                              let candidate =
-                                match expected with
-                                | TUnknown | TMeta _ | TVar _ -> actual
-                                | expected -> expected
-                              in
-                              if
-                                List.exists (Types.equal candidate) candidates
-                              then candidates
-                              else candidate :: candidates)
-                            candidates expected_params actual_params
-                      | _ -> candidates)
-                    [] param_tys args
-                in
                 let specialize_seqable_element expected argument =
                   match expected with
                   | TConstraint
@@ -19937,24 +19971,7 @@ let create ~compile_expr =
                             let actual_element =
                               Collection_capability.element_type env argument
                             in
-                            (match actual_element with
-                            | Some actual
-                              when List.exists
-                                     (Types.equal actual)
-                                     callback_element_candidates ->
-                                actual
-                            | _
-                              when List.exists
-                                     Types.is_dynamic
-                                     callback_element_candidates ->
-                                Types.dynamic_constraint TUnknown
-                            | _ -> (
-                                match callback_element_candidates with
-                                | [ candidate ] -> candidate
-                                | _ ->
-                                    Option.value actual_element
-                                      ~default:
-                                        (Types.dynamic_constraint TUnknown)))
+                            Option.value actual_element ~default:element_ty
                         | element_ty -> element_ty
                       in
                       let value_ty =
@@ -20133,11 +20150,6 @@ let create ~compile_expr =
                       expected
                   | _ -> ret
                 in
-                let storage_sequence_elements =
-                  List.filter_map Types.seqable_constraint_element
-                    storage_param_tys
-                  |> List.map Type_inference_core.materialize_dynamic_unknown
-                in
                   let rec compile_arg_exprs index acc = function
                     | [] -> Ok (List.rev acc)
                     | arg :: rest -> (
@@ -20245,14 +20257,6 @@ let create ~compile_expr =
                                       Type_inference_core.materialize_dynamic_unknown
                                       expected_params,
                                     expected_return )
-                            in
-                            let storage_params =
-                              if
-                                storage_sequence_elements <> []
-                                && List.length storage_sequence_elements
-                                   = List.length storage_params
-                              then storage_sequence_elements
-                              else storage_params
                             in
                             TFn (storage_params, storage_return)
                         | _ -> expected_ty
@@ -20463,6 +20467,13 @@ let create ~compile_expr =
                                          (Types.equal expected_item actual_item)
                                    | _ -> false ->
                               plan_and_emit_argument env ~expected:expected_ty arg
+                            | _, TList expected_item
+                              when match arg.ty with
+                                   | TList actual_item ->
+                                       not
+                                         (Types.equal expected_item actual_item)
+                                   | _ -> false ->
+                              plan_and_emit_argument env ~expected:expected_ty arg
                             | _
                               when Option.is_some
                                      (Types.dynamic_map_types expected_ty)
@@ -20475,6 +20486,10 @@ let create ~compile_expr =
                                    && Option.is_some
                                         (Types.record_fields arg.ty) ->
                               plan_and_emit_argument env ~expected:expected_map arg
+                            | _, TTuple _
+                              when (match arg.ty with TTuple _ -> true | _ -> false)
+                                   && not (Types.equal expected_ty arg.ty) ->
+                                plan_and_emit_argument env ~expected:expected_ty arg
                             | _, TVector _
                               when match arg.ty with
                                    | TTuple _ -> true

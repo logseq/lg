@@ -38,8 +38,10 @@ type object_builder = { input : Types.ty; result : Types.ty; fields : object_fie
 
 type selection = Native_symbol of string * string option * bool * ownership | Release_selection | Callback_selection | JavaScript_symbol of javascript
   | Object_selection of object_options
+  | Ocaml_primitive_selection of string
 
 type backend = Native of native | Native_release | Native_callback_release | Native_callback of native_type list * native_type | JavaScript of javascript | JavaScript_object of object_builder
+  | Ocaml_primitive of string
 
 type t = {
   name : string;
@@ -62,7 +64,7 @@ let options ~target form =
         | (FKeyword key, value) :: rest ->
             if List.mem_assoc key seen then
               error form ("duplicate FFI option " ^ key)
-            else if not (List.mem key [ ":native"; ":js"; ":library"; ":module"; ":scope"; ":kind"; ":return"; ":variadic"; ":rename"; ":optional"; ":callbacks"; ":ownership"; ":release" ]) then
+            else if not (List.mem key [ ":native"; ":js"; ":ocaml"; ":library"; ":module"; ":scope"; ":kind"; ":return"; ":variadic"; ":rename"; ":optional"; ":callbacks"; ":ownership"; ":release" ]) then
               error form ("unknown FFI option " ^ key)
             else collect ((key, value) :: seen) rest
         | _ -> error form "FFI option keys must be keywords"
@@ -77,6 +79,23 @@ let options ~target form =
         | None -> Ok None
         | Some value -> Result.map Option.some (nonempty_string value)
       in
+      (match List.assoc_opt ":ocaml" options with
+       | Some value ->
+           if List.mem_assoc ":native" options || List.mem_assoc ":js" options then
+             error form "ffi requires exactly one :native, :js, or :ocaml selector"
+           else if List.length options <> 1 then
+             error form "OCaml primitive FFI does not accept other options"
+           else if target <> Target.Native then
+             error form "OCaml primitive FFI requires the native target"
+           else
+             let* symbol = nonempty_string value in
+             let identifier_start = function
+               | 'a' .. 'z' | 'A' .. 'Z' | '_' -> true | _ -> false in
+             let identifier_char ch = identifier_start ch || (ch >= '0' && ch <= '9') in
+             if not (identifier_start symbol.[0] && String.for_all identifier_char symbol) then
+               error form "OCaml primitive symbol must be a C identifier"
+             else Ok (Ocaml_primitive_selection symbol)
+       | None ->
       (match List.assoc_opt ":native" options, List.assoc_opt ":js" options with
        | Some (FKeyword ":callback"), None ->
            if target <> Target.Native then error form "callback FFI requires the native target"
@@ -198,7 +217,7 @@ let options ~target form =
                    && (Option.is_some module_name || scope <> []) then
              error form "receiver operations cannot select a module or scope"
            else Ok (JavaScript_symbol { symbol; module_name; scope; operation; return_adapter; variadic })
-       | _ -> error form "ffi requires exactly one :native or :js selector")
+       | _ -> error form "ffi requires exactly one :native, :js, or :ocaml selector"))
   | _ -> error form "ffi options must be a map"
 
 let native_abi_type ~callbacks ~ownership ~callback ~parameter form ty =
@@ -265,6 +284,27 @@ let parse ~target ~resolve_type ~is_opaque ~name ~location parameters result opt
   let* parameter_types = resolve_arguments parameters in
   let* result_type = resolve result in
   let* backend = match selected with
+    | Ocaml_primitive_selection symbol ->
+        let rec closed_type ty =
+          if Types.contains_dynamic ty then false
+          else match ty with
+          | Types.TUnknown | Types.TMeta _ | Types.TVar _ | Types.TConstraint _
+          | Types.TOverloaded_fn _ -> false
+          | Types.TPoly_variant {bound; _} when bound <> Types.Exact_row -> false
+          | _ ->
+              let valid = ref true in
+              ignore (Semantic_type.map_children (fun child ->
+                if not (closed_type child) then valid := false;
+                child) ty);
+              !valid
+        in
+        if List.length parameter_types > 5 then
+          error option_form "OCaml primitive FFI supports at most five parameters"
+        else if List.exists (Types.equal Types.TUnit) parameter_types then
+          error option_form "OCaml primitive unit parameter is invalid; use [] for zero arguments"
+        else if not (List.for_all closed_type (result_type :: parameter_types)) then
+          error option_form "OCaml primitive FFI requires closed static types"
+        else Ok (Ocaml_primitive symbol)
     | Callback_selection ->
         (match parameter_types, result_type with
          | [Types.TFn _ as fn], Types.TOcaml_app ("Lg_ffi.Callback.t", [signature])

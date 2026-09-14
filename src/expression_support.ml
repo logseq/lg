@@ -620,6 +620,25 @@ let rec implicit_edn_branch_value ty =
   | ty -> Edn_value_elaborator.is_packable ty
 
 let rec merge_branch_types left right =
+  let host_record_type = function
+    | TOcaml type_name -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record) -> Some (TNamed_record record)
+        | Ok _ | Error _ -> None)
+    | TOcaml_app (type_name, arguments) -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record)
+          when List.length record.type_parameters = List.length arguments ->
+            let substitutions =
+              List.combine record.type_parameters arguments
+              |> List.map (fun (parameter, argument) ->
+                     (Type_solver.Declared parameter, argument))
+              |> Type_solver.of_list
+            in
+            Some (Type_solver.apply substitutions (TNamed_record record))
+        | Ok _ | Error _ -> None)
+    | _ -> None
+  in
   match (left, right) with
   | TPoly_variant left, TPoly_variant right -> Option.map (fun row -> TPoly_variant row) (Variant_row.merge merge_branch_types left right)
   | TNamed_record left_record, TNamed_record right_record
@@ -631,6 +650,52 @@ let rec merge_branch_types left right =
   | left, right when Types.equal left right -> Some left
   | left, right ->
     match (left, right) with
+    | TNamed_record left_record, TNamed_record right_record
+      when left_record.type_name = right_record.type_name
+           && List.length left_record.type_arguments
+              = List.length right_record.type_arguments -> (
+        let rec merge_arguments merged left right =
+          match (left, right) with
+          | [], [] ->
+              Some
+                (TNamed_record
+                   { left_record with type_arguments = List.rev merged })
+          | left :: left_rest, right :: right_rest ->
+              Option.bind (merge_branch_types left right) (fun argument ->
+                  merge_arguments (argument :: merged) left_rest right_rest)
+          | _ -> None
+        in
+        merge_arguments [] left_record.type_arguments
+          right_record.type_arguments)
+    | TNamed_record record, TOcaml name
+    | TOcaml name, TNamed_record record
+      when (record.type_name = name || Type_id.name record.type_id = name)
+           && record.type_arguments = [] ->
+        Some (TNamed_record record)
+    | TNamed_record record, TOcaml_app (name, arguments)
+    | TOcaml_app (name, arguments), TNamed_record record
+      when (record.type_name = name || Type_id.name record.type_id = name)
+           && List.length record.type_arguments = List.length arguments ->
+        let rec merge_arguments merged left right =
+          match (left, right) with
+          | [], [] ->
+              Some
+                (TNamed_record
+                   { record with type_arguments = List.rev merged })
+          | left :: left_rest, right :: right_rest ->
+              Option.bind (merge_branch_types left right) (fun argument ->
+                  merge_arguments (argument :: merged) left_rest right_rest)
+          | _ -> None
+        in
+        merge_arguments [] record.type_arguments arguments
+    | (TRecord _ as structural), host
+      when Option.is_some (host_record_type host) ->
+        let named = Option.get (host_record_type host) in
+        merge_branch_types structural named
+    | host, (TRecord _ as structural)
+      when Option.is_some (host_record_type host) ->
+        let named = Option.get (host_record_type host) in
+        merge_branch_types named structural
     | TRecord left_fields, TRecord right_fields
       when List.length left_fields = List.length right_fields ->
         let rec merge_fields merged = function
@@ -650,7 +715,9 @@ let rec merge_branch_types left right =
            && List.length left_args = List.length right_args ->
         let merge_host_arg left right =
           match (left, right) with
-          | TUnknown, ty | ty, TUnknown -> Some ty
+          | (TUnknown | TMeta _ | TVar _), ty
+          | ty, (TUnknown | TMeta _ | TVar _) ->
+              Some ty
           | _ -> merge_branch_types left right
         in
         let rec merge_arguments merged left right =
@@ -817,6 +884,34 @@ let edn_scalar_collection_type = function
   | _ -> false
 
 let merge_collection_types collection types =
+  let normalize_named_host_records types =
+    let named_records =
+      List.filter_map
+        (function
+          | TNamed_record record -> Some record
+          | _ -> None)
+        types
+    in
+    let matching_record name arguments =
+      named_records
+      |> List.find_opt (fun record ->
+             (record.type_name = name || Type_id.name record.type_id = name)
+             && List.length record.type_arguments = List.length arguments)
+    in
+    List.map
+      (function
+        | TOcaml name -> (
+            match matching_record name [] with
+            | Some record -> TNamed_record record
+            | None -> TOcaml name)
+        | TOcaml_app (name, arguments) -> (
+            match matching_record name arguments with
+            | Some record -> TNamed_record record
+            | None -> TOcaml_app (name, arguments))
+        | ty -> ty)
+      types
+  in
+  let types = normalize_named_host_records types in
   match types with
   | [] -> Ok TUnknown
   | first :: rest ->
@@ -1873,6 +1968,12 @@ let dynamic_key_record_type env expected_field_ty =
     | [ record ] -> Some (TNamed_record record)
   | [] | _ :: _ :: _ -> None
 
+let rec clj_function_type = function
+  | TFn ([ TUnit ], return_ty) -> TFn ([], clj_function_type return_ty)
+  | TFn (parameters, return_ty) ->
+      TFn (List.map clj_function_type parameters, clj_function_type return_ty)
+  | ty -> ty
+
 let lookup_function_ty scope env name =
   match lookup_function scope env name with
   | Ok fn -> Ok fn.ty
@@ -1881,15 +1982,6 @@ let lookup_function_ty scope env name =
       | Some target -> (
           match Ocaml_signature.value_signature target with
           | Ok signature ->
-              let rec clj_function_type = function
-                | TFn ([ TUnit ], return_ty) ->
-                    TFn ([], clj_function_type return_ty)
-                | TFn (parameters, return_ty) ->
-                    TFn
-                      ( List.map clj_function_type parameters,
-                        clj_function_type return_ty )
-                | ty -> ty
-              in
               let parameters =
                 List.map
                   (fun (parameter : Ocaml_signature.parameter) ->
@@ -1952,6 +2044,34 @@ let lookup_function_ty scope env name =
                       | Error _ -> Error.error ("unknown function " ^ name))
                   | _ :: _ :: _ -> Error.error ("ambiguous constructor " ^ name))
               | None -> Error.error ("unknown function " ^ name))))
+
+let lookup_call_ty scope env name forms =
+  Option.bind (Resolver.ocaml_call_target scope env name) (fun target ->
+      match
+        (Ocaml_signature.value_signature target,
+         Ocaml_signature.parse_argument_forms forms)
+      with
+      | Ok signature, Ok arguments ->
+          Option.bind
+            (Ocaml_signature.expected_argument_types signature arguments)
+            (fun expected ->
+              let labelled_types =
+                List.map2 (fun (label, _) ty -> (label, ty)) arguments expected
+              in
+              match Ocaml_signature.result_after_application signature labelled_types with
+              | Error _ -> None
+              | Ok return_ty ->
+                  (* Labels occupy source forms, but never consume positional parameters. *)
+                  let parameter_tys =
+                    List.concat_map
+                      (fun (label, ty) ->
+                        match label with
+                        | None -> [clj_function_type ty]
+                        | Some _ -> [TKeyword; clj_function_type ty])
+                      labelled_types
+                  in
+                  Some (TFn (parameter_tys, clj_function_type return_ty)))
+      | _ -> None)
 
 let ocaml_call_target = Resolver.ocaml_call_target
 let resolve_ocaml_call_target = Resolver.resolve_ocaml_call_target

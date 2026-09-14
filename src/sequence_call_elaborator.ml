@@ -162,6 +162,48 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                      }
                | _ -> Error.error "named fn requires a function body"))
   in
+  let external_record_type = function
+    | TOcaml type_name -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record) -> Some (TNamed_record record)
+        | Ok _ | Error _ -> None)
+    | TOcaml_app (type_name, arguments) -> (
+        match Ocaml_signature.record_type type_name with
+        | Ok (TNamed_record record)
+          when List.length record.type_parameters = List.length arguments ->
+            let substitutions =
+              List.combine record.type_parameters arguments
+              |> List.map (fun (parameter, argument) ->
+                     (Type_solver.Declared parameter, argument))
+              |> Type_solver.of_list
+            in
+            Some (Type_solver.apply substitutions (TNamed_record record))
+        | Ok _ | Error _ -> None)
+    | ty when Option.is_some (Types.record_fields ty) -> Some ty
+    | _ -> None
+  in
+  let structural_record_projection expected_ty actual_ty item_name =
+    match (expected_ty, external_record_type actual_ty) with
+    | TRecord expected_fields, Some source_ty
+      when not (Types.is_dynamic actual_ty)
+           && not (Types.is_dynamic source_ty)
+           && Types.assignable ~policy:Host_boundary ~expected:expected_ty
+                ~actual:source_ty ->
+        let actual_fields = Types.record_fields source_ty |> Option.get in
+        let source = typed_ir source_ty (Semantic_ir.Ident item_name) in
+        let rec project fields = function
+          | [] ->
+              Some (Structural_map.record_expr expected_fields (List.rev fields))
+          | (expected : field) :: rest -> (
+              match Types.find_field expected.keyword actual_fields with
+              | Some actual ->
+                  let value = Structural_map.field_expr source actual in
+                  project ((expected, value) :: fields) rest
+              | None -> None)
+        in
+        project [] expected_fields
+    | _ -> None
+  in
   let adapt_unary_function env actual_ty fn =
     match fn.ty with
     | TFn ([ expected_ty ], return_ty)
@@ -196,6 +238,21 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     ( [ Semantic_ir.PVar item_name ],
                       Semantic_ir.Apply (fn.semantic_expr, [ item ]) ))))
           (pack_dynamic_value env expected_ty item)
+    | TFn ([ expected_ty ], return_ty)
+      when (not (Types.equal expected_ty actual_ty))
+           && Types.assignable ~policy:Host_boundary ~expected:expected_ty
+                ~actual:actual_ty -> (
+        let item_name = "__lg_structural_sequence_item" in
+        match structural_record_projection expected_ty actual_ty item_name with
+        | Some projected ->
+            Ok
+              (normalize_truthy_function
+                 (typed_ir (TFn ([ actual_ty ], return_ty))
+                    (Semantic_ir.Fun
+                       ( [ Semantic_ir.PVar item_name ],
+                         Semantic_ir.Apply
+                           (fn.semantic_expr, [ projected.semantic_expr ]) ))))
+        | None -> Ok (normalize_truthy_function fn))
     | _ -> Ok (normalize_truthy_function fn)
   in
   let adapt_reducer_function env actual_item_ty fn =

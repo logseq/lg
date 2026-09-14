@@ -127,6 +127,16 @@ and normalize_nonvariant type_expr =
 let exception_message exn =
   Format.asprintf "%a" Location.report_exception exn |> String.trim
 
+let canonical_type_path ~include_dirs name =
+  try
+    let env = init include_dirs in
+    match Longident.unflatten (String.split_on_char '.' name) with
+    | None -> name
+    | Some longident ->
+        let path, _ = Env.lookup_type ~use:false ~loc:Location.none longident env in
+        Path.name (Env.normalize_type_path None env path)
+  with _ -> name
+
 let lookup ~include_dirs name =
   try
     let env = init include_dirs in

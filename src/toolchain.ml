@@ -1249,7 +1249,8 @@ let required_packages_from_ast ~target ast =
           (function
             | Foreign_binding.Native_symbol _ | Foreign_binding.Release_selection | Foreign_binding.Callback_selection ->
                 loop ("lg.ffi" :: "ctypes-foreign" :: packages) rest
-            | Foreign_binding.JavaScript_symbol _ | Foreign_binding.Object_selection _ -> loop packages rest)
+            | Foreign_binding.JavaScript_symbol _ | Foreign_binding.Object_selection _
+            | Foreign_binding.Ocaml_primitive_selection _ -> loop packages rest)
     | Ast.FList (Ast.FSymbol ("module" | "module-functor") :: _ :: forms) :: rest ->
         Result.bind (loop packages forms) (fun packages -> loop packages rest)
     | Ast.FList (Ast.FSymbol "require" :: entries) :: rest -> (

@@ -181,6 +181,36 @@ An arbitrary rigid type parameter is not evidence that its values can be
 converted to EDN. Tap registration and delivery must not erase callbacks or
 payloads into `Runtime_dynamic.t`.
 
+### Sequential result bindings
+
+`let*` binds successful `Result` payloads in source order:
+
+```clojure
+(let* [fields (as-map input)
+       version (required "format-version" as-int fields)]
+  (Ok version))
+```
+
+Each binding expression is evaluated once. `Ok` unwraps into the binding
+pattern; `Error` returns immediately from the `let*` expression without
+evaluating subsequent bindings or the body. Binding patterns use ordinary
+`let` destructuring. The body returns a result explicitly; it is not implicitly
+wrapped. An empty binding vector evaluates the body directly.
+
+Expansion uses statically checked `match` and `let` forms, retaining the result
+payload and error types. All error branches must have compatible types.
+Ordinary `let` retains its existing semantics. LG's `let*` is intentionally
+different from Clojure's internal ordinary binding form of the same name.
+
+### Collection match patterns
+
+Collection patterns in `match` are exact-length unless they end with
+`& binding`. `[head & tail]` requires at least one element and binds the
+remaining elements as a statically typed list; `[_ _ & _]` requires at least
+two elements and discards the rest. This also applies inside constructor
+payload patterns. A rest binding must be the final item, and malformed rest
+patterns are rejected instead of treating `&` as a variable.
+
 ### Absence uses `option`
 
 `nil` represents absence and must lower to an option-like static type. A value
@@ -297,12 +327,20 @@ OCaml interop is allowed through declared package modules, signatures, concrete
 host types, and explicit constructors. It must preserve the declared OCaml type
 and must not pass through a universal boxed value.
 
+Inference and call elaboration use the same OCaml argument matching rules.
+Labels select their declared parameters independently of source order;
+unlabelled arguments skip optional parameters, and explicitly supplied optional
+values use the parameter's payload type. Label tokens are not positional
+arguments. These constraints apply to ordinary functions, local functions,
+callbacks, and record fields without requiring redundant source type hints.
+
 ### Foreign declarations are typed
 
 `(ffi name [argument-types ...] result-type options)` declares an ordinary
 statically typed function backed by an explicit foreign ABI. The options select
-one backend: `:native` names a C function, and the `:js` backend names a
-JavaScript binding. Target-specific declarations use reader conditionals.
+one backend: `:native` names a C function, `:js` names a JavaScript binding,
+and `:ocaml` names a linked C primitive using the OCaml runtime value ABI.
+Target-specific declarations use reader conditionals.
 The full decision and acceptance criteria are in
 [ADR 011](agent-guide/011-foreign-function-interface.md).
 
@@ -312,6 +350,15 @@ double, `:bool` C bool, `:string` a temporary NUL-terminated input string, and
 Explicit unit parameters and unsupported representations are errors. Returned
 strings require an ownership adapter; they cannot silently lose a required
 deallocation. Library paths and foreign symbols are literal data.
+
+`:ocaml` declarations lower directly to typed OCaml `external` bindings and
+are Native-only. They require a C identifier, closed static argument/result
+types, and at most five parameters; `[]` supplies the OCaml unit argument.
+They accept no ctypes/JavaScript options or compiler-internal `%` primitives.
+The linked stub must implement the declared OCaml value layouts, root values
+across allocations, and manage any opaque custom-block lifetime. Strings retain
+their length and embedded NUL bytes. This ABI does not convert OCaml values to
+ordinary C scalars and must never be substituted for `:native` implicitly.
 
 Direct Native callback parameters require `:callbacks :call`. Their typed
 function-pointer descriptors preserve scalar argument/result types and source

@@ -1080,6 +1080,11 @@ let remove_unused_anonymous_types structure =
 let rec structure_of_item_with_sets requested_sets module_path = function
   | Foreign_binding foreign ->
       (match foreign.backend with
+       | Foreign_binding.Ocaml_primitive symbol ->
+           let loc = declaration_location foreign.location in
+           Ok [Ast_helper.Str.primitive ~loc
+             (Ast_helper.Val.mk ~loc ~prim:[symbol]
+               (named_loc foreign.name loc) (core_type foreign.value_type))]
        | Foreign_binding.Native_callback (arguments, result) ->
            value_binding (Named foreign.name)
              (Semantic_ir.Typed (foreign.value_type,

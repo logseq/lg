@@ -840,6 +840,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
       in
       match
         Type_inference.infer_params ~materialize_open_equality
+          ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
           ~lookup_function_ty
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
@@ -1414,13 +1415,27 @@ let fn_code ?(row_param_type_names = []) parts =
         | None -> (
         match ty with
         | TConstraint
-            (Seqable_constraint { requirement; storage = value_ty; _ }) ->
+            (Seqable_constraint { requirement; element; storage = value_ty; _ }) ->
+            let sequence_name =
+              if requirement = Required then name ^ "__seq"
+              else name ^ "__seq_optional"
+            in
+            let sequence_pattern = Semantic_ir.PVar sequence_name in
+            let sequence_pattern =
+              match element with
+              | TOcaml _ | TNamed_record _ ->
+                  let adapter_type = "_ -> " ^ Types.ocaml_name (TSeq element) in
+                  let adapter_type =
+                    if requirement = Required then adapter_type
+                    else "(" ^ adapter_type ^ ") option"
+                  in
+                  Semantic_ir.PConstraint
+                    (sequence_pattern, adapter_type)
+              | _ -> sequence_pattern
+            in
             Semantic_ir.PTuple
               [
-                Semantic_ir.PVar
-                  (if requirement = Required then
-                     name ^ "__seq"
-                   else name ^ "__seq_optional");
+                sequence_pattern;
                 capability_pattern ?value_type name value_ty;
               ]
         | _ ->
@@ -1462,7 +1477,7 @@ let fn_code ?(row_param_type_names = []) parts =
                  pattern_ty |> Types.constraint_value_type
                  |> pattern_constraint_type |> Types.ocaml_name
                in
-               capability_pattern ~value_type name ty
+               capability_pattern ~value_type name pattern_ty
              else
                match row_type_name with
                | Some type_name ->

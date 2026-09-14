@@ -438,6 +438,10 @@ let test_packages () =
     | Ok _ -> failwith "native FFI dependency was not discovered"
     | Error error -> failwith error.message)
     [source; "(module Math " ^ source ^ ")"];
+  (match Lg.Compiler.required_ocaml_packages
+      "(ffi f [] :int {:ocaml \"app_primitive\"})" with
+   | Ok [] -> ()
+   | _ -> failwith "OCaml primitive FFI must not add ctypes dependencies");
   match Lg.Compiler.required_ocaml_packages ~target:Lg.Target.Melange
     ("#?(:native " ^ source ^ ")") with
   | Ok [] -> ()
@@ -452,6 +456,7 @@ let test_integration () =
       "(ns ffi.consumer (:require [ffi.provider :as foreign])) (def answer (foreign/absolute -7))" with
     | Ok _ -> () | Error error -> failwith error.message)
     [Lg.Target.Native, "{:native \"abs\"}";
+     Lg.Target.Native, "{:ocaml \"app_absolute\"}";
      Lg.Target.Melange, "{:js \"abs\" :scope [\"Math\"]}"];
   let source = "(ffi absolute [:int] :int {:native \"abs\"})" in
   ignore (compile ("(module Math " ^ source ^ ") (def result (Math/absolute -4))"));
@@ -544,11 +549,86 @@ let test_rejections () =
       "(ffi f [:int] :int {:native \"abs\"})")
     [Lg.Target.Melange; Lg.Target.Js_of_ocaml]
 
+let test_ocaml_primitive_execution () =
+  let dir = Filename.temp_dir "lg-ocaml-ffi-" "" in
+  Fun.protect ~finally:(fun () -> remove_tree dir) (fun () ->
+    let source = {|
+(extern-type reader)
+(type-record row (addr :int) (content :string) (addresses :option<string>))
+(ffi open-reader [:string] :reader {:ocaml "lg_test_reader_open"})
+(ffi read-reader [:reader] :string {:ocaml "lg_test_reader_read"})
+(ffi first-row [:list<row>] :option<row> {:ocaml "lg_test_first_row"})
+(ffi answer [] :int {:ocaml "lg_test_answer"})
+|} in
+    let generated = compile source in
+    if contains generated "Foreign.foreign" || contains generated "Obj.magic" then
+      failwith "OCaml primitive must use the typed runtime ABI directly";
+    let c = Filename.concat dir "fixture.c" in
+    let ml = Filename.concat dir "binding.ml" in
+    write c {|
+#include <caml/mlvalues.h>
+#include <caml/memory.h>
+#include <caml/alloc.h>
+#include <caml/fail.h>
+CAMLprim value lg_test_reader_open(value text) {
+  CAMLparam1(text);
+  CAMLlocal1(handle);
+  handle = caml_alloc_tuple(1);
+  Store_field(handle, 0, text);
+  CAMLreturn(handle);
+}
+CAMLprim value lg_test_reader_read(value handle) {
+  CAMLparam1(handle);
+  CAMLreturn(Field(handle, 0));
+}
+CAMLprim value lg_test_first_row(value rows) {
+  CAMLparam1(rows);
+  CAMLlocal1(result);
+  if (rows == Val_emptylist) CAMLreturn(Val_int(0));
+  if (Long_val(Field(Field(rows, 0), 0)) < 0) caml_failwith("negative address");
+  result = caml_alloc_small(1, 0);
+  Field(result, 0) = Field(rows, 0);
+  CAMLreturn(result);
+}
+CAMLprim value lg_test_answer(value unit) { return Val_int(42); }
+|};
+    write ml (generated ^ {|
+let () =
+  let text = "abc\000def" in
+  let handle = open_reader text in
+  Gc.full_major ();
+  assert (read_reader handle = text);
+  let row = {addr = 7; content = text; addresses = Some "[1,2]"} in
+  assert (first_row [row] = Some row);
+  assert (first_row [] = None);
+  assert (answer () = 42);
+  (match first_row [{row with addr = -1}] with
+   | exception Failure message -> assert (message = "negative address")
+   | _ -> assert false)
+|});
+    List.iter (fun (compiler, flags) ->
+      let executable = Filename.concat dir (compiler ^ ".exe") in
+      command (Printf.sprintf "cd %s && %s %s fixture.c binding.ml -o %s"
+        (Filename.quote dir) compiler flags (Filename.quote executable));
+      command (Filename.quote executable))
+      ["ocamlc", "-custom"; "ocamlopt", ""];
+    List.iter (fun (fragment, declaration) -> reject fragment declaration)
+      ["exactly one", "(ffi f [] :int {:ocaml \"x\" :native \"y\"})";
+       "other options", "(ffi f [] :int {:ocaml \"x\" :library \"y\"})";
+       "C identifier", "(ffi f [] :int {:ocaml \"%identity\"})";
+       "five", "(ffi f [:int :int :int :int :int :int] :int {:ocaml \"x\"})";
+       "unit parameter", "(ffi f [:unit] :int {:ocaml \"x\"})"];
+    reject "closed static" "(ffi f [:variant-open<Value:int>] :int {:ocaml \"x\"})";
+    List.iter (fun target -> reject ~target "native target" source)
+      [Lg.Target.Melange; Lg.Target.Js_of_ocaml])
+
+
 let () =
   List.iter (fun (name, test) ->
     try test (); Printf.printf "ok: %s\n%!" name
     with exn -> Printf.eprintf "FAIL: %s: %s\n%!" name (Printexc.to_string exn); exit 1)
-    ["JavaScript execution", test_javascript_execution;
+    ["OCaml primitive execution", test_ocaml_primitive_execution;
+     "JavaScript execution", test_javascript_execution;
      "JavaScript object validation", test_javascript_object_rejections;
      "JavaScript adapter validation", test_javascript_adapter_rejections;
      "JavaScript validation", test_javascript_validation;

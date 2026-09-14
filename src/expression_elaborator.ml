@@ -32,6 +32,7 @@ let multi_arity_fn_counter = ref 0
 
 let rec contains_source_macro scope env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _) -> false
+  | FList (FSymbol "let*" :: _) -> true
   | FList (FSymbol name :: forms) ->
       Option.is_some (Env.find_macro ~scope name env)
       || Option.is_some (Env.find_inline_macro ~scope name env)
@@ -254,6 +255,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_loop scope env bindings body_forms
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
+  | (FList (FSymbol "let*" :: _) as form) ->
+      Result.bind (Macro_expander.expand_all ~scope ~compiler_env:env form)
+        (compile_expr scope env)
   | FList (FSymbol "let" :: bindings :: body_forms) ->
       let forms = bindings :: body_forms in
       if
@@ -1935,6 +1939,7 @@ and prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
       in
       match
         Type_inference.infer_params ~materialize_open_equality:true
+          ~lookup_call_ty:(Expression_support.lookup_call_ty scope provisional_env)
           ~lookup_function_ty
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
@@ -2049,7 +2054,7 @@ and prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
                           match
                             Type_inference.inferred_form_type params result
                           with
-                          | TUnknown ->
+                          | ty when Type_solver.is_open ty ->
                               Type_inference.inferred_call_return_type
                                 ~lookup_function_ty params result
                           | ty -> ty

@@ -154,6 +154,7 @@ let record_type_cache =
   Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
 
 let type_manifest_resolution_stack = Domain.DLS.new_key (fun () -> ref [])
+let recursive_variant_resolution_stack = Domain.DLS.new_key (fun () -> ref [])
 
 let string_contains_substring source substring =
   let source_length = String.length source in
@@ -222,7 +223,13 @@ and function_parts compiler_type =
 
 and transparent_manifest_alias name =
   let stack = Domain.DLS.get type_manifest_resolution_stack in
-  if List.mem name !stack then None
+  let canonical_name =
+    Lg_compiler_support.Ocaml_value.canonical_type_path
+      ~include_dirs:(include_dirs ()) name
+  in
+  let variant_stack = Domain.DLS.get recursive_variant_resolution_stack in
+  if List.mem canonical_name !variant_stack then Some (TOcaml canonical_name)
+  else if List.mem name !stack then None
   else
     let include_dirs = include_dirs () in
     let cache = Domain.DLS.get type_manifest_cache in
@@ -245,6 +252,12 @@ and transparent_manifest_alias name =
                   ~include_dirs name
               with
               | Error message -> Error.error message
+              | Ok (Lg_compiler_support.Ocaml_value.Variant _ as compiler_type) ->
+                  variant_stack := canonical_name :: !variant_stack;
+                  Fun.protect
+                    ~finally:(fun () ->
+                      variant_stack := List.filter (( <> ) canonical_name) !variant_stack)
+                    (fun () -> Ok (of_compiler_type compiler_type))
               | Ok compiler_type -> Ok (of_compiler_type compiler_type))
         in
         Lookup_cache.add cache key manifest;
@@ -389,6 +402,54 @@ let supplied_argument_type parameter =
   match (parameter.label, parameter.ty) with
   | Optional _, (TNullable ty | TOcaml_app ("option", [ ty ])) -> ty
   | _ -> parameter.ty
+
+let parse_argument_forms forms =
+  let rec parse acc = function
+    | [] -> Ok (List.rev acc)
+    | Ast.FKeyword label :: [] ->
+        Error.error ("OCaml argument label " ^ label ^ " requires a value")
+    | Ast.FKeyword label :: value :: rest ->
+        let label = String.sub label 1 (String.length label - 1) in
+        parse ((Some label, value) :: acc) rest
+    | value :: rest -> parse ((None, value) :: acc) rest
+  in
+  parse [] forms
+
+let expected_argument_types signature arguments =
+  let named_labels = List.filter_map fst arguments in
+  let remaining =
+    List.filter
+      (fun parameter ->
+        match parameter_label_name parameter.label with
+        | Some label -> not (List.mem label named_labels)
+        | None -> true)
+      signature.parameters
+  in
+  let find_named label =
+    signature.parameters
+    |> List.find_opt (fun parameter ->
+           parameter_label_name parameter.label = Some label)
+    |> Option.map supplied_argument_type
+  in
+  let rec consume_positional prefix = function
+    | [] -> None
+    | { label = Optional _; _ } :: parameters ->
+        consume_positional prefix parameters
+    | ({ label = Labelled _; _ } as parameter) :: parameters ->
+        consume_positional (parameter :: prefix) parameters
+    | { label = Positional; ty } :: parameters ->
+        Some (ty, List.rev_append prefix parameters)
+  in
+  let rec collect collected remaining = function
+    | [] -> Some (List.rev collected)
+    | (Some label, _) :: rest ->
+        Option.bind (find_named label) (fun ty ->
+            collect (ty :: collected) remaining rest)
+    | (None, _) :: rest ->
+        Option.bind (consume_positional [] remaining) (fun (ty, remaining) ->
+            collect (ty :: collected) remaining rest)
+  in
+  collect [] remaining arguments
 
 let result_after_application signature arguments =
   let argument_labels = List.map fst arguments in

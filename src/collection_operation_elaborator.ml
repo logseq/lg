@@ -615,9 +615,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | Error _ as error -> error
       | Ok [] -> Error.error "list* expects values and final collection"
       | Ok args ->
+          let final_index = List.length args - 1 in
           let compiled_args =
             List.mapi
               (fun index arg ->
+                let arg =
+                  if index <> final_index then arg
+                  else
+                    match Core_sequence_transform.collection_to_list_expr arg with
+                    | Ok _ -> arg
+                    | Error _ -> (
+                        match Collection_capability.to_seq_expr env arg with
+                        | Ok (inner, sequence) -> typed_ir (TSeq inner) sequence
+                        | Error _ -> arg)
+                in
                 let name = "__lg_list_star_argument_" ^ string_of_int index in
                 ( Semantic_ir.PVar name,
                   arg.semantic_expr,
@@ -640,8 +651,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      prefix)
               then
                 Error.error
-                  "list* prefix and final collection must have one static \
-                   element type"
+                  ("list* prefix and final collection must have one static element type; tail element is "
+                   ^ Types.source_name inner ^ ", prefix elements are "
+                   ^ String.concat ", " (List.map (fun arg -> Types.source_name arg.ty) prefix))
               else
                 let argument_bindings =
                   List.map

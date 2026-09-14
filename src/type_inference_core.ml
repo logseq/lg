@@ -27,6 +27,25 @@ let replace_param name ty params =
          if String.equal param_name name then (param_name, ty)
          else (param_name, param_ty))
 
+let host_record_type = function
+  | TOcaml type_name -> (
+      match Ocaml_signature.record_type type_name with
+      | Ok (TNamed_record record) -> Some (TNamed_record record)
+      | Ok _ | Error _ -> None)
+  | TOcaml_app (type_name, arguments) -> (
+      match Ocaml_signature.record_type type_name with
+      | Ok (TNamed_record record)
+        when List.length record.type_parameters = List.length arguments ->
+          let substitutions =
+            List.combine record.type_parameters arguments
+            |> List.map (fun (parameter, argument) ->
+                   (Type_solver.Declared parameter, argument))
+            |> Type_solver.of_list
+          in
+          Some (Type_solver.apply substitutions (TNamed_record record))
+      | Ok _ | Error _ -> None)
+  | _ -> None
+
 let has_source_name name expected =
   name = expected || String.ends_with ~suffix:("/" ^ expected) name
 
@@ -435,6 +454,14 @@ and refine_nonmatching_type existing inferred =
   | (TNamed_record _ as named), (TRecord _ as structural)
     when Types.row_compatible ~expected:structural ~actual:named ->
       named
+  | (TRecord _ as structural), host
+    when Option.is_some (host_record_type host) ->
+      let named = Option.get (host_record_type host) in
+      refine_type structural named
+  | host, (TRecord _ as structural)
+    when Option.is_some (host_record_type host) ->
+      let named = Option.get (host_record_type host) in
+      refine_type named structural
   | TRecord existing, TRecord inferred ->
       TRecord (merge_record_fields existing inferred)
   | (TMeta _ | TVar _), inferred -> inferred

@@ -373,6 +373,8 @@ let rec identity_compatible expected actual =
   ||
   match (expected, actual) with
   | (TUnknown | TMeta _ | TVar _), (TUnknown | TMeta _ | TVar _) -> true
+  | TPoly_variant expected, TPoly_variant actual ->
+      Variant_row.compatible_payloads identity_compatible expected actual
   | TNullable expected, TNullable actual
   | TArray expected, TArray actual
   | TRef expected, TRef actual

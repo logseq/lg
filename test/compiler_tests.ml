@@ -468,6 +468,39 @@ let compile_chunks_with_stdlib target sources =
   in
   reversed_outputs |> List.rev |> String.concat "\n"
 
+let test_workspace_order_follows_namespace_requires () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let sources =
+    [
+      ( "app/a_consumer.cljc",
+        {|
+(ns app.consumer
+  (:require [app.z-provider :as provider]))
+
+(def answer (provider/value))
+|} );
+      ( "app/z_provider.cljc",
+        {|
+(ns app.z-provider)
+
+(defn value [] 42)
+|} );
+    ]
+  in
+  match
+    Raw_lg.Toolchain.order_workspace_from_state ~target:Lg.Target.Native
+      stdlib.state sources
+  with
+  | Ok [ "app/z_provider.cljc"; "app/a_consumer.cljc" ] -> ()
+  | Ok ordered ->
+      failwith
+        ("expected provider before consumer, got: "
+        ^ String.concat ", " ordered)
+  | Error err ->
+      failwith
+        ("expected namespace require ordering to compile, got: "
+        ^ err.message)
+
 let test_compiler_tests_reuse_precompiled_stdlib_state () =
   let first = compiled_stdlib Lg.Target.Native in
   let second = compiled_stdlib Lg.Target.Native in
@@ -5239,6 +5272,333 @@ let test_declared_option_returns_keep_match_payloads_static () =
     failwith "declared option match returns must not use Runtime_dynamic";
   assert_ocaml_runs "declared_option_returns_keep_match_payloads_static"
     "42\n" ocaml
+
+let test_recursive_result_helpers_infer_from_typed_accumulator () =
+  let source =
+    {|
+(type-record item (name :string))
+(def ^:vector<item> empty-items [])
+(defn loop-items [^:vector<item> items ^:int total ^:int index ^:vector<item> acc]
+  (if (= index total)
+    (Ok (Rrbvec.to_list acc))
+    (loop-items items total (inc index) (conj acc (nth items index)))))
+(println
+  (match (loop-items [(record item (name "Ada"))] 1 0 empty-items)
+    (Ok items) (+ (count items) 41)
+    (Error _) 0))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "recursive result helpers should infer from typed accumulators";
+  assert_ocaml_runs "recursive_result_helpers_infer_from_typed_accumulator"
+    "42\n" ocaml
+
+let test_forward_result_payload_infers_from_typed_accumulator () =
+  let source =
+    {|
+(type-record item (name :string))
+(def ^:vector<item> empty-items [])
+(declare encrypt-item)
+(defn loop-items [^:vector<item> items ^:int total ^:int index ^:vector<item> acc]
+  (if (= index total)
+    (Ok (Rrbvec.to_list acc))
+    (match (encrypt-item (nth items index))
+      (Ok item)
+      (loop-items items total (inc index) (conj acc item))
+      (Error message) (Error message))))
+(defn encrypt-item [^:item item]
+  (Ok item))
+(println
+  (match (loop-items [(record item (name "Ada"))] 1 0 empty-items)
+    (Ok items) (+ (count items) 41)
+    (Error _) 0))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "forward result payloads should infer from typed accumulators";
+  assert_ocaml_runs "forward_result_payload_infers_from_typed_accumulator"
+    "42\n" ocaml
+
+let test_forward_datascript_result_payload_infers_from_typed_accumulator () =
+  let source =
+    {|
+(ns datascript-forward-result
+  (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.Datascript :as ds]
+            [ocaml.Rrbvec :as rrbvec]))
+(def ^:vector<Datascript.tx_entity> empty-entities [])
+(declare encrypt-entity)
+(defn loop-entities [^:vector<Datascript.tx_entity> entities ^:int total ^:int index ^:vector<Datascript.tx_entity> acc]
+  (if (= index total)
+    (Ok (rrbvec/to-list acc))
+    (match (encrypt-entity (nth entities index))
+      (Ok entity)
+      (loop-entities entities total (inc index) (conj acc entity))
+      (Error message) (Error message))))
+(defn encrypt-entity [^:Datascript.tx_entity entity]
+  (Ok entity))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "forward Datascript result payloads should stay static";
+  ignore ocaml
+
+let test_mutual_datascript_result_payloads_infer_without_return_hints () =
+  let source =
+    {|
+(ns datascript-mutual-result
+  (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.Datascript :as ds]
+            [ocaml.Rrbvec :as rrbvec]))
+(def ^:vector<Datascript.value> empty-values [])
+(def ^:vector<Datascript.tx_entity> empty-entities [])
+(def ^:vector<tuple<string;Datascript.tx_value>> empty-attrs [])
+(declare encrypt-entity)
+(defn encrypt-value [^:fn<string;result<string;string>> encrypt ^:string attr ^:Datascript.value value]
+  (match value
+    (ds/String text)
+    (match (encrypt text)
+      (Ok encrypted) (Ok (ds/String encrypted))
+      (Error message) (Error message))
+    _ (Ok value)))
+(defn encrypt-values-loop
+  [^:fn<string;result<string;string>> encrypt
+   ^:string attr
+   ^:vector<Datascript.value> values
+   ^:int total
+   ^:int index
+   ^:vector<Datascript.value> encrypted]
+  (if (= index total)
+    (Ok (rrbvec/to-list encrypted))
+    (match (encrypt-value encrypt attr (nth values index))
+      (Ok value)
+      (encrypt-values-loop encrypt attr values total (inc index) (conj encrypted value))
+      (Error message) (Error message))))
+(defn encrypt-values
+  [^:fn<string;result<string;string>> encrypt ^:string attr ^:list<Datascript.value> values]
+  (let [values (rrbvec/of-list values)]
+    (encrypt-values-loop encrypt attr values (count values) 0 empty-values)))
+(defn encrypt-entities-loop
+  [^:fn<string;result<string;string>> encrypt
+   ^:vector<Datascript.tx_entity> entities
+   ^:int total
+   ^:int index
+   ^:vector<Datascript.tx_entity> encrypted]
+  (if (= index total)
+    (Ok (rrbvec/to-list encrypted))
+    (match (encrypt-entity encrypt (nth entities index))
+      (Ok entity)
+      (encrypt-entities-loop encrypt entities total (inc index) (conj encrypted entity))
+      (Error message) (Error message))))
+(defn encrypt-entities
+  [^:fn<string;result<string;string>> encrypt ^:list<Datascript.tx_entity> entities]
+  (let [entities (rrbvec/of-list entities)]
+    (encrypt-entities-loop encrypt entities (count entities) 0 empty-entities)))
+(defn encrypt-tx-value
+  [^:fn<string;result<string;string>> encrypt ^:string attr ^:Datascript.tx_value value]
+  (match value
+    (ds/One_value value)
+    (match (encrypt-value encrypt attr value)
+      (Ok value) (Ok (ds/One_value value))
+      (Error message) (Error message))
+    (ds/Many_values values)
+    (match (encrypt-values encrypt attr values)
+      (Ok values) (Ok (ds/Many_values values))
+      (Error message) (Error message))
+    (ds/One_entity entity)
+    (match (encrypt-entity encrypt entity)
+      (Ok entity) (Ok (ds/One_entity entity))
+      (Error message) (Error message))
+    (ds/Many_entities entities)
+    (match (encrypt-entities encrypt entities)
+      (Ok entities) (Ok (ds/Many_entities entities))
+      (Error message) (Error message))))
+(defn encrypt-attrs-loop
+  [^:fn<string;result<string;string>> encrypt
+   ^:option<Datascript.entity_ref> db-id
+   ^:vector<tuple<string;Datascript.tx_value>> attrs
+   ^:int total
+   ^:int index
+   ^:vector<tuple<string;Datascript.tx_value>> encrypted]
+  (if (= index total)
+    (Ok (record Datascript.tx_entity
+          (db-id db-id)
+          (attrs (rrbvec/to-list encrypted))))
+    (let [entry (nth attrs index)
+          attr (Stdlib/fst entry)]
+      (match (encrypt-tx-value encrypt attr (Stdlib/snd entry))
+        (Ok value)
+        (encrypt-attrs-loop encrypt db-id attrs total (inc index) (conj encrypted (tuple attr value)))
+        (Error message) (Error message)))))
+(defn encrypt-entity
+  [^:fn<string;result<string;string>> encrypt ^:Datascript.tx_entity entity]
+  (let [attrs (rrbvec/of-list (:attrs entity))]
+    (encrypt-attrs-loop encrypt (:db-id entity) attrs (count attrs) 0 empty-attrs)))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "mutual Datascript result payloads should stay static";
+  ignore ocaml
+
+let test_structural_record_helper_refines_to_nominal_argument () =
+  let source =
+    {|
+(ns datascript-structural-helper
+  (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.Datascript :as ds]
+            [ocaml.Transit_core.Json :as transit]))
+(defn entity-attr-count [entity]
+  (count (:attrs entity)))
+(defn tx-op-attr-count [operation]
+  (match operation
+    (ds/Entity entity) (entity-attr-count entity)
+    _ 0))
+(println (tx-op-attr-count (ds/Entity (record Datascript.tx_entity
+                                      (db-id None)
+                                      (attrs (list))))))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "structural helper should refine to the nominal OCaml record";
+  ignore ocaml
+
+let test_map_projects_named_record_elements_for_structural_callbacks () =
+  let source =
+    {|
+(ns ocaml-list-map-record-projection
+  (:require [ocaml.List :as list]))
+(type-record entity
+  (db-id :option<int>)
+  (attrs :list<tuple<string;int>>))
+(type-variant op
+  (Many :list<entity>))
+(defn attr-count [entity]
+  (count (:attrs entity)))
+(defn op-counts [operation]
+  (match operation
+    (Many entities) (list/map (fn [entity] (attr-count entity)) entities)))
+(println
+  (first
+    (op-counts
+      (Many
+        (list
+          (record entity
+            (db-id None)
+            (attrs (list (tuple "a" 1)))))))))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "map should project named record elements statically";
+  assert_ocaml_runs "map_projects_named_record_elements_for_structural_callbacks"
+    "1\n" ocaml
+
+let test_ocaml_list_map_contextualizes_external_record_callback () =
+  let source =
+    {|
+(ns ocaml-list-map-external-record
+  (:require [ocaml.List :as list]))
+(external-record Lg_runtime.Runtime_reify.t [value]
+  (payload :value)
+  (db-id :option<int>))
+(type-alias entity
+  :Lg_runtime.Runtime_reify.t<int>)
+(type-variant tx-value
+  (OneEntity :entity)
+  (ManyEntities :list<entity>))
+(type-variant op
+  (Many :list<entity>))
+(declare entity-payload)
+(defn tx-value-payload [value]
+  (match value
+    (OneEntity entity) (list (entity-payload entity))
+    (ManyEntities entities)
+    (list/map (fn [entity] (entity-payload entity)) entities)))
+(defn entity-payload [entity]
+  (:payload entity))
+(defn op-names [operation]
+  (match operation
+    (Many rows) (list/map (fn [row] (entity-payload row)) rows)))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "List.map should keep external record callback parameters static";
+  ignore ocaml
+
+let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
+  let source =
+    {|
+(type-record graph
+  (id :string)
+  (name :string))
+(type-record model
+  (graphs :vector<graph>))
+(type-record Signal [a]
+  (current :a))
+(signature signal-map [input output]
+  :overload<fn<fn<input;output>;Signal<input>;Signal<output>>;fn<fn<input;input;output>;Signal<input>;Signal<input>;Signal<output>>>)
+(defn signal-map
+  ([f source]
+   (record Signal
+     (current (f (:current source)))))
+  ([f left right]
+   (record Signal
+     (current (f (:current left) (:current right))))))
+(signature consume [key item]
+  :fn<Signal<vector<item>>;fn<item;key>;fn<Signal<item>;string>;string>)
+(defn consume [source key-fn child]
+  (do source key-fn child "ok"))
+(signature make-graph-item :fn<Signal<graph>>)
+(defn make-graph-item []
+  (record Signal
+    (current (record graph
+               (id "g1")
+               (name "Main")))))
+(signature make-graph-signal :fn<Signal<vector<graph>>>)
+(defn make-graph-signal []
+  (record Signal
+    (current [(:current (make-graph-item))])))
+(signature make-model-signal :fn<Signal<model>>)
+(defn make-model-signal []
+  (record Signal
+    (current (record model
+               (graphs (:current (make-graph-signal)))))))
+(signature graph-title :fn<Signal<graph>;string>)
+(defn graph-title [source]
+  (:name (:current source)))
+(defn render []
+  (consume (signal-map :graphs (make-model-signal)) :id graph-title))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  ignore ocaml
+
+let test_declared_defn_signature_contextualizes_parameters () =
+  let source =
+    {|
+(type-record model
+  (flag :bool)
+  (title :string))
+(signature collapsed? :fn<model;bool>)
+(defn collapsed? [current]
+  (:flag current))
+(signature consume :fn<fn<model;bool>;string>)
+(defn consume [predicate]
+  (do predicate "ok"))
+(defn render []
+  (consume collapsed?))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "record_flag" then
+    failwith "declared defn signature should avoid anonymous row parameters";
+  ignore ocaml
 
 let test_explicit_sum_constructors_keep_collections_static () =
   let source =
@@ -11378,11 +11738,121 @@ let test_inferred_ocaml_calls_support_optional_labels () =
 (def limited-distance
   (String.edit_distance "abc" "adc" :limit 2))
 (println (+ default-distance limited-distance))
+(defn distance [left right limit]
+  (String.edit_distance left right :limit limit))
+(defn distance-label-first [limit left right]
+  (String.edit_distance :limit limit left right))
+(defn distance-default [left right]
+  (String.edit_distance left right))
+(println (str (distance "abc" "adc" 2) ":"
+              (distance-label-first 2 "abc" "adc") ":"
+              (distance-default "abc" "adc")))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "inferred_ocaml_calls_support_optional_labels" "2\n"
+  assert_ocaml_runs "inferred_ocaml_calls_support_optional_labels" "2\n1:1:1\n"
     ocaml_source
+
+let test_inferred_ocaml_calls_implicitly_apply_trailing_unit_after_optional_labels
+    () =
+  let dir = Filename.concat (test_dir ()) "unit_tail_fixture" in
+  if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
+  let mli = Filename.concat dir "unit_tail_fixture.mli" in
+  let ml = Filename.concat dir "unit_tail_fixture.ml" in
+  let generated_ml = Filename.concat dir "unit_tail_generated.ml" in
+  let output_path = Filename.concat dir "unit_tail.out" in
+  write_file mli
+    {|
+val entries : ?e:int -> ?a:string -> string -> unit -> string
+val transform : ?apply:(string -> string) -> ?limit:int -> string -> string
+|};
+  write_file ml
+    {|
+let entries ?e ?a base () =
+  base ^ ":" ^
+  (match e with Some value -> string_of_int value | None -> "none") ^
+  ":" ^
+  (match a with Some value -> value | None -> "none")
+let transform ?(apply = Fun.id) ?(limit = 20) value =
+  let value = apply value in
+  String.sub value 0 (min limit (String.length value))
+|};
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun path -> if Sys.file_exists path then Sys.remove path)
+        [
+          Filename.concat dir "unit_tail_fixture.cmi";
+          Filename.concat dir "unit_tail_fixture.cmo";
+          Filename.concat dir "unit_tail_generated.cmi";
+          Filename.concat dir "unit_tail_generated.cmo";
+          output_path;
+          generated_ml;
+          mli;
+          ml;
+        ];
+      if Sys.file_exists dir then Unix.rmdir dir)
+    (fun () ->
+      let command =
+        Printf.sprintf
+          "cd %s && ocamlc -c unit_tail_fixture.mli && ocamlc -c \
+           unit_tail_fixture.ml"
+          (Filename.quote dir)
+      in
+      (match Sys.command command with
+      | 0 -> ()
+      | code ->
+          failwith
+            (Printf.sprintf
+               "could not compile OCaml unit-tail fixture, exit code %d" code));
+      Lg.Ocaml_signature.add_include_dirs [ dir ];
+      let source =
+        {|
+(require [ocaml.Unit_tail_fixture :as fixture])
+(println (fixture/entries "base" :e 7 :a "name"))
+(defn converted [f value] (fixture/transform :apply f value))
+(defn converted-last [f value] (fixture/transform value :apply f))
+(defn shortened [limit value] (fixture/transform :limit limit value))
+(type-record transformer (run :fn<string;string>))
+(defn from-record [transformer value]
+  (fixture/transform :apply (:run transformer) value))
+(defn locally-converted [f value]
+  (letfn [(convert [value] (fixture/transform :apply f value))]
+    (convert value)))
+(println (converted (fn [value] (str value "!")) "hello"))
+(println (converted-last (fn [value] (str value "!")) "hello"))
+(println (shortened 3 "hello"))
+(println (from-record (record transformer (run (fn [value] (str value "?")))) "hello"))
+(println (locally-converted (fn [value] (str value "?")) "hello"))
+|}
+      in
+      let native_source = compile_string_with_stdlib source |> expect_ok in
+      write_file generated_ml
+        (String.concat "\n"
+           [ native_stdlib_prelude (); strip_native_stdlib_prelude native_source ]);
+      (match Sys.command (compile_only_command dir generated_ml) with
+      | 0 -> ()
+      | code ->
+          failwith
+            (Printf.sprintf "generated OCaml did not compile, exit code %d:\n%s"
+               code native_source));
+      let run_cmd =
+        run_compiled_module_command dir
+          [
+            Filename.concat dir "unit_tail_fixture.cmo";
+            Filename.concat dir "unit_tail_generated.cmo";
+          ]
+          output_path
+      in
+      (match Sys.command run_cmd with
+      | 0 -> ()
+      | code ->
+          failwith
+            (Printf.sprintf "generated OCaml did not run, exit code %d" code));
+      let actual = read_file output_path in
+      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\n" then
+        failwith
+          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\n" actual))
 
 let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
   let source =
@@ -17250,6 +17720,274 @@ let test_mapv_infers_callback_from_caller_collection_evidence () =
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "mapv callback inference must remain static";
   assert_ocaml_runs "mapv_infers_callback_from_caller_collection_evidence"
+    "3\n" ocaml_source
+
+let test_inference_keeps_local_uuid_separate_from_core_function () =
+  let source = {|
+(type-variant wire-value
+  (ArrayValue :list<wire-value>)
+  (KeywordValue :string)
+  (UuidValue :string))
+(defn contains-uuid? [uuids uuid]
+  (let [total (count uuids)]
+    (loop [index 0]
+      (if (= index total) false
+        (if (= (nth uuids index) uuid) true (recur (+ index 1)))))))
+(defn collect-identity [uuids identity]
+  (match identity
+    (ArrayValue [(KeywordValue "block/uuid") (UuidValue uuid)])
+    (if (contains-uuid? uuids uuid) (drop 0 uuids) (cons uuid uuids))
+    _ (drop 0 uuids)))
+(defn collect [uuids]
+  (collect-identity uuids (ArrayValue (list (KeywordValue "block/uuid") (UuidValue "a")))))
+(println (count (collect ["a"])))
+(println (count (collect ["b"])))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "inference_local_uuid" "1\n2\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_callback_parameters_do_not_constrain_unrelated_collections () =
+  let source = {|
+(require [ocaml.Rrbvec :as vec])
+(type-variant wire-value (Text :string) (Number :int))
+(def ^:vector<wire-value> empty-values [])
+(defn encrypt-value [encrypt value]
+  (match value
+    (Text plaintext)
+    (match (encrypt plaintext)
+      (Ok ciphertext) (Ok (Text ciphertext))
+      (Error message) (Error message))
+    _ (Ok value)))
+(defn encrypt-loop [encrypt values total index encrypted]
+  (if (= index total)
+    (Ok (vec/to-list encrypted))
+    (match (encrypt-value encrypt (nth values index))
+      (Ok value) (encrypt-loop encrypt values total (inc index) (conj encrypted value))
+      (Error message) (Error message))))
+(defn encrypt-values [encrypt values]
+  (let [values (vec/of-list values)]
+    (encrypt-loop encrypt values (count values) 0 empty-values)))
+(def answer (encrypt-values (fn [text] (Ok (str text "!")))
+                           (list (Text "secret") (Number 7))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "independent_callback_collection_types" ""
+    (output ^ "\nlet () = assert (answer = Ok [Text \"secret!\"; Number 7])\n");
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_filterv_infers_boolean_record_predicates () =
+  let source = {|
+(type-record search-hit (is-page :bool) (title :string))
+(type-record search-state (search-results :vector<search-hit>))
+(signature pages :fn<search-state;vector<search-hit>>)
+(signature blocks :fn<search-state;vector<search-hit>>)
+(defn pages [current]
+  (filterv (fn [hit] (:is-page hit)) (:search-results current)))
+(defn blocks [current]
+  (filterv (fn [hit] (not (:is-page hit))) (:search-results current)))
+(def current (record search-state (search-results
+  [(record search-hit (is-page true) (title "page"))
+   (record search-hit (is-page false) (title "block"))])))
+(println (count (pages current)))
+(println (count (blocks current)))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "filterv_boolean_record_predicates" "1\n1\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_record_collection_inference_with_shared_fields () =
+  let source = {|
+(require [ocaml.Rrbvec :as vec])
+(type-variant identity-value (Identity :int))
+(type-record entity (id :identity-value) (title :string))
+(type-record log-entry (id :identity-value) (message :string))
+(type-record batch (entities :list<entity>))
+(type-record decoded-id (value :int))
+(type-record pending-id (value :int))
+(defn decode-id [value]
+  (match value (Identity id) (Ok (record decoded-id (value id)))))
+(defn collect-loop [entities total index ids]
+  (if (= index total)
+    (Ok ids)
+    (let [entity (nth entities index)]
+      (let* [parts (decode-id (:id entity))]
+        (let [id (:value parts)
+              ids (list* (record pending-id (value id)) ids)]
+          (collect-loop entities total (inc index) ids))))))
+(defn ^:result<list<pending-id>;string> collect [entities]
+  (let [entities (vec/of-list entities)]
+    (collect-loop entities (count entities) 0 (list))))
+(defn get-id [record] (:id record))
+(defn apply-batch [batch]
+  (collect (:entities batch)))
+(def answer (apply-batch
+  (record batch (entities (list
+    (record entity (id (Identity 7)) (title "a"))
+    (record entity (id (Identity 9)) (title "b")))))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nested_record_collection_inference" ""
+    (output ^ "\nlet () = match answer with Ok ids -> assert (List.map (fun (id : pending_id) -> id.value) ids = [9; 7]) | Error _ -> assert false\n");
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  compile_string_with_stdlib (source ^ {|
+(type-record invalid-entity (id :string))
+(collect (list (record invalid-entity (id "wrong"))))
+|}) |> expect_error_contains "cannot adapt string to identity_value"
+
+let test_let_shadow_inference_preserves_lexical_scope () =
+  let source = {|
+(type-record string-holder (value :string))
+(defn shadow [value]
+  (let [value (String.length value)] (+ value 1)))
+(defn nested-destructure [value]
+  (let [value
+        (let [{:keys [value]} (record string-holder (value value))]
+          (String.length value))]
+    (+ value 1)))
+(defn callback-destructure [value]
+  (let [value
+        ((fn [{:keys [value]}] (String.length value))
+         (record string-holder (value value)))]
+    (+ value 1)))
+(defn capture [value __lg_inference_outer_0]
+  (let [value (String.length value)] (+ value __lg_inference_outer_0)))
+(println (shadow "abc"))
+(println (nested-destructure "abc"))
+(println (callback-destructure "abc"))
+(println (capture "abc" 6))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "let_shadow_lexical_scope" "4\n4\n4\n9\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_recursive_host_variant_module_aliases () =
+  let dir = Filename.concat (test_dir ()) "recursive_alias_fixture" in
+  if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
+  let ml = Filename.concat dir "recursive_alias_fixture.ml" in
+  let generated = Filename.concat dir "recursive_alias_generated.ml" in
+  let output_path = Filename.concat dir "result.out" in
+  Fun.protect
+    ~finally:(fun () ->
+      Array.iter (fun name -> Sys.remove (Filename.concat dir name)) (Sys.readdir dir);
+      Unix.rmdir dir)
+    (fun () ->
+      write_file (Filename.concat dir "recursive_alias_fixture__Inner.ml") {|
+  type t = [ `Leaf of string | `Children of t list ]
+  let rec size : t -> int = function
+    | `Leaf value -> String.length value
+    | `Children children -> List.fold_left (fun n child -> n + size child) 0 children
+  module Util = struct let size = size end
+|};
+      write_file ml {|
+module Inner = Recursive_alias_fixture__Inner
+module Public = Inner
+let make () : Public.t = `Children [`Leaf "abc"; `Children [`Leaf "de"]]
+let consume (value : Public.t) = Inner.size value
+|};
+      if Sys.command (Printf.sprintf "cd %s && ocamlc -c recursive_alias_fixture__Inner.ml && ocamlc -c recursive_alias_fixture.ml" (Filename.quote dir)) <> 0 then
+        failwith "recursive alias fixture did not compile";
+      Lg.Ocaml_signature.add_include_dirs [dir];
+      let imported name =
+        Lg.Ocaml_signature.of_compiler_type
+          (Lg_compiler_support.Ocaml_value.Constructor (name, [])) in
+      let public_type = imported "Recursive_alias_fixture.Public.t" in
+      let private_type = imported "Recursive_alias_fixture__Inner.t" in
+      if not (Lg.Types.equal public_type private_type) then
+        failwith "recursive variant imports must retain the same type through module aliases";
+      let source = {|
+(require [ocaml.Recursive_alias_fixture :as fixture]
+         [ocaml.Recursive_alias_fixture.Inner :as inner]
+         [ocaml.Recursive_alias_fixture.Public :as public]
+         [ocaml.Recursive_alias_fixture.Public.Util :as util])
+(defn size [value] (inner/size value))
+(defn public-size [value] (util/size value))
+(defn check []
+  (let [value (fixture/make)]
+    (+ (size value) (public-size value) (fixture/consume value))))
+(println (check))
+(println (fixture/consume (tag Children (list (tag Leaf "abc")
+                                             (tag Children (list (tag Leaf "de")))))))
+|} in
+      let compiled = compile_string_with_stdlib source |> expect_ok in
+      write_file generated
+        (native_stdlib_prelude () ^ "\n" ^ strip_native_stdlib_prelude compiled);
+      if Sys.command (compile_only_command dir generated) <> 0 then
+        failwith "recursive alias generated code did not compile";
+      if Sys.command (run_compiled_module_command dir
+          [Filename.concat dir "recursive_alias_fixture__Inner.cmo";
+           Filename.concat dir "recursive_alias_fixture.cmo";
+           Filename.concat dir "recursive_alias_generated.cmo"] output_path) <> 0 then
+        failwith "recursive alias generated code did not run";
+      if read_file output_path <> "15\n5\n" then failwith "recursive alias traversal changed";
+      List.iter
+        (fun value ->
+          compile_string_with_stdlib
+            ("(require [ocaml.Recursive_alias_fixture :as fixture])\n(fixture/consume "
+             ^ value ^ ")")
+          |> expect_error_contains "cannot adapt")
+        ["(tag Children (list (tag Missing)))";
+         "(tag Children (list (tag Leaf 42)))"])
+
+let test_list_star_infers_generic_tail () =
+  let source = {|
+(defn prepend [value tail] (list* value tail))
+(def a (prepend 1 (list 2 3)))
+(def b (prepend 1 [2 3]))
+(defn empty-tail? [tail] (nil? (list* tail)))
+(def empty-tail (empty-tail? (list)))
+(def nonempty-tail (empty-tail? [1]))
+(type-record item (value :int))
+(defn prepend-item [tail] (list* (record item (value 4)) tail))
+(def items (prepend-item (list (record item (value 5)))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "list_star_generic_tail" ""
+    (output ^ "\nlet () = assert (a = [1; 2; 3]); assert (b = [1; 2; 3]); assert (List.map (fun x -> x.value) items = [4; 5]); assert empty_tail; assert (not nonempty_tail)\n");
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_let_destructuring_infers_heterogeneous_tuple_from_body () =
+  let source = {|
+(type-variant operation (Add :int :string :int))
+(defn build [entity identity-attr attr-values]
+  (let [[attr values] attr-values]
+    (if (= attr identity-attr)
+      (list)
+      (map (fn [value] (Add entity attr value)) values))))
+(def operations (build 1 "id" (tuple "title" (list 2 3))))
+(def skipped (build 1 "id" (tuple "id" (list 2 3))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "let_heterogeneous_tuple_inference" ""
+    (output ^ "\nlet () = assert (List.of_seq operations = [Add (1, \"title\", 2); Add (1, \"title\", 3)]); assert (List.of_seq skipped = [])\n");
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_infers_destructured_callback_parameters_from_body_constraints () =
+  let source =
+    {|
+(type-variant data-value
+  (IntValue :int)
+  (MapValue :list<tuple<data-value;data-value>>))
+(declare encode)
+(defn ^int encode [^data-value value]
+  (match value
+    (IntValue number) number
+    (MapValue entries)
+    (reduce
+      (fn [total encoded] (+ total encoded))
+      0
+      (map
+        (fn [[key value]]
+          (+ (encode key) (encode value)))
+        entries))))
+(println (encode (MapValue (list (tuple (IntValue 1) (IntValue 2))))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "destructured map callback parameters must stay static";
+  assert_ocaml_runs
+    "map_infers_destructured_callback_parameters_from_body_constraints"
     "3\n" ocaml_source
 
 let test_unannotated_defrecord_fields_are_statically_polymorphic () =
@@ -44303,6 +45041,39 @@ let test_peek_rejects_unsupported_collections () =
     {|(def x (peek (hash-set 1)))|}
   |> expect_error_contains "no protocol implementation"
 
+let test_result_let_star_sequences_and_short_circuits () =
+  let source = {|
+(defn step [x]
+  (println x)
+  (if (= x 0) (Error "stop") (Ok (+ x 1))))
+(defn chain [x]
+  (let* [a (step x)
+         b (step a)]
+    (Ok (+ a b))))
+(def success (chain 1))
+(def failure (chain 0))
+(def destructured (let* [[a b] (Ok (tuple 20 22))] (Ok (+ a b))))
+(def empty (let* [] (Ok 7)))
+(def ordinary (let [a (Ok 9)] a))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "result_let_star_sequences" "1\n2\n0\n"
+    (output ^ {|
+let () =
+  assert (success = Ok 5);
+  assert (failure = Error "stop");
+  assert (destructured = Ok 42);
+  assert (empty = Ok 7);
+  assert (ordinary = Ok 9)
+|});
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_result_let_star_rejects_invalid_bindings () =
+  Lg.Compiler.compile_string {|(def x (let* [a (Ok 1) b] (Ok a)))|}
+  |> expect_error_contains "let* bindings require an even number of forms";
+  Lg.Compiler.compile_string {|(def x (let* [a 1] (Ok a)))|}
+  |> (function Error _ -> () | Ok _ -> failwith "let* accepted a non-result binding")
+
 let test_let_rejects_odd_binding_forms () =
   Lg.Compiler.compile_string {|(def x (let [a 1 b] a))|}
   |> expect_error "let bindings require an even number of forms"
@@ -46876,6 +47647,43 @@ let test_try_and_raise_reject_malformed_forms () =
   Lg.Compiler.compile_string {|(def value (raise 1 2))|}
   |> expect_error "raise expects 1 arguments"
 
+let test_match_collection_rest_patterns () =
+  let source = {|
+(type-variant envelope (Payload :list<int>))
+(defn multiple? [input]
+  (match input (Payload [_ _ & _]) true _ false))
+(defn tail-size [input]
+  (match input (Payload [head & tail]) (+ head (count tail)) _ 0))
+(println (str (multiple? (Payload (list))) ":"
+              (multiple? (Payload (list 1))) ":"
+              (multiple? (Payload (list 1 2))) ":"
+              (multiple? (Payload (list 1 2 3))) ":"
+              (tail-size (Payload (list 10 20 30)))))
+(println (match [1 2 3] [head & tail] (+ head (count tail)) _ 0))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "match_collection_rest_patterns" "false:false:true:true:12\n3\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun pattern ->
+    Lg.Compiler.compile_string ("(match (list 1) " ^ pattern ^ " 1 _ 0)")
+    |> expect_error_contains "rest pattern")
+    ["[head &]"; "[head & tail extra]"; "[head & &]"]
+
+let test_catch_binding_accepts_symbol_bodies () =
+  let source = {|
+(def fallback "saved")
+(def answer (try (raise (Failure "boom")) (catch error fallback)))
+(def missing (try (Some 1) (raise (Failure "boom")) (catch error nil)))
+(def multiple (try (raise (Failure "boom")) (catch error fallback "last")))
+(def typed (try (raise (Failure "boom")) (catch js/Error error fallback)))
+(println (str answer ":" (nil? missing) ":" multiple ":" typed))
+|} in
+  let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "catch_binding_symbol_bodies" "saved:true:last:saved\n" compiled;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  Lg.Compiler.compile_string {|(try 42 (catch js/Error error))|}
+  |> expect_error "catch requires a type, binding, and body"
+
 let test_try_requires_closed_sum_for_mixed_branch_types () =
   Lg.Compiler.compile_string {|(def value (try 42 (catch _ "bad")))|}
   |> expect_error_contains
@@ -49010,6 +49818,16 @@ let test_discarded_pure_values_are_elided () =
 
 let tests =
   [
+    ( "inference keeps local uuid separate from core function", test_inference_keeps_local_uuid_separate_from_core_function );
+    ( "list star infers generic tail", test_list_star_infers_generic_tail );
+    ( "recursive host variant module aliases", test_recursive_host_variant_module_aliases );
+    ( "callback parameters do not constrain unrelated collections", test_callback_parameters_do_not_constrain_unrelated_collections );
+    ( "filterv infers boolean record predicates", test_filterv_infers_boolean_record_predicates );
+    ( "nested record collection inference with shared fields", test_nested_record_collection_inference_with_shared_fields );
+    ( "let shadow inference preserves lexical scope", test_let_shadow_inference_preserves_lexical_scope );
+    ( "let destructuring infers heterogeneous tuple from body", test_let_destructuring_infers_heterogeneous_tuple_from_body );
+    ( "result let star sequences and short circuits", test_result_let_star_sequences_and_short_circuits );
+    ( "result let star rejects invalid bindings", test_result_let_star_rejects_invalid_bindings );
     ( "nullable forwarding preserves sequential capabilities",
       test_nullable_forwarding_preserves_sequential_capabilities );
     ( "local when function accepts nullable results",
@@ -49022,6 +49840,8 @@ let tests =
       test_test_directory_avoids_existing_pid_directory );
     ( "compiler tests reuse precompiled stdlib state",
       test_compiler_tests_reuse_precompiled_stdlib_state );
+    ( "workspace order follows namespace requires",
+      test_workspace_order_follows_namespace_requires );
     ( "LG signature sidecars use lgi extension",
       test_lg_signature_sidecars_use_lgi_extension );
     ( "source variadic functions work as unary mapv callbacks",
@@ -49351,6 +50171,24 @@ let tests =
       test_required_arguments_are_wrapped_for_option_parameters );
     ( "declared option returns keep match payloads static",
       test_declared_option_returns_keep_match_payloads_static );
+    ( "recursive result helpers infer from typed accumulator",
+      test_recursive_result_helpers_infer_from_typed_accumulator );
+    ( "forward result payload infers from typed accumulator",
+      test_forward_result_payload_infers_from_typed_accumulator );
+    ( "forward Datascript result payload infers from typed accumulator",
+      test_forward_datascript_result_payload_infers_from_typed_accumulator );
+    ( "mutual Datascript result payloads infer without return hints",
+      test_mutual_datascript_result_payloads_infer_without_return_hints );
+    ( "structural record helper refines to nominal argument",
+      test_structural_record_helper_refines_to_nominal_argument );
+    ( "map projects named record elements for structural callbacks",
+      test_map_projects_named_record_elements_for_structural_callbacks );
+    ( "ocaml list map contextualizes external record callback",
+      test_ocaml_list_map_contextualizes_external_record_callback );
+    ( "generic call infers nested host container for keyword callbacks",
+      test_generic_call_infers_nested_host_container_for_keyword_callbacks );
+    ( "declared defn signature contextualizes parameters",
+      test_declared_defn_signature_contextualizes_parameters );
     ( "explicit sum constructors keep collections static",
       test_explicit_sum_constructors_keep_collections_static );
     ( "structural values cannot cross dynamic boundaries",
@@ -49890,6 +50728,9 @@ let tests =
       test_inferred_ocaml_calls_support_required_labels );
     ( "inferred OCaml calls support optional labels",
       test_inferred_ocaml_calls_support_optional_labels );
+    ( "inferred OCaml calls implicitly apply trailing unit after optional labels",
+      test_inferred_ocaml_calls_implicitly_apply_trailing_unit_after_optional_labels
+    );
     ( "inferred OCaml calls preserve partial labelled functions",
       test_inferred_ocaml_calls_preserve_partial_labelled_functions );
     ( "inferred OCaml calls support labels through aliases",
@@ -50430,6 +51271,8 @@ let tests =
       test_merge_infers_map_parameters_from_caller );
     ( "mapv infers callback from caller collection evidence",
       test_mapv_infers_callback_from_caller_collection_evidence );
+    ( "map infers destructured callback parameters from body constraints",
+      test_map_infers_destructured_callback_parameters_from_body_constraints );
     ( "unannotated defrecord fields are statically polymorphic",
       test_unannotated_defrecord_fields_are_statically_polymorphic );
     ( "str uses static printable witnesses",
@@ -52585,6 +53428,8 @@ let tests =
       test_or_patterns_require_the_same_binders );
     ("match guards must be boolean", test_match_guards_must_be_boolean);
     ("try catches OCaml exceptions", test_try_catches_ocaml_exceptions);
+    ("catch binding accepts symbol bodies", test_catch_binding_accepts_symbol_bodies);
+    ("match collection rest patterns", test_match_collection_rest_patterns);
     ( "try supports normal results multiple body forms and handlers",
       test_try_supports_normal_results_multiple_body_forms_and_handlers );
     ( "try supports finally with and without catch",

@@ -3042,7 +3042,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         result
     and compile_list_like_pattern inner patterns =
       let rec loop compiled_patterns bindings = function
-        | [] -> Ok (List.rev compiled_patterns, bindings)
+        | [] -> Ok (Semantic_ir.PList (List.rev compiled_patterns), bindings)
+        | [FSymbol "&"; (FSymbol name as rest)] when name <> "&" ->
+            Result.map
+              (fun (tail, tail_bindings) ->
+                let pattern =
+                  List.fold_left
+                    (fun tail head -> Semantic_ir.PCons (head, tail))
+                    tail compiled_patterns
+                in
+                (pattern, bindings @ tail_bindings))
+              (compile_pattern (TList inner) rest)
+        | FSymbol "&" :: _ ->
+            Error.error "collection rest pattern requires one final binding"
         | pattern :: rest -> (
             match compile_pattern inner pattern with
             | Error _ as err -> err
@@ -3053,8 +3065,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   rest)
       in
       loop [] [] patterns
-      |> Result.map (fun (patterns, bindings) ->
-          (Semantic_ir.PList patterns, bindings))
     in
     let compile_clause target_ty (pattern_form, result_form) =
       let pattern_form, guard_form =
@@ -3216,7 +3226,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           (FSymbol "catch"
           :: FSymbol exception_type
           :: FSymbol binding
-          :: body_forms) -> (
+          :: body_forms)
+        when is_constructor_name exception_type -> (
           match body_forms with
           | [] -> Error.error "catch requires a type, binding, and body"
           | _
@@ -4252,6 +4263,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 match
                   Type_inference.infer_params
                     ?expected_return_ty:(Env.expected_type env)
+                    ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
                     ~lookup_function_ty
                     ~lookup_closed_sum_candidates
                     ~lookup_closed_sum_constructors
@@ -4528,6 +4540,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       in
       match
         Type_inference.infer_params ~lookup_function_ty
+          ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
@@ -4574,6 +4587,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           in
           let inferred =
             Type_inference.infer_params ~lookup_function_ty
+              ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
               ~lookup_closed_sum_candidates
               ~lookup_closed_sum_constructors
               ~lookup_protocol_constraint ~lookup_dynamic_key_record_type

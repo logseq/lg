@@ -1563,6 +1563,49 @@ let expand ?call_site ~scope ~compiler_env (definition : Macro_definition.t) arg
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
       Ok (FList forms)
+  | (FList (FSymbol "let*" :: FVector bindings :: body_forms) as form) ->
+      let rec contains_symbol name = function
+        | FSymbol symbol -> symbol = name
+        | FList forms | FVector forms -> List.exists (contains_symbol name) forms
+        | FMap pairs -> List.exists (fun (key, value) ->
+            contains_symbol name key || contains_symbol name value) pairs
+        | _ -> false
+      in
+      let rec fresh_symbol () =
+        incr gensym_counter;
+        let name = "let_star_value__" ^ string_of_int !gensym_counter in
+        if contains_symbol name form then fresh_symbol () else FSymbol name
+      in
+      let rec expand_bindings env = function
+        | [] ->
+            Result.map
+              (fun body -> FList (FSymbol "do" :: body))
+              (expand_all_forms ~scope ~compiler_env:env body_forms)
+        | pattern :: value :: rest ->
+            let body_env =
+              Destructure.pattern_names pattern
+              |> List.fold_left
+                   (fun env name -> Env.without_source_callable ~scope name env)
+                   env
+            in
+            Result.bind (expand_all ~scope ~compiler_env:env value) (fun value ->
+                Result.map
+                  (fun body ->
+                    let error = fresh_symbol () in
+                    let payload = fresh_symbol () in
+                    FList
+                      [ FSymbol "match"; value;
+                        FList [ FSymbol "Ok"; payload ];
+                        FList [ FSymbol "let"; FVector [pattern; payload]; body ];
+                        FList [ FSymbol "Error"; error ];
+                        FList [ FSymbol "Error"; error ] ])
+                  (expand_bindings body_env rest))
+        | [ _ ] -> Error.error "let* bindings require an even number of forms"
+      in
+      if body_forms = [] then Error.error "let* requires a result body"
+      else expand_bindings compiler_env bindings
+  | FList (FSymbol "let*" :: _) ->
+      Error.error "let* requires a binding vector and a result body"
   | FList (FSymbol "record" :: record_type :: field_forms) ->
       let rec expand_fields expanded = function
         | [] ->

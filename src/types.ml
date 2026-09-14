@@ -909,10 +909,24 @@ and constraint_compatible compatible left right =
       && compatible_pair left.witness left.value right.witness right.value
   | _ -> false
 
-let same_shape left right =
+let rec same_shape left right =
+  let named_host_shape record name arguments =
+    (record.type_name = name || Type_id.name record.type_id = name)
+    && List.length record.type_arguments = List.length arguments
+    && List.for_all2 same_shape record.type_arguments arguments
+  in
   equal left right
-  || (row_compatible ~expected:left ~actual:right
-     && row_compatible ~expected:right ~actual:left)
+  ||
+  match (left, right) with
+  | TNamed_record record, TOcaml name
+  | TOcaml name, TNamed_record record ->
+      named_host_shape record name []
+  | TNamed_record record, TOcaml_app (name, arguments)
+  | TOcaml_app (name, arguments), TNamed_record record ->
+      named_host_shape record name arguments
+  | _ ->
+      row_compatible ~expected:left ~actual:right
+      && row_compatible ~expected:right ~actual:left
 
 let host_owned = function
   | TOcaml _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ -> true
