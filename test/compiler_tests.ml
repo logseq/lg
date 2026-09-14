@@ -1171,7 +1171,7 @@ let test_hash_map_constructs_structural_maps () =
 (println (str (:name user) ":" (:age user)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "hash_map_constructs_structural_maps" "Ada:36\n"
     ocaml_source
 
@@ -11957,6 +11957,58 @@ let test_direct_ocaml_option_and_result_constructors_compile () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "direct_ocaml_option_and_result_constructors_compile"
     "42:0:Ada:bad\n" ocaml_source
+
+let test_ocaml_result_vector_constructors_compile () =
+  let source =
+    {|
+(ns result-vector)
+
+(signature result-vector/next-key
+ :fn<option<string>;result<string;string>>)
+(signature result-vector/n-after
+ :fn<option<string>;int;vector<string>;result<vector<string>;string>>)
+(signature result-vector/n-between
+ :fn<option<string>;option<string>;int;result<vector<string>;string>>)
+
+(defn next-key [lower]
+  (match lower
+    (Some value) (Ok (str value "x"))
+    None (Ok "a0")))
+
+(defn n-after [lower ^:int count ^:vector<string> result]
+  (if (= count 0)
+    (Ok result)
+    (match (next-key lower)
+      (Ok value)
+      (n-after (Some value) (dec count) (conj result value))
+      (Error message) (Error message))))
+
+(defn n-between [lower upper ^:int count]
+  (if (< count 0)
+    (Error "negative")
+    (if (= count 0)
+      (Ok [])
+      (if (= count 1)
+        (match (next-key lower)
+          (Ok value) (Ok [value])
+          (Error message) (Error message))
+        (match upper
+          None (n-after lower count [])
+          (Some upper-value)
+          (match (n-between lower (Some upper-value) 1)
+            (Ok left) (Ok (conj left upper-value))
+            (Error message) (Error message)))))))
+
+(def result (n-between None None 2))
+(println
+ (match result
+   (Ok values) (str (count values))
+   (Error message) message))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "ocaml_result_vector_constructors_compile" "2\n"
+    ocaml_source
 
 let test_direct_declared_variant_constructors_compile () =
   let source =
@@ -49790,6 +49842,8 @@ let tests =
       test_ocaml_option_and_result_constructors_reject_bad_arity );
     ( "direct OCaml option and result constructors compile",
       test_direct_ocaml_option_and_result_constructors_compile );
+    ( "OCaml result vector constructors compile",
+      test_ocaml_result_vector_constructors_compile );
     ( "direct declared variant constructors compile",
       test_direct_declared_variant_constructors_compile );
     ( "direct OCaml constructors reject bad arity",

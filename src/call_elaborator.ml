@@ -11008,18 +11008,32 @@ let create ~compile_expr =
               | "None" ->
                   constructor (fun _ -> TOcaml_app ("option", [ TUnknown ])) 0
     | "Ok" ->
+        let expected_ok, expected_error =
+          match Env.expected_type env with
+          | Some (TOcaml_app ("result", [ ok_ty; error_ty ])) ->
+              (Some ok_ty, error_ty)
+          | Some _ | None -> (None, TUnknown)
+        in
         constructor
           (function
                       | [ value ] ->
-                          TOcaml_app ("result", [ value.ty; TUnknown ])
+                          TOcaml_app ("result", [ value.ty; expected_error ])
             | _ -> TUnknown)
+          ?payload_tys:(Option.map (fun ty -> [ ty ]) expected_ok)
           1
     | "Error" ->
+        let expected_ok, expected_error =
+          match Env.expected_type env with
+          | Some (TOcaml_app ("result", [ ok_ty; error_ty ])) ->
+              (ok_ty, Some error_ty)
+          | Some _ | None -> (TUnknown, None)
+        in
         constructor
           (function
                       | [ value ] ->
-                          TOcaml_app ("result", [ TUnknown; value.ty ])
+                          TOcaml_app ("result", [ expected_ok; value.ty ])
             | _ -> TUnknown)
+          ?payload_tys:(Option.map (fun ty -> [ ty ]) expected_error)
           1
     | "seq-uncons" -> (
         match compile_args () with

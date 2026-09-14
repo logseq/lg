@@ -3135,6 +3135,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 | _ -> false
               in
               match (result_ty, Env.expected_type env) with
+              | Some result_ty, Some expected
+                when Types.contains_dynamic result_ty
+                     && Option.is_some (merge_branch_types expected result_ty)
+                     ->
+                  Some expected
               | None, Some expected
                 when Option.is_some (Types.printable_constraint_info expected)
                      && List.for_all

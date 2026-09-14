@@ -648,12 +648,17 @@ let rec merge_branch_types left right =
     | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args)
       when left_name = right_name
            && List.length left_args = List.length right_args ->
+        let merge_host_arg left right =
+          match (left, right) with
+          | TUnknown, ty | ty, TUnknown -> Some ty
+          | _ -> merge_branch_types left right
+        in
         let rec merge_arguments merged left right =
           match (left, right) with
           | [], [] ->
               Some (TOcaml_app (left_name, List.rev merged))
           | left :: left_rest, right :: right_rest ->
-              Option.bind (merge_branch_types left right) (fun ty ->
+              Option.bind (merge_host_arg left right) (fun ty ->
                   merge_arguments (ty :: merged) left_rest right_rest)
           | _ -> None
         in
@@ -749,7 +754,14 @@ let rec merge_branch_types left right =
     | TList left, TList right ->
         Option.map (fun inner -> TList inner) (merge_branch_types left right)
     | TVector left, TVector right ->
-        Option.map (fun inner -> TVector inner) (merge_branch_types left right)
+        let merged_element =
+          match (left, right) with
+          | (TUnknown | TMeta _ | TVar _), ty
+          | ty, (TUnknown | TMeta _ | TVar _) ->
+              Some ty
+          | _ -> merge_branch_types left right
+        in
+        Option.map (fun inner -> TVector inner) merged_element
     | TSet left, TSet right ->
         Option.map (fun inner -> TSet inner) (merge_branch_types left right)
     | TSeq left, TSeq right ->
