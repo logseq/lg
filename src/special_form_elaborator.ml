@@ -3315,6 +3315,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | (TUnknown | TMeta _ | TVar _), _
         when never_returns body.semantic_expr ->
           Ok handlers_ty
+      | _, (TUnknown | TMeta _ | TVar _)
+        when never_returns handlers.semantic_expr ->
+          Ok body_ty
       | (TUnknown | TMeta _ | TVar _), _ | _, (TUnknown | TMeta _ | TVar _) ->
           Error.error
             "try branch type is unresolved; add a static type annotation or define a closed sum type containing every branch type"

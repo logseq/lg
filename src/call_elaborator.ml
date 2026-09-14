@@ -6925,6 +6925,14 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
         TTuple
           (List.map2 resolve_external_record_for_expected expected_items
              actual_items)
+    | expected, actual
+      when Option.is_some (Types.dynamic_map_types expected)
+           && Option.is_some (Types.dynamic_map_types actual) ->
+        let expected_key, expected_value = Option.get (Types.dynamic_map_types expected) in
+        let actual_key, actual_value = Option.get (Types.dynamic_map_types actual) in
+        Types.dynamic_map
+          (resolve_external_record_for_expected expected_key actual_key)
+          (resolve_external_record_for_expected expected_value actual_value)
     | TConstraint (Seqable_constraint { element; _ }), TList actual ->
         TList (resolve_external_record_for_expected element actual)
     | TConstraint (Seqable_constraint { element; _ }), TVector actual ->
@@ -15935,7 +15943,7 @@ let create ~compile_expr =
                             Ok
                               (typed_ir TNil
                                  (Semantic_ir.Sequence
-                                    [ reduction; Semantic_ir.Unit ]))
+                                    [ reduction; Semantic_ir.Constructor ("None", None) ]))
                         | TFn _ ->
                             Error.error
                               "run! called with incompatible arguments: callback argument type does not match collection"
@@ -20366,6 +20374,8 @@ let create ~compile_expr =
                       else
                           let expression =
                             match (row_type_name, expected_ty) with
+                            | _, TUnit when Types.equal arg.ty TNil ->
+                                plan_and_emit_argument env ~expected:expected_ty arg
                             | _, TNamed_record _
                               when same_concrete_type expected_ty arg.ty
                                    || named_record_can_specialize expected_ty

@@ -717,7 +717,7 @@ let reset_runtime_root root_name expression =
 
 let rec contains_unresolved_type = function
   | TPoly_variant row -> List.exists contains_unresolved_type (List.filter_map snd row.tags)
-  | TUnknown | TMeta _ | TVar _ -> true
+  | TUnknown | TMeta _ | TVar _ | TNil -> true
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
       contains_unresolved_type ty
@@ -742,7 +742,7 @@ let rec contains_unresolved_type = function
   | TNamed_record record ->
       List.exists contains_unresolved_type record.type_arguments
   | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TOcaml _ ->
+  | TBool | TUnit | TOcaml _ ->
       false
 
 let source_scope_redefable_roots scope =

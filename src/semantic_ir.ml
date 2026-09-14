@@ -176,6 +176,15 @@ let rec never_returns = function
           | _ -> false)
         arguments
   | Sequence expressions -> List.exists never_returns expressions
+  | Match (value, cases) ->
+      never_returns value
+      || (cases <> [] && List.for_all (fun (_, body) -> never_returns body) cases)
+  | Match_guarded (value, cases) ->
+      never_returns value
+      || (cases <> [] && List.for_all (fun (_, _, body) -> never_returns body) cases)
+  | Try (body, handlers) ->
+      never_returns body
+      && List.for_all (fun (_, _, handler) -> never_returns handler) handlers
   | Let (bindings, body) ->
       List.exists (fun (_, value) -> never_returns value) bindings
       || never_returns body

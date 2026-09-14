@@ -232,6 +232,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     match candidates with [ ty ] -> Some ty | _ -> None
   in
   let contextual_field_type env field_ty =
+    let field_ty = clj_function_type field_ty in
     match (field_ty, Env.expected_type env) with
     | (TUnknown | TMeta _ | TVar _), Some expected
       when not
@@ -259,7 +260,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     match Ocaml_signature.field_type type_name field_name with
     | Ok (TOcaml "int") ->
         typed_ir TInt field_expr
-    | Ok field_ty -> typed_ir field_ty field_expr
+    | Ok field_ty -> typed_ir (clj_function_type field_ty) field_expr
     | Error _ -> typed_ir TUnknown field_expr
   in
   let instantiated_record_field scope env type_name arguments keyword =

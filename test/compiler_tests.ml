@@ -16878,6 +16878,25 @@ let test_some_preserves_filtered_tuple_elements () =
 (defn unique-attr? [attr]
   (if-some [definition (get schema attr)] (= (:unique definition) (Some "identity")) false))
 (defn schema-attr? [attr] (contains? #{"index" "unique"} attr))
+(defn normalize-attrs [schema tx]
+  (match tx
+    (Entity entity)
+    (Entity (assoc entity :attrs
+      (ocaml.Rrbvec/to-list
+        (mapv (fn [[attr value]]
+                (tuple attr (if-some [definition (get schema attr)]
+                              (if (some? (:unique definition))
+                                (if (collection-ref? schema (list (Text attr) value)) value (Text "missing"))
+                                value)
+                              value)))
+              (:attrs entity)))))))
+(assert (match (normalize-attrs schema (Entity (record entity (db-id nil)
+                                                (attrs (list (tuple "uuid" (Text "yes")))))))
+          (Entity entity) (= (count (:attrs entity)) 1)))
+(defn install [tx]
+  (let [schema (into {} (list (tuple "uuid" (record schema-entry (unique (Some "identity"))))))]
+    (mapv (fn [entity] (normalize-attrs schema entity)) tx)))
+(assert (= (count (install [(Entity (record entity (db-id nil) (attrs (list))))])) 1))
 (defn select [tx]
   (match tx
     (Entity entity)
@@ -16905,12 +16924,16 @@ type tx_op = Entity of tx_entity | Delete of int
 let make () = Entity { db_id = None; attrs = ["index", One_value (Text "yes")] }
 type datom = { added : bool; value : string }
 let rows () = [{ added = true; value = "old" }; { added = false; value = "kept" }]
+let entries () = List.map (fun row -> row.value, row) (rows ())
+type api = { all : unit -> datom list }
+let api = { all = rows }
 |};
     if Sys.command (compile_only_command dir ml) <> 0 then failwith "host tuple fixture did not compile";
     Lg.Ocaml_signature.set_melange_target false;
     Lg.Ocaml_signature.add_include_dirs [dir];
     let source = {|
-(require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec])
+(ns host-tuple-client
+  (:require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec]))
 (defn schema-attr? [attr] (contains? #{"index" "unique"} attr))
 (defn select [tx]
   (match tx
@@ -16920,6 +16943,8 @@ let rows () = [{ added = true; value = "old" }; { added = false; value = "kept" 
         (host/Entity (assoc entity :db-id nil :attrs (rrbvec/to-list attrs)))))
     _ nil))
 (println (some? (select (host/make))))
+(assert (= (count ((:all host/api))) 2))
+(let [all (:all host/api)] (assert (= (count (all)) 2)))
 (defn rewrite []
   (let [rows (vec (host/rows))]
     (loop [index 0 result []]
@@ -16930,6 +16955,19 @@ let rows () = [{ added = true; value = "old" }; { added = false; value = "kept" 
             (recur (inc index) (conj result (assoc row :value "changed")))
             (recur (inc index) (conj result row))))))))
 (println (clojure.string/join ":" (mapv :value (rewrite))))
+(defn check-value [^:bool valid]
+  (when (not valid) (throw (Failure "inactive"))))
+(defn validate [^:bool whole]
+  (if whole (run! check-value [true]) (check-value true)))
+(assert (nil? (validate true)))
+(assert (nil? (validate false)))
+(defn run-validations [] (run! check-value [true]))
+(assert (nil? (run-validations)))
+(defn has-value? [entries key]
+  (if-some [row (get entries key)] (some? (:value row)) false))
+(let [entries (into {} (host/entries))]
+  (assert (has-value? entries "old"))
+  (assert (not (has-value? entries "missing"))))
 |} in
     let compiled = compile_string_with_stdlib source |> expect_ok in
     let generated = Filename.concat dir "host_tuple_generated.ml" in
@@ -47825,6 +47863,12 @@ let test_try_supports_normal_results_multiple_body_forms_and_handlers () =
       (println "handled")
       (str "invalid:" message))))
 (println (str normal ":" invalid))
+(defn rethrow [value]
+  (try value (catch error (throw error))))
+(assert (= (rethrow 42) 42))
+(assert (= (try (try (raise (Failure "original"))
+                    (catch error (throw (Failure "wrapped"))))
+               (catch (Failure message) message)) "wrapped"))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in

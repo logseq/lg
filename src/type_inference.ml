@@ -55,7 +55,7 @@ let record_field_type params receiver keyword =
       | None -> None
       | Some fields ->
           Option.map
-            (fun (field : field) -> field.ty)
+            (fun (field : field) -> Expression_support.clj_function_type field.ty)
             (Types.find_field keyword fields))
 
 let record_ref_field_value_type params receiver keyword =
@@ -1315,6 +1315,14 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
         | source_ty -> Types.seqable_constraint_element source_ty
       in
       (match (target_ty, source_element) with
+      | TRecord [], Some (TTuple [ key_ty; value_ty ]) ->
+          Types.dynamic_map key_ty value_ty
+      | TRecord [], Some (TVector element_ty) ->
+          Types.dynamic_map element_ty element_ty
+      | TRecord [], _ -> (
+          match Types.dynamic_map_types source_ty with
+          | Some (key_ty, value_ty) -> Types.dynamic_map key_ty value_ty
+          | None -> Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ()))
       | TVector (TUnknown | TMeta _ | TVar _), Some element_ty ->
           TVector element_ty
       | TList (TUnknown | TMeta _ | TVar _), Some element_ty ->
