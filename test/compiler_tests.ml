@@ -1115,6 +1115,50 @@ let test_record_field_names_do_not_expand_inline_core_macros () =
   assert_ocaml_runs "record_field_names_do_not_expand_inline_core_macros" "3\n"
     (compile_string_with_stdlib source |> expect_ok)
 
+let test_source_record_step_function_needs_no_sidecar_signature () =
+  let source =
+    {|
+(ns app.ref-text)
+
+(type-record text-step
+  (step-index :int)
+  (step-result :string))
+
+(defn text-step [^:int index ^:string result]
+  (record text-step
+          (step-index index)
+          (step-result result)))
+
+(defn to-text-step [tag-title ref-title ^:string title ^:int length ^:int index ^:string result]
+  (if (< index length)
+    (match (tag-title title)
+      (Some label)
+      (text-step (inc index) (str result label))
+      None
+      (text-step (inc index) result))
+    (text-step index result)))
+
+(defn to-text [tag-title ref-title ^:string title]
+  (let [length (count title)]
+    (loop [index 0
+           result ""]
+      (if (>= index length)
+        result
+        (let [step (to-text-step tag-title ref-title title length index result)]
+          (recur (:step-index step) (:step-result step)))))))
+
+(println (to-text (fn [value] (Some value)) (fn [_] None) "A"))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/ref_text_without_lgi.cljc" source
+  in
+  assert_ocaml_runs "source_record_step_function_needs_no_sidecar_signature"
+    "A\n" native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/ref_text_without_lgi.cljc"
+       source)
+
 let flush_ocaml_jobs () =
   let compile_jobs = List.rev !pending_compile_jobs in
   let run_jobs = List.rev !pending_run_jobs in
@@ -49005,6 +49049,8 @@ let tests =
       test_source_tap_registry_uses_closed_values );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
+    ( "source record step function needs no sidecar signature",
+      test_source_record_step_function_needs_no_sidecar_signature );
     ( "records, assoc, and dissoc generate typed OCaml",
       test_records_assoc_and_dissoc );
     ( "assoc rejects changing an existing field type",

@@ -3833,6 +3833,21 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             string_assoc_opt binding branch_params
             |> Option.value ~default:initial_payload_ty
           in
+          let payload_ty =
+            match Types.printable_constraint_info payload_ty with
+            | Some value_ty
+              when Type_solver.is_open value_ty
+                   && (match target with
+                      | FList (FSymbol _ :: arguments) ->
+                          List.exists
+                            (fun argument ->
+                              Types.equal (inferred_form_type params argument)
+                                TString)
+                            arguments
+                      | _ -> false) ->
+                TString
+            | Some _ | None -> payload_ty
+          in
           let params = string_remove_assoc binding branch_params in
           let params =
             match shadowed with
