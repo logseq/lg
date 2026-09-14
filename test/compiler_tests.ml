@@ -39584,6 +39584,26 @@ let test_loop_recur_remains_tail_through_macros () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_loop_recur_remains_tail_through_match () =
+  let source =
+    {|
+(def result
+  (loop [current (Some 1)
+         total 0]
+    (match current
+      (Some value)
+      (recur None (+ total value))
+      None
+      (if (= total 1)
+        total
+        (recur None total)))))
+(println result)
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "loop_recur_remains_tail_through_match" "1\n"
+    ocaml_source
+
 let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
   let source =
     {|
@@ -51728,6 +51748,8 @@ let tests =
       test_loop_recur_remains_tail_through_let_and_cond );
     ( "loop/recur remains tail through macros",
       test_loop_recur_remains_tail_through_macros );
+    ( "loop/recur remains tail through match",
+      test_loop_recur_remains_tail_through_match );
     ( "loop and recur delegate OCaml-owned alias compatibility",
       test_loop_and_recur_delegate_ocaml_owned_alias_compatibility );
     ( "loop and recur delegate OCaml-owned mismatch to OCaml",

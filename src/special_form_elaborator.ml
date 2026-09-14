@@ -2764,7 +2764,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                              expressions)
                       ^ "; define a closed sum type containing every branch type")))
                 )
-  and compile_match scope env target_form clauses =
+  and compile_match_with_result compile_result scope env target_form clauses =
     let rec parse_pairs acc = function
       | [] -> Ok (List.rev acc)
       | [ _ ] -> Error.error "match requires pattern/result pairs"
@@ -3061,7 +3061,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Ok (Some guard.semantic_expr)
                 | Ok _ -> Error.error "match guard must be bool")
           in
-          match (guard, compile_expr scope clause_env result_form) with
+          match (guard, compile_result scope clause_env result_form) with
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok guard, Ok result ->
@@ -3136,6 +3136,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             | Some _ | None ->
                 Error.error
                   "conditional branches have incompatible types; define a closed sum type containing every branch type"))
+  and compile_match scope env target_form clauses =
+    compile_match_with_result compile_expr scope env target_form clauses
   and compile_body scope env empty_error forms =
     match forms with
     | [] -> Error.error empty_error
@@ -3705,6 +3707,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                    FVector [ FSymbol target_name; target ];
                    body;
                  ]))
+    | FList (FSymbol "match" :: target_form :: clauses) ->
+        compile_match_with_result
+          (fun scope env form ->
+            compile_loop_tail scope env loop_name param_tys form)
+          scope env target_form clauses
     | (FList (FSymbol name :: args) as form) -> (
         match Env.find_macro ~scope name env with
         | None -> compile_expr scope env form
