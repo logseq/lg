@@ -11946,9 +11946,43 @@ let create ~compile_expr =
                               compile_fields record (pair :: acc)
                                 (field.ocaml_name :: seen) rest)
         in
+        let infer_external_record type_name field_forms =
+          if not (String.contains type_name '.') then
+            Error.error ("unknown record type " ^ type_name)
+          else
+          let field_type field_name =
+            let ocaml_name = Names.sanitize_name field_name in
+            Result.map
+              (fun ty ->
+                let ty = match ty with TOcaml "int" -> TInt | ty -> ty in
+                Types.make_field (":" ^ field_name) ty)
+              (Ocaml_signature.field_type type_name ocaml_name)
+          in
+          let rec fields acc = function
+            | [] ->
+                (match
+                   Types.named_record ~nominal:true ~type_name
+                     ~set_module_name:("Set_" ^ Names.sanitize_name type_name)
+                     (List.rev acc)
+                 with
+                 | TNamed_record record -> Ok record
+                 | _ -> assert false)
+            | FList [ FSymbol field_name; _value_form ] :: rest -> (
+                match field_type field_name with
+                | Ok field -> fields (field :: acc) rest
+                | Error _ ->
+                    Error.error ("unknown record type " ^ type_name))
+            | _ -> Error.error "record fields must be (name value)"
+          in
+          fields [] field_forms
+        in
         match arg_forms with
         | FSymbol type_name :: field_forms -> (
-            match lookup_record_type scope env type_name with
+            match
+              match lookup_record_type scope env type_name with
+              | Ok _ as record -> record
+              | Error _ -> infer_external_record type_name field_forms
+            with
             | Error _ as err -> err
             | Ok (record : named_record) -> (
                 match compile_fields record [] [] field_forms with

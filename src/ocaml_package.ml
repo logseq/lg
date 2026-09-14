@@ -35,10 +35,18 @@ let expand_include_directory directory =
   in
   directory :: compiled_directories directory
 
+let unique_directories directories =
+  List.fold_left
+    (fun unique directory ->
+      if List.mem directory unique then unique else unique @ [ directory ])
+    [] directories
+
 let direct_ocamlpath_directories package =
   let separator = if Sys.win32 then ';' else ':' in
   let package_components = String.split_on_char '.' package in
-  Sys.getenv_opt "OCAMLPATH" |> Option.value ~default:""
+  [ Sys.getenv_opt "OCAMLPATH"; Sys.getenv_opt "LG_OCAML_INCLUDE_PATH" ]
+  |> List.filter_map Fun.id
+  |> String.concat (String.make 1 separator)
   |> String.split_on_char separator
   |> List.filter_map (fun root ->
       if root = "" then None
@@ -49,7 +57,7 @@ let direct_ocamlpath_directories package =
         in
         if contains_compiled_interface directory then Some directory else None)
   |> List.concat_map expand_include_directory
-  |> List.sort_uniq String.compare
+  |> unique_directories
 
 let query_cache = Hashtbl.create 8
 
@@ -60,6 +68,8 @@ let query package =
     let cache_key =
       package ^ "\000"
       ^ (Sys.getenv_opt "OCAMLPATH" |> Option.value ~default:"")
+      ^ "\000"
+      ^ (Sys.getenv_opt "LG_OCAML_INCLUDE_PATH" |> Option.value ~default:"")
     in
     match Hashtbl.find_opt query_cache cache_key with
     | Some result -> result
@@ -77,8 +87,8 @@ let query package =
           match Unix.close_process_full (stdout, stdin, stderr) with
           | WEXITED 0 ->
               Ok
-                (List.sort_uniq String.compare
-                   (directories @ direct_ocamlpath_directories package))
+                (unique_directories
+                   (direct_ocamlpath_directories package @ directories))
           | WEXITED _ | WSIGNALED _ | WSTOPPED _ -> (
               match direct_ocamlpath_directories package with
               | _ :: _ as directories -> Ok directories
@@ -90,10 +100,10 @@ let query package =
 
 let include_dirs packages =
   let rec loop directories = function
-    | [] -> Ok (List.sort_uniq String.compare directories)
+    | [] -> Ok (unique_directories directories)
     | package :: rest -> (
         match query package with
         | Error _ as err -> err
-        | Ok package_dirs -> loop (List.rev_append package_dirs directories) rest)
+        | Ok package_dirs -> loop (directories @ package_dirs) rest)
   in
   loop [] packages

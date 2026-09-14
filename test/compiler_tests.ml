@@ -13634,6 +13634,33 @@ let test_ocaml_record_values_support_included_module_types () =
   assert_ocaml_runs "ocaml_record_values_support_included_module_types"
     "Ada:42\n" ocaml_source
 
+let test_external_ocaml_record_values_infer_fields_without_declaration () =
+  let source =
+    {|
+(require [ocaml.package/unix]
+         [ocaml.Unix :as unix])
+(def stats
+  (record Unix.stats
+    (st-dev 1)
+    (st-ino 2)
+    (st-kind (unix/S_REG))
+    (st-perm 420)
+    (st-nlink 1)
+    (st-uid 501)
+    (st-gid 20)
+    (st-rdev 0)
+    (st-size 42)
+    (st-atime 1.0)
+    (st-mtime 2.0)
+    (st-ctime 3.0)))
+(println (str (:st-size stats) ":" (:st-uid stats)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "external_ocaml_record_values_infer_fields_without_declaration" "42:501\n"
+    ocaml_source
+
 let test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
     {|
@@ -49915,6 +49942,8 @@ let tests =
       test_ocaml_record_values_support_opened_module_types_in_module_body );
     ( "OCaml record values support included module types",
       test_ocaml_record_values_support_included_module_types );
+    ( "external OCaml record values infer fields without declaration",
+      test_external_ocaml_record_values_infer_fields_without_declaration );
     ( "OCaml record values delegate qualified field typecheck to OCaml",
       test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml );
     ( "OCaml record values delegate field typecheck to OCaml",
