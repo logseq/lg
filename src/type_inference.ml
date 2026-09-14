@@ -1389,7 +1389,11 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
 let inferred_form_or_call_type ~lookup_function_ty params form =
   match form, inferred_form_type params form with
   | FSymbol name, TUnknown when not (string_mem_assoc name params) ->
-      lookup_function_ty name |> Result.value ~default:TUnknown
+      (match lookup_function_ty name with
+      | Ok (TFn ([], result)) when Expression_support.is_constructor_name name ->
+          result
+      | Ok ty -> ty
+      | Error _ -> TUnknown)
   | _, ty when Type_solver.is_open ty -> (
       match inferred_call_return_type ~lookup_function_ty params form with
       | TUnknown -> ty

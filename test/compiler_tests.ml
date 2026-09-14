@@ -5585,6 +5585,20 @@ let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
   let ocaml = compile_with_stdlib Lg.Target.Native "test/keyword_signal.cljc" source in
   assert_ocaml_runs "generic_call_infers_nested_host_container_for_keyword_callbacks" "" ocaml
 
+let test_inferred_symbols_distinguish_nullary_constructors_from_functions () =
+  let source = {|
+(type-variant NodeKind (Dialog) (Drawer) (Text))
+(defn modal? [kind] (or (= kind Dialog) (= kind Drawer)))
+(defn make-dialog [] Dialog)
+(defn invoke [f] (f))
+(defn check [] (modal? (invoke make-dialog)))
+(assert (check))
+(assert (not (modal? Text)))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native "test/nullary_symbols.cljc" source in
+  assert_ocaml_runs "inferred_symbols_distinguish_nullary_constructors_from_functions" "" native;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/nullary_symbols.cljc" source)
+
 let test_keyword_callbacks_preserve_mutable_signal_item_types () =
   let source = {|
 (type-record Row (uuid :string) (depth :int) (is-asset :bool))
@@ -50788,6 +50802,8 @@ let tests =
       test_ocaml_list_map_contextualizes_external_record_callback );
     ( "generic call infers nested host container for keyword callbacks",
       test_generic_call_infers_nested_host_container_for_keyword_callbacks );
+    ( "inferred symbols distinguish nullary constructors from functions",
+      test_inferred_symbols_distinguish_nullary_constructors_from_functions );
     ( "keyword callbacks preserve mutable signal item types",
       test_keyword_callbacks_preserve_mutable_signal_item_types );
     ( "declared defn signature contextualizes parameters",
