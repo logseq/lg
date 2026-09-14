@@ -3997,7 +3997,21 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       | TOcaml_app (("array" | "Array.t"), [ inner ]) ->
                           inner
                       | _ -> TUnknown)
-                  | FList (FSymbol name :: arguments) -> (
+                  | FList (FSymbol name :: arguments) as form -> (
+                      let params =
+                        Dependency_graph.symbols form
+                        |> List.sort_uniq String.compare
+                        |> List.filter_map (fun name ->
+                               match List.assoc_opt name (aliases @ local_tys) with
+                               | Some ty -> Some (name, ty)
+                               | None -> (
+                                   match Resolver.lookup_binding scope env name with
+                                   | Ok (binding : Types.binding) -> Some (name, binding.ty)
+                                   | Error _ -> None))
+                      in
+                      match Type_inference.inferred_form_type params form with
+                      | ty when not (Types.equal ty TUnknown) -> ty
+                      | _ -> (
                       match Resolver.lookup_binding scope env name with
                       | Ok { ty = TFn (parameter_tys, return_ty); _ }
                         when List.length parameter_tys
@@ -4020,7 +4034,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   (List.map (form_type aliases) arguments)
                                 arity.return_ty
                           | None -> TUnknown)
-                      | Ok _ | Error _ -> TUnknown)
+                      | Ok _ | Error _ -> TUnknown))
                   | FVector [] -> TVector TUnknown
                   | FVector (first :: rest) ->
                       let element_ty = form_type aliases first in

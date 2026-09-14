@@ -48,6 +48,9 @@ let record_field_type params receiver keyword =
   match string_assoc_opt receiver params with
   | None -> None
   | Some receiver_ty -> (
+      let receiver_ty =
+        host_record_type receiver_ty |> Option.value ~default:receiver_ty
+      in
       match Types.record_fields receiver_ty with
       | None -> None
       | Some fields ->
@@ -2675,9 +2678,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         constrain_symbol (TFn (parameter_types, TBool)) params name
     | FList [ FKeyword keyword; FSymbol name ] ->
+        let field_ty =
+          record_field_type params name keyword
+          |> Option.value ~default:(TNullable (Type_solver.fresh ()))
+        in
         add_record_field_constraint name keyword
-          (TNullable (Type_solver.fresh ()))
-          params
+          field_ty params
     | FList [ FKeyword keyword; FSymbol name; default ] ->
         let field_ty = inferred_form_type params default in
         Result.bind
@@ -6264,10 +6270,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | Ok params -> infer_expected key_ty params key)
     | FList [ FSymbol "__lg_contains"; target; key ] ->
         let target_ty =
-          match target with
-          | FList _ ->
+          match inferred_form_type params target with
+          | TUnknown ->
               inferred_call_return_type ~lookup_function_ty params target
-          | _ -> inferred_form_type params target
+          | ty -> ty
         in
         let concrete_key_ty =
           match target_ty with

@@ -134,7 +134,7 @@ let resolve_host_record env = function
           match records with
           | [ record ] -> TNamed_record (canonicalize_record_name record)
           | _ -> ty))
-  | ty -> ty
+  | ty -> Type_inference_core.host_record_type ty |> Option.value ~default:ty
 
 let rec resolve_callback_record env = function
   | TNamed_record record as ty -> (

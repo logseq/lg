@@ -16843,6 +16843,104 @@ let test_multi_arity_export_preserves_inferred_optional_parameter () =
     (String.concat "\n"
        [ stdlib.ocaml_source; model_ocaml; api_ocaml; consumer_ocaml ])
 
+let test_contains_uses_collection_form_type () =
+  let source = {|
+(defn literal-member? [key] (contains? #{"name" "title"} key))
+(defn constructed-member? [key] (contains? (hash-set "name" "title") key))
+(defn names [] #{"name" "title"})
+(defn returned-member? [key] (contains? (names) key))
+(println (str (literal-member? "name") ":" (literal-member? "missing") ":"
+              (constructed-member? "title") ":" (returned-member? "title")))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "contains_uses_collection_form_type" "true:false:true:true\n" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    compile_string_with_stdlib ~target (source ^ "(literal-member? 42)")
+    |> expect_error_contains "string") [Lg.Target.Native; Lg.Target.Melange]
+
+let test_some_preserves_filtered_tuple_elements () =
+  let source = {|
+(type-variant attr-value (Text :string))
+(type-record entity (db-id :option<int>) (attrs :list<tuple<string;attr-value>>))
+(type-variant transaction (Entity :entity))
+(type-record schema-entry (unique :option<string>))
+(def schema {"uuid" (record schema-entry (unique (Some "identity")))})
+(defn unique-key? [schema key]
+  (let [attr (match key (Text attr) (Some attr))]
+    (if-some [attr attr]
+      (if-some [definition (get schema attr)] (some? (:unique definition)) false)
+      false)))
+(defn collection-ref? [schema values]
+  (and (= (count values) 2)
+       (if-some [key (first values)] (unique-key? schema key) false)))
+(assert (collection-ref? schema (list (Text "uuid") (Text "entity"))))
+(defn unique-attr? [attr]
+  (if-some [definition (get schema attr)] (= (:unique definition) (Some "identity")) false))
+(defn schema-attr? [attr] (contains? #{"index" "unique"} attr))
+(defn select [tx]
+  (match tx
+    (Entity entity)
+    (let [attrs (filterv (fn [[attr _]] (or (unique-attr? attr) (schema-attr? attr))) (:attrs entity))]
+      (when (some (fn [[attr _]] (schema-attr? attr)) attrs)
+        (Entity (assoc entity :db-id nil :attrs (ocaml.Rrbvec/to-list attrs)))))))
+(println (some? (select (Entity (record entity (db-id nil) (attrs (list (tuple "index" (Text "yes")))))))))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "some_preserves_filtered_tuple_elements" "true\n" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_some_preserves_host_tuple_elements () =
+  let dir = Filename.concat (test_dir ()) "host_tuple_fixture" in
+  if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
+  Fun.protect ~finally:(fun () ->
+    Array.iter (fun name -> Sys.remove (Filename.concat dir name)) (Sys.readdir dir);
+    Unix.rmdir dir) (fun () ->
+    let ml = Filename.concat dir "host_tuple_fixture.ml" in
+    write_file ml {|
+type value = Text of string
+type tx_value = One_value of value | One_entity of tx_entity
+and tx_entity = { db_id : int option; attrs : (string * tx_value) list }
+type tx_op = Entity of tx_entity | Delete of int
+let make () = Entity { db_id = None; attrs = ["index", One_value (Text "yes")] }
+type datom = { added : bool; value : string }
+let rows () = [{ added = true; value = "old" }; { added = false; value = "kept" }]
+|};
+    if Sys.command (compile_only_command dir ml) <> 0 then failwith "host tuple fixture did not compile";
+    Lg.Ocaml_signature.set_melange_target false;
+    Lg.Ocaml_signature.add_include_dirs [dir];
+    let source = {|
+(require [ocaml.Host_tuple_fixture :as host] [ocaml.Rrbvec :as rrbvec])
+(defn schema-attr? [attr] (contains? #{"index" "unique"} attr))
+(defn select [tx]
+  (match tx
+    (host/Entity entity)
+    (let [attrs (filterv (fn [[attr _]] (schema-attr? attr)) (:attrs entity))]
+      (when (some (fn [[attr _]] (schema-attr? attr)) attrs)
+        (host/Entity (assoc entity :db-id nil :attrs (rrbvec/to-list attrs)))))
+    _ nil))
+(println (some? (select (host/make))))
+(defn rewrite []
+  (let [rows (vec (host/rows))]
+    (loop [index 0 result []]
+      (if (= index (count rows))
+        result
+        (let [row (nth rows index)]
+          (if (:added row)
+            (recur (inc index) (conj result (assoc row :value "changed")))
+            (recur (inc index) (conj result row))))))))
+(println (clojure.string/join ":" (mapv :value (rewrite))))
+|} in
+    let compiled = compile_string_with_stdlib source |> expect_ok in
+    let generated = Filename.concat dir "host_tuple_generated.ml" in
+    write_file generated (native_stdlib_prelude () ^ "\n" ^ strip_native_stdlib_prelude compiled);
+    if Sys.command (compile_only_command dir generated) <> 0 then failwith "host tuple generated code did not compile";
+    let output = Filename.concat dir "result.out" in
+    if Sys.command (run_compiled_module_command dir
+      [Filename.concat dir "host_tuple_fixture.cmo"; Filename.concat dir "host_tuple_generated.cmo"] output) <> 0
+    then failwith "host tuple generated code did not run";
+    if read_file output <> "true\nchanged:kept\n" then failwith "host tuple selection changed")
+
 let test_contains_propagates_protocol_set_element_to_parameter () =
   let source =
     {|
@@ -51349,6 +51447,9 @@ let tests =
       test_nullable_destructured_options_flow_through_forwarding_functions );
     ( "multi-arity export preserves inferred optional parameter",
       test_multi_arity_export_preserves_inferred_optional_parameter );
+    ( "contains uses collection form type", test_contains_uses_collection_form_type );
+    ( "some preserves filtered tuple elements", test_some_preserves_filtered_tuple_elements );
+    ( "some preserves host tuple elements", test_some_preserves_host_tuple_elements );
     ( "contains propagates protocol set element to parameter",
       test_contains_propagates_protocol_set_element_to_parameter );
     ( "match infers optional closed variant parameter",
