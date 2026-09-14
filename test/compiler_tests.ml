@@ -29564,6 +29564,18 @@ let test_group_by_map_entry_destructuring_preserves_named_record_keys () =
 (assert (= (count (find-group (GroupKey. 'alpha))) 2))
 (assert (= (count (find-group (GroupKey. 'missing))) 0))
 (type-record OutlineSummary (uuid :string) (title :string))
+(type-record OtherOutlineSummary (uuid :string) (title :string) (extra :int))
+(def ranked-summaries
+  (sort (fn [[left-used left] [right-used right]]
+          (let [used (compare right-used left-used)
+                title (compare (:title left) (:title right))]
+            (cond (not= used 0) used (not= title 0) title
+                  :else (compare (:uuid left) (:uuid right)))))
+        [(tuple 10 (record OutlineSummary (uuid "a") (title "A")))
+         (tuple 20 (record OutlineSummary (uuid "b") (title "B")))
+         (tuple 20 (record OutlineSummary (uuid "d") (title "A")))
+         (tuple 20 (record OutlineSummary (uuid "c") (title "A")))]))
+(assert (= (mapv (fn [[_ item]] (:uuid item)) ranked-summaries) ["c" "d" "b" "a"]))
 (type-record OutlineBlock (uuid :string) (parent-id :option<string>) (order :option<string>) (created-at :int))
 (defn compare-outline [left right]
   (match (tuple (:order left) (:order right))

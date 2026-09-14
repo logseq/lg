@@ -17267,7 +17267,12 @@ let create ~compile_expr =
             match Collection_capability.to_seq_expr env collection with
             | Error _ -> Error.error "sort expects a seqable value"
             | Ok (inner, sequence) -> (
-                match compile_function_arg scope env comparator_form with
+                match
+                  compile_function_arg scope
+                    (Env.with_expected_type
+                       (Some (TFn ([ inner; inner ], TInt))) env)
+                    comparator_form
+                with
                 | Error _ as error -> error
                 | Ok
                     ({ ty = TFn ([ left_ty; right_ty ], TInt); _ } as comparator)
