@@ -2956,12 +2956,40 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       Error.error "constructor pattern arity mismatch"
                   | Some _ -> Error.error (name ^ " is not a constructor")
                   | None ->
-                      let opaque_payload_tys =
-                        List.map (fun _ -> TUnknown) payload_patterns
+                      let constructor_name =
+                        resolve_ocaml_constructor_target scope env name
                       in
-                      compile_constructor_payloads
-                        (resolve_ocaml_constructor_target scope env name)
-                        opaque_payload_tys)
+                      (match
+                         Ocaml_signature.constructor_signature
+                           constructor_name
+                       with
+                      | Error _ ->
+                          let opaque_payload_tys =
+                            List.map (fun _ -> TUnknown) payload_patterns
+                          in
+                          compile_constructor_payloads constructor_name
+                            opaque_payload_tys
+                      | Ok signature when
+                          List.length signature.payload_types
+                          = List.length payload_patterns ->
+                          let constructor_ty =
+                            TFn
+                              ( signature.payload_types,
+                                signature.result_type )
+                          in
+                          let payload_tys =
+                            match
+                              Types.instantiate_type
+                                ~templates:[ signature.result_type ]
+                                ~actuals:[ target_ty ] constructor_ty
+                            with
+                            | TFn (payload_tys, _) -> payload_tys
+                            | _ -> signature.payload_types
+                          in
+                          compile_constructor_payloads constructor_name
+                            payload_tys
+                      | Ok _ ->
+                          Error.error "constructor pattern arity mismatch"))
               | Ok constructor -> (
                   Result.bind (constructor_type target_ty constructor) (fun constructor_ty ->
                   match constructor_ty with

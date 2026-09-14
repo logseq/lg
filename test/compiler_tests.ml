@@ -11512,6 +11512,35 @@ let test_direct_external_package_constructor_payloads_are_checked_by_ocaml () =
 |}
   |> expect_error_contains "string"
 
+let test_external_variant_pattern_payloads_are_inferred () =
+  let source =
+    {|
+(require [ocaml.package/unix]
+         [ocaml.Unix :as unix])
+(defn unix-address-path-long? [candidate]
+  (match candidate
+    (unix/ADDR_UNIX path) (> (String.length path) 4)
+    _ false))
+(println (unix-address-path-long? (unix/ADDR_UNIX "/tmp/lg.sock")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "external_variant_pattern_payloads_are_inferred" "true\n"
+    ocaml_source
+
+let test_int64_values_support_static_ordering () =
+  let source =
+    {|
+(require [ocaml.Int64 :as int64])
+(defn non-negative-int64? [value]
+  (>= value int64/zero))
+(println (non-negative-int64? (int64/of-int 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "int64_values_support_static_ordering" "true\n"
+    ocaml_source
+
 let test_direct_ocaml_calls_delegate_errors_to_ocaml () =
   Lg.Compiler.compile_string {|(def answer (Stdlib.abs "bad"))|}
   |> expect_error_contains "string";
@@ -49676,6 +49705,10 @@ let tests =
       test_direct_external_package_constructors_reject_bad_arity );
     ( "direct external package constructor payloads are checked by OCaml",
       test_direct_external_package_constructor_payloads_are_checked_by_ocaml );
+    ( "external variant pattern payloads are inferred",
+      test_external_variant_pattern_payloads_are_inferred );
+    ( "int64 values support static ordering",
+      test_int64_values_support_static_ordering );
     ( "direct OCaml calls delegate errors to OCaml",
       test_direct_ocaml_calls_delegate_errors_to_ocaml );
     ( "generic OCaml calls reject bad forms",

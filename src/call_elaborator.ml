@@ -15949,7 +15949,10 @@ let create ~compile_expr =
             | Ok signature ->
                 constructor ~constructor_name
                   ~payload_tys:signature.payload_types
-                  (fun _ -> signature.result_type)
+                  (fun args ->
+                    Types.instantiate_type ~templates:signature.payload_types
+                      ~actuals:(List.map (fun arg -> arg.ty) args)
+                      signature.result_type)
                   (List.length signature.payload_types)))
               | _ -> compile_named_function_call scope env name arg_forms)
   and compile_inferred_ocaml_call scope env function_name value_forms =

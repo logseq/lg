@@ -5742,12 +5742,28 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
            ( "__lg_numeric-equal" | "__lg_less" | "__lg_less-equal"
            | "__lg_greater" | "__lg_greater-equal" )
         :: args) ->
+        let ordering_type = function
+          | FSymbol name -> (
+              match string_assoc_opt name params with
+              | Some ty -> ty
+              | None -> (
+                  match lookup_function_ty name with
+                  | Ok ty -> ty
+                  | Error _ -> TUnknown))
+          | arg -> inferred_form_or_call_type ~lookup_function_ty params arg
+        in
+        let ordering_type arg = ordering_type arg |> Types.constraint_value_type in
         let expected_ty =
           if
             List.exists
-              (fun arg -> Types.equal (numeric_form_type params arg) TFloat)
+              (fun arg -> Types.equal (ordering_type arg) TFloat)
               args
           then TFloat
+          else if
+            List.exists
+              (fun arg -> Types.equal (ordering_type arg) (TOcaml "int64"))
+              args
+          then TOcaml "int64"
           else TInt
         in
         infer_expected_all expected_ty params args

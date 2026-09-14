@@ -394,6 +394,18 @@ let pairwise_expressions op args =
   in
   loop [] args
 
+let host_ordering_int_type = function
+  | TInt | TOcaml "int" | TOcaml "int64" -> true
+  | _ -> false
+
+let host_ordering_int_family = function
+  | TInt | TOcaml "int" -> true
+  | _ -> false
+
+let host_ordering_int64_type = function
+  | TOcaml "int64" -> true
+  | _ -> false
+
 let host_int_ordering_expr op left right =
   match (left.ty, right.ty) with
   | TOcaml "int", TInt | TInt, TOcaml "int" ->
@@ -496,12 +508,13 @@ let compile ?env name args =
           | None ->
               Error.error (name ^ " expects numeric arguments")
         else if
-          List.exists (fun arg -> Types.equal arg.ty (TOcaml "int")) args
-          && List.for_all
-               (fun arg ->
-                 Types.equal arg.ty TInt
-                 || Types.equal arg.ty (TOcaml "int"))
-               args
+          List.exists (fun arg -> host_ordering_int_type arg.ty) args
+          && (List.for_all
+                (fun arg -> host_ordering_int_family arg.ty)
+                args
+             || List.for_all
+                  (fun arg -> host_ordering_int64_type arg.ty)
+                  args)
         then
           Ok
             (typed_ir TBool
