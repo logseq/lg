@@ -12149,14 +12149,25 @@ let create ~compile_expr =
                                           expected.type_arguments)) ->
                             expected
                         | _ -> (
+                            (* Field refinement is positional, but record forms
+                               may supply their fields in any order. *)
+                            let ordered_values =
+                              List.map
+                                (fun (field : field) ->
+                                  List.find
+                                    (fun ((actual : field), _) ->
+                                      actual.ocaml_name = field.ocaml_name)
+                                    values)
+                                (Types.record_constructor_fields record.fields)
+                            in
                             match
                               Types.instantiate_type_fields
                                 ~templates:
                                   (List.map
                                      (fun ((field : field), _) -> field.ty)
-                                     values)
+                                     ordered_values)
                                 ~actuals:
-                                  (List.map (fun (_, value) -> value.ty) values)
+                                  (List.map (fun (_, value) -> value.ty) ordered_values)
                                 (TNamed_record record)
                             with
                             | TNamed_record record -> record

@@ -23348,6 +23348,31 @@ let test_or_infers_optional_resolver_return () =
   assert_ocaml_runs "or_infers_optional_resolver_return" "" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange filename source)
 
+let test_record_preserves_optional_calls_after_required_fields () =
+  let source =
+    {|
+(type-record DecodedStatus (uuid :string) (ident :option<string>) (title :string) (icon :option<string>))
+(defn status-fields [^:DecodedStatus status]
+  (vec (keep (fn [[key value]] (when-some [value value] (tuple key value)))
+             [(tuple "ident" (:ident status)) (tuple "icon" (:icon status))])))
+(defn field [^:map<string;string> fields key] (get fields key))
+(defn decode-status [fields]
+  (when-some [uuid (field fields "uuid")]
+    (when-some [title (field fields "title")]
+      (record DecodedStatus (uuid uuid) (title title)
+              (ident (field fields "ident")) (icon (field fields "icon"))))))
+(assert (= (when-some [status (decode-status {"uuid" "id" "title" "Task"})] (:title status)) (Some "Task")))
+(assert (nil? (when-some [status (decode-status {"uuid" "id" "title" "Task"})] (:ident status))))
+(assert (= (when-some [status (decode-status {"uuid" "id" "title" "Task" "ident" "task"})] (:ident status)) (Some "task")))
+(assert (= (when-some [status (decode-status {"uuid" "id" "title" "Task" "ident" "task"})]
+             (count (status-fields status))) (Some 1)))
+|}
+  in
+  let filename = "app/optional_record_calls.cljc" in
+  let native_source = compile_with_stdlib Lg.Target.Native filename source in
+  assert_ocaml_runs "record_preserves_optional_calls_after_required_fields" "" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange filename source)
+
 let test_keyword_let_bindings_preserve_static_map_access () =
   let source =
     {|
@@ -52239,6 +52264,8 @@ let tests =
       test_record_equality_allows_nil_and_nullable_fields );
     ( "or infers optional resolver return",
       test_or_infers_optional_resolver_return );
+    ( "record preserves optional calls after required fields",
+      test_record_preserves_optional_calls_after_required_fields );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",
