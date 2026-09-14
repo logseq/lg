@@ -236,7 +236,15 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
       (match Resolver.lookup_record_type scope env record_name with
       | Ok record
         when List.length record.type_parameters = List.length arguments ->
-          TNamed_record { record with type_arguments = arguments }
+          let parameters = List.map (fun _ -> Type_solver.fresh ()) arguments in
+          let renamings =
+            Type_solver.of_list
+              (List.map2
+                 (fun parameter argument -> Type_solver.Declared parameter, argument)
+                 record.type_parameters parameters)
+          in
+          Types.instantiate_type ~templates:parameters ~actuals:arguments
+            (Type_solver.apply renamings (TNamed_record record))
       | Ok _ | Error _ -> TOcaml_app (name, arguments)))
   | TOcaml name as ty ->
       let record_prefix = "__lg_record:" in

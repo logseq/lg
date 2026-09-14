@@ -1387,15 +1387,17 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
   | _ -> TUnknown
 
 let inferred_form_or_call_type ~lookup_function_ty params form =
-  match inferred_form_type params form with
-  | ty when Type_solver.is_open ty -> (
+  match form, inferred_form_type params form with
+  | FSymbol name, TUnknown when not (string_mem_assoc name params) ->
+      lookup_function_ty name |> Result.value ~default:TUnknown
+  | _, ty when Type_solver.is_open ty -> (
       match inferred_call_return_type ~lookup_function_ty params form with
       | TUnknown -> ty
       | inferred -> (
           match Expression_support.merge_branch_types ty inferred with
           | Some merged -> merged
           | None -> inferred))
-  | ty -> ty
+  | _, ty -> ty
 
 let rec form_checks_reduced name = function
   | FList [ FSymbol predicate; FSymbol candidate ] ->

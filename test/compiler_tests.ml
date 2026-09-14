@@ -5585,6 +5585,33 @@ let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
   let ocaml = compile_with_stdlib Lg.Target.Native "test/keyword_signal.cljc" source in
   assert_ocaml_runs "generic_call_infers_nested_host_container_for_keyword_callbacks" "" ocaml
 
+let test_keyword_callbacks_preserve_mutable_signal_item_types () =
+  let source = {|
+(type-record Row (uuid :string) (depth :int) (is-asset :bool))
+(type-record Block (uuid :string) (is-asset :bool))
+(type-record Signal [value] (current :ref<value>))
+(signature sample [value] :fn<Signal<value>;value>)
+(defn sample [source] @(:current source))
+(signature own [value] :fn<Signal<value>;Signal<value>>)
+(defn own [source] source)
+(signature signal-map [left right output]
+  :overload<fn<fn<left;output>;Signal<left>;Signal<output>>;fn<fn<left;right;output>;Signal<left>;Signal<right>;Signal<output>>>)
+(defn signal-map
+  ([f source] (record Signal (current (atom (f (sample source))))))
+  ([f left right] (record Signal (current (atom (f (sample left) (sample right)))))))
+(defn row-uuid [row] (let [_depth (:depth row)] (:uuid row)))
+(defn render [source]
+  (let [row (sample source)
+        uuid (own (signal-map row-uuid source))
+        asset (own (signal-map :is-asset source))]
+    (sample asset)))
+(assert (= (render (record Signal (current (atom (record Row (uuid "a") (depth 0) (is-asset true)))))) true))
+(assert (= (render (record Signal (current (atom (record Row (uuid "b") (depth 0) (is-asset false)))))) false))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native "test/keyword_mutable_signal.cljc" source in
+  assert_ocaml_runs "keyword_callbacks_preserve_mutable_signal_item_types" "" native;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/keyword_mutable_signal.cljc" source)
+
 let test_declared_defn_signature_contextualizes_parameters () =
   let source =
     {|
@@ -50761,6 +50788,8 @@ let tests =
       test_ocaml_list_map_contextualizes_external_record_callback );
     ( "generic call infers nested host container for keyword callbacks",
       test_generic_call_infers_nested_host_container_for_keyword_callbacks );
+    ( "keyword callbacks preserve mutable signal item types",
+      test_keyword_callbacks_preserve_mutable_signal_item_types );
     ( "declared defn signature contextualizes parameters",
       test_declared_defn_signature_contextualizes_parameters );
     ( "explicit sum constructors keep collections static",
