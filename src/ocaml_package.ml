@@ -61,6 +61,11 @@ let direct_ocamlpath_directories package =
 
 let query_cache = Hashtbl.create 8
 
+let authoritative_include_path () =
+  match Sys.getenv_opt "LG_OCAML_INCLUDE_PATH_AUTHORITATIVE" with
+  | Some ("1" | "true" | "TRUE" | "yes" | "YES") -> true
+  | _ -> false
+
 let query package =
   if not (valid_name package) then
     Error.error ("invalid OCaml package name " ^ package)
@@ -74,6 +79,7 @@ let query package =
     match Hashtbl.find_opt query_cache cache_key with
     | Some result -> result
     | None ->
+        let direct_dirs = direct_ocamlpath_directories package in
         let argv = [| "ocamlfind"; "query"; "-r"; "-format"; "%d"; package |] in
         let stdout, stdin, stderr =
           Unix.open_process_args_full "ocamlfind" argv (Unix.environment ())
@@ -86,11 +92,17 @@ let query package =
         let result =
           match Unix.close_process_full (stdout, stdin, stderr) with
           | WEXITED 0 ->
-              Ok
-                (unique_directories
-                   (direct_ocamlpath_directories package @ directories))
+              let directories =
+                if authoritative_include_path ()
+                then
+                  match direct_dirs with
+                  | _ :: _ -> direct_dirs
+                  | [] -> directories
+                else direct_dirs @ directories
+              in
+              Ok (unique_directories directories)
           | WEXITED _ | WSIGNALED _ | WSTOPPED _ -> (
-              match direct_ocamlpath_directories package with
+              match direct_dirs with
               | _ :: _ as directories -> Ok directories
               | [] ->
                   Error.error ("OCaml package " ^ package ^ " was not found"))
