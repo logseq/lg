@@ -23348,6 +23348,25 @@ let test_or_infers_optional_resolver_return () =
   assert_ocaml_runs "or_infers_optional_resolver_return" "" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange filename source)
 
+let test_callback_preserves_nominal_record_after_field_rendering () =
+  let source =
+    {|
+(type-record Status (uuid :string) (title :string))
+(type-record OtherStatus (uuid :string) (title :string) (extra :int))
+(defn status-title [^:Status status] (:title status))
+(defn render-statuses [statuses]
+  (vec (mapcat (fn [status]
+                 (let [id (str "status/" (:uuid status))]
+                   [id (status-title status)])) statuses)))
+(assert (= (render-statuses [(record Status (uuid "a") (title "Task"))]) ["status/a" "Task"]))
+(assert (= (render-statuses []) []))
+|}
+  in
+  let filename = "app/callback_nominal_record.cljc" in
+  let native_source = compile_with_stdlib Lg.Target.Native filename source in
+  assert_ocaml_runs "callback_preserves_nominal_record_after_field_rendering" "" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange filename source)
+
 let test_record_preserves_optional_calls_after_required_fields () =
   let source =
     {|
@@ -52269,6 +52288,8 @@ let tests =
       test_or_infers_optional_resolver_return );
     ( "record preserves optional calls after required fields",
       test_record_preserves_optional_calls_after_required_fields );
+    ( "callback preserves nominal record after field rendering",
+      test_callback_preserves_nominal_record_after_field_rendering );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",

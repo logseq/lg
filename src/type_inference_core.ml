@@ -449,10 +449,10 @@ and refine_nonmatching_type existing inferred =
           fields = merge_record_fields existing.fields inferred.fields;
         }
   | (TRecord _ as structural), (TNamed_record _ as named)
-    when Types.row_compatible ~expected:structural ~actual:named ->
+    when inferred_row_compatible structural named ->
       named
   | (TNamed_record _ as named), (TRecord _ as structural)
-    when Types.row_compatible ~expected:structural ~actual:named ->
+    when inferred_row_compatible structural named ->
       named
   | (TRecord _ as structural), host
     when Option.is_some (host_record_type host) ->
@@ -473,6 +473,20 @@ and refine_nonmatching_type existing inferred =
         ( List.map2 refine_type existing_params inferred_params,
           refine_type existing_return inferred_return )
   | existing, _ -> existing
+
+and inferred_row_compatible structural named =
+  match (structural, named) with
+  | TRecord fields, TNamed_record record ->
+      let fields =
+        List.map
+          (fun (field : field) ->
+            match Types.find_field field.keyword record.fields with
+            | None -> field
+            | Some actual -> { field with ty = refine_type field.ty actual.ty })
+          fields
+      in
+      Types.row_compatible ~expected:(TRecord fields) ~actual:named
+  | _ -> false
 
 and merge_record_fields existing inferred =
   List.fold_left
