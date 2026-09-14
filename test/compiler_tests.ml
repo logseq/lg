@@ -1131,7 +1131,7 @@ let test_source_record_step_function_needs_no_sidecar_signature () =
 
 (defn to-text-step [tag-title ref-title ^:string title ^:int length ^:int index ^:string result]
   (if (< index length)
-    (match (tag-title title)
+    (match (if false None (tag-title title))
       (Some label)
       (text-step (inc index) (str result label))
       None

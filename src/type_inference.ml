@@ -3817,6 +3817,37 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               infer_expected expected_ty params target))
     in
     let infer_option_clause params binding result =
+      let rec form_contains_symbol name = function
+        | FSymbol candidate -> String.equal candidate name
+        | FList forms | FVector forms ->
+            List.exists (form_contains_symbol name) forms
+        | FMap entries ->
+            List.exists
+              (fun (key, value) ->
+                form_contains_symbol name key || form_contains_symbol name value)
+              entries
+        | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FBool _
+        | FRegex _ | FKeyword _ | FCoreSymbol _ ->
+            false
+      in
+      let rec form_uses_symbol_in_string_str params name = function
+        | FList (FSymbol "__lg_str" :: args) ->
+            List.exists (form_contains_symbol name) args
+            && List.exists
+                 (fun arg -> Types.equal (inferred_form_type params arg) TString)
+                 args
+        | FList forms | FVector forms ->
+            List.exists (form_uses_symbol_in_string_str params name) forms
+        | FMap entries ->
+            List.exists
+              (fun (key, value) ->
+                form_uses_symbol_in_string_str params name key
+                || form_uses_symbol_in_string_str params name value)
+              entries
+        | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FBool _
+        | FRegex _ | FSymbol _ | FKeyword _ | FCoreSymbol _ ->
+            false
+      in
       let initial_payload_ty =
         match inferred_form_type params target with
         | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
@@ -3837,14 +3868,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             match Types.printable_constraint_info payload_ty with
             | Some value_ty
               when Type_solver.is_open value_ty
-                   && (match target with
-                      | FList (FSymbol _ :: arguments) ->
-                          List.exists
-                            (fun argument ->
-                              Types.equal (inferred_form_type params argument)
-                                TString)
-                            arguments
-                      | _ -> false) ->
+                   && form_uses_symbol_in_string_str branch_params binding
+                        result ->
                 TString
             | Some _ | None -> payload_ty
           in
