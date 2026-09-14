@@ -23333,6 +23333,21 @@ let test_record_equality_allows_nil_and_nullable_fields () =
     (compile_with_stdlib Lg.Target.Melange "app/record_equality_nil.cljc"
        source)
 
+let test_or_infers_optional_resolver_return () =
+  let source =
+    {|
+(defn resolve-name [resolve name]
+  (or (when (= name "known") "known") (resolve name)))
+(assert (= (resolve-name (fn [name] (Some (str "new:" name))) "other") (Some "new:other")))
+(assert (= (resolve-name (fn [_] (throw (Failure "must short circuit"))) "known") (Some "known")))
+(assert (nil? (resolve-name (fn [_] nil) "missing")))
+|}
+  in
+  let filename = "app/optional_resolver.cljc" in
+  let native_source = compile_with_stdlib Lg.Target.Native filename source in
+  assert_ocaml_runs "or_infers_optional_resolver_return" "" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange filename source)
+
 let test_keyword_let_bindings_preserve_static_map_access () =
   let source =
     {|
@@ -52222,6 +52237,8 @@ let tests =
       test_update_supports_static_ifn_updaters );
     ( "record equality allows nil and nullable fields",
       test_record_equality_allows_nil_and_nullable_fields );
+    ( "or infers optional resolver return",
+      test_or_infers_optional_resolver_return );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",

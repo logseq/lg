@@ -2662,7 +2662,20 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         (match List.rev conditions with
         | [] -> Ok params
         | last :: reversed_prefix ->
-            Result.bind (infer_truthy params last) (fun params ->
+            let expected_result =
+              List.rev reversed_prefix
+              |> List.find_map (fun form ->
+                     let ty = inferred_form_or_call_type ~lookup_function_ty params form in
+                     if Type_solver.is_open ty || Types.is_dynamic ty
+                        || Types.equal ty TNil || Types.equal ty TBool
+                     then None else Some ty)
+            in
+            let infer_last =
+              match expected_result with
+              | Some ty -> infer_expected ty params last
+              | None -> infer_truthy params last
+            in
+            Result.bind infer_last (fun params ->
                 let result_ty = inferred_form_type params last in
                 List.fold_left
                   (fun result condition ->
