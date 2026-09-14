@@ -5574,10 +5574,16 @@ let test_generic_call_infers_nested_host_container_for_keyword_callbacks () =
   (:name (:current source)))
 (defn render []
   (consume (signal-map :graphs (make-model-signal)) :id graph-title))
+(type-record other-graph (id :string) (extra :int))
+(defn render-id [source]
+  (let [title (graph-title source)
+        id (signal-map :id source)]
+    (str title ":" (:current id))))
+(assert (= (render-id (make-graph-item)) "Main:g1"))
 |}
   in
-  let ocaml = compile_string_with_stdlib source |> expect_ok in
-  ignore ocaml
+  let ocaml = compile_with_stdlib Lg.Target.Native "test/keyword_signal.cljc" source in
+  assert_ocaml_runs "generic_call_infers_nested_host_container_for_keyword_callbacks" "" ocaml
 
 let test_declared_defn_signature_contextualizes_parameters () =
   let source =

@@ -1549,6 +1549,8 @@ let fn_code ?(row_param_type_names = []) parts =
       match (left, right) with
       | TNamed_record left, TNamed_record right ->
           Type_id.equal left.type_id right.type_id
+          && List.length left.type_arguments = List.length right.type_arguments
+          && List.for_all2 Types.equal left.type_arguments right.type_arguments
       | _ -> Types.equal left right
     in
     let returned_name =
