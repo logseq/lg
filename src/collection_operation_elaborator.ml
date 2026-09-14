@@ -4,6 +4,7 @@ open Expression_support
 module Env = Compiler_environment
 
 let dissoc_expansion_counter = ref 0
+let assoc_expansion_counter = ref 0
 
 type expression_result = (typed_expr, Error.t) result
 type call = string -> Env.t -> Ast.form list -> expression_result
@@ -2290,6 +2291,36 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (FList (FSymbol "IFind/-find" :: arg_forms))))
       | _, Ok _ -> Error.error "find expects 2 arguments"
     and compile_assoc scope env arg_forms =
+      let needs_binding = function
+        | FList _ | FMap _ | FVector _ -> true
+        | _ -> false
+      in
+      let rec operands = function
+        | _key :: value :: rest -> value :: operands rest
+        | _ -> []
+      in
+      match arg_forms with
+      | target :: pairs when List.exists needs_binding (target :: operands pairs) ->
+          Result.bind (compile_expr scope env target) (fun receiver ->
+          match Function_elaborator.infer_named_record scope env receiver.ty with
+          | TNamed_record { nominal = true; _ } -> compile_assoc_bound scope env arg_forms
+          | _ ->
+          incr assoc_expansion_counter;
+          let prefix = "__lg_assoc_" ^ string_of_int !assoc_expansion_counter ^ "_" in
+          let target_name = FSymbol (prefix ^ "target") in
+          let rec bind_pairs index bindings args = function
+            | key :: value :: rest ->
+                let name = FSymbol (prefix ^ string_of_int index) in
+                bind_pairs (index + 1) (value :: name :: bindings)
+                  (name :: key :: args) rest
+            | rest ->
+                FList [FSymbol "let";
+                       FVector (target_name :: target :: List.rev bindings);
+                       FList (FSymbol "__lg_assoc" :: target_name :: List.rev args @ rest)]
+          in
+          compile_expr scope env (bind_pairs 0 [] [] pairs))
+      | _ -> compile_assoc_bound scope env arg_forms
+    and compile_assoc_bound scope env arg_forms =
       match arg_forms with
     | target_form :: pair_forms -> (
           let rec resolve_pair_keys = function

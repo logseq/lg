@@ -5620,6 +5620,33 @@ let test_core_name_conflicts_require_explicit_exclusion () =
   assert_ocaml_runs "core_name_conflicts_require_explicit_exclusion" "" (compile Lg.Target.Native);
   ignore (compile Lg.Target.Melange)
 
+let test_record_assoc_evaluates_operands_once () =
+  let source = {|
+(def events (atom []))
+(defn source-record []
+  (swap! events conj 1)
+  {:label "before" :amount 2 :enabled true})
+(defn replacement []
+  (swap! events conj 2)
+  "after")
+(def updated (assoc (source-record) :label (replacement)))
+(assert (= @events [1 2]))
+(assert (= (:label updated) "after"))
+(assert (= (:amount updated) 2))
+(reset! events [])
+(def extended (assoc (source-record) :extra (replacement)))
+(assert (= @events [1 2]))
+(assert (= (:extra extended) "after"))
+(assert (= (:label extended) "before"))
+(reset! events [])
+(def overwritten (assoc (source-record) :label (replacement) :label "last"))
+(assert (= @events [1 2]))
+(assert (= (:label overwritten) "last"))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native "test/record_assoc_once.cljc" source in
+  assert_ocaml_runs "record_assoc_evaluates_operands_once" "" native;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/record_assoc_once.cljc" source)
+
 let test_sort_by_first_projects_tuple_keys () =
   let source = {|
 (assert (= (mapv second (sort-by first [(tuple "b" 1) (tuple "a" 2)])) [2 1]))
@@ -50877,6 +50904,8 @@ let tests =
       test_core_name_conflicts_require_explicit_exclusion );
     ( "sort-by first projects tuple keys",
       test_sort_by_first_projects_tuple_keys );
+    ( "record assoc evaluates operands once",
+      test_record_assoc_evaluates_operands_once );
     ( "inferred callback captures shadow global functions",
       test_inferred_callback_captures_shadow_global_functions );
     ( "inferred symbols distinguish nullary constructors from functions",

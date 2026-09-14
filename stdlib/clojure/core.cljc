@@ -747,18 +747,8 @@
 (defn assoc
   {:inline
    (fn [collection key value & keyvals]
-     (loop [expression (list '__lg_assoc collection key value)
-            remaining keyvals]
-       (if (nil? remaining)
-         expression
-         (let [tail (next remaining)]
-           (if (nil? tail)
-             (cons '__lg_assoc
-                   (cons collection (cons key (cons value keyvals))))
-             (recur (list '__lg_assoc expression
-                          (first remaining)
-                          (first tail))
-                    (next tail)))))))}
+     (cons '__lg_assoc
+           (cons collection (cons key (cons value keyvals)))))}
   ([collection key value]
    (IAssociative/-assoc collection key value))
   ([collection key value & keyvals]
