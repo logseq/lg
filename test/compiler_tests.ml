@@ -5623,6 +5623,35 @@ let test_core_name_conflicts_require_explicit_exclusion () =
   assert_ocaml_runs "core_name_conflicts_require_explicit_exclusion" "" (compile Lg.Target.Native);
   ignore (compile Lg.Target.Melange)
 
+let test_lookup_infers_nested_variant_payload () =
+  let source = {|
+(defn lookup-field [entries key]
+  (some (fn [entry] (match entry (tuple name value) (when (= name key) value))) entries))
+(defn string-field [entries key]
+  (match (lookup-field entries key)
+    (Some (tag String value)) value
+    (Some (tag Null)) "null"
+    _ "missing"))
+(println (string-field [(tuple "title" (tag String "hello"))] "title"))
+(println (string-field [(tuple "title" (tag String "hello"))] "missing"))
+(println (string-field [(tuple "title" (tag Null))] "title"))
+(defn tuple-field [entry]
+  (match entry
+    (tuple (tag Empty) _) "empty"
+    (tuple (tag Text value) _) value
+    _ "other"))
+(println (tuple-field (tuple (tag Empty) 1)))
+(println (tuple-field (tuple (tag Text "tuple") 2)))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native "test/lookup_variant.cljc" source in
+  assert_ocaml_runs "lookup_infers_nested_variant_payload" "hello\nmissing\nnull\nempty\ntuple\n" native;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/lookup_variant.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "test/closed_nested_variant.cljc" {|
+(signature reject-unknown :fn<option<variant<Known:int>>;int>)
+(defn reject-unknown [value]
+  (match value (Some (tag Unknown payload)) payload _ 0))
+|} |> expect_error_contains "Unknown"
+
 let test_record_assoc_evaluates_operands_once () =
   let source = {|
 (def events (atom []))
@@ -50913,6 +50942,8 @@ let tests =
       test_sort_by_first_projects_tuple_keys );
     ( "record assoc evaluates operands once",
       test_record_assoc_evaluates_operands_once );
+    ( "lookup infers nested variant payload",
+      test_lookup_infers_nested_variant_payload );
     ( "inferred callback captures shadow global functions",
       test_inferred_callback_captures_shadow_global_functions );
     ( "inferred symbols distinguish nullary constructors from functions",

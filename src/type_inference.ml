@@ -3924,6 +3924,22 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     in
     let rec refine_pattern pattern ty =
       match pattern with
+      | FList (FSymbol "tag" :: FSymbol tag :: payload_patterns) ->
+          let row = match ty with
+            | TPoly_variant row -> row
+            | _ -> { tags = []; bound = Lower_row }
+          in
+          let previous = List.assoc_opt tag row.tags in
+          let payload, bindings = match payload_patterns with
+            | [] -> (None, [])
+            | [pattern] ->
+                let initial = Option.join previous
+                  |> Option.value ~default:(fresh_type_variable "pattern_tag") in
+                let payload, bindings = refine_pattern pattern initial in
+                (Some payload, bindings)
+            | _ -> (None, [])
+          in
+          (TPoly_variant { row with tags = (tag, payload) :: List.remove_assoc tag row.tags }, bindings)
       | FSymbol "_" -> (ty, [])
       | FSymbol name -> (
           match lookup_function_ty name with
@@ -4239,7 +4255,34 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | Error _ as err -> err
           | Ok params -> infer_clauses params rest)
     in
-    Result.bind (infer_clauses params clauses) (fun params ->
+    let rec merge_pattern_types current inferred =
+      match current, inferred with
+      | TTuple current, TTuple inferred when List.length current = List.length inferred ->
+          TTuple (List.map2 merge_pattern_types current inferred)
+      | TNullable current, TNullable inferred ->
+          TNullable (merge_pattern_types current inferred)
+      | TOcaml_app (name, current), TOcaml_app (other, inferred)
+        when name = other && List.length current = List.length inferred ->
+          TOcaml_app (name, List.map2 merge_pattern_types current inferred)
+      | _ -> refine_type current inferred
+    in
+    let rec collect_pattern_type current = function
+      | pattern :: _result :: rest ->
+          let current =
+            match variant_pattern pattern with
+            | Some (ty, _) -> merge_pattern_types current ty
+            | None -> current
+          in
+          collect_pattern_type current rest
+      | _ -> current
+    in
+    (* Collect nested row alternatives before propagating through a polymorphic call. *)
+    let initial_params =
+      if target_needs_inference params then
+        infer_expected (collect_pattern_type TUnknown clauses) params target
+      else Ok params
+    in
+    Result.bind (Result.bind initial_params (fun params -> infer_clauses params clauses)) (fun params ->
         let rec result_forms results = function
           | _pattern :: result :: rest ->
               result_forms (result :: results) rest
