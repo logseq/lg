@@ -907,7 +907,11 @@ let rec protocol_constraint_witness protocol_id ty =
       else protocol_constraint_witness protocol_id value_ty
   | None -> None
 
-let has_capability_constraint ty =
+let rec has_capability_constraint ty =
+  (match ty with
+   | TOcaml_app ("result", arguments) -> List.exists has_capability_constraint arguments
+   | _ -> false)
+  ||
   Types.is_dynamic ty
   || Option.is_some (Types.protocol_constraint_info ty)
   || Option.is_some (Types.truthy_constraint_info ty)
@@ -2181,6 +2185,23 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                  ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
   else
   match (expected, argument.ty) with
+  | TOcaml_app ("result", [ expected_ok; expected_error ]),
+    TOcaml_app ("result", [ actual_ok; actual_error ])
+    when has_capability_constraint expected_ok || has_capability_constraint expected_error ->
+      let branch constructor expected actual =
+        let name = "__lg_result_constrained_value" in
+        let value = typed_ir actual (Semantic_ir.Ident name) in
+        Result.map
+          (fun packed ->
+            (Semantic_ir.PConstructor
+               (constructor, Some (constrained_identifier_pattern name actual)),
+             Semantic_ir.Constructor (constructor, Some packed)))
+          (pack_constrained_value env expected value)
+      in
+      Result.bind (branch "Ok" expected_ok actual_ok) (fun success ->
+          Result.map
+            (fun error -> Semantic_ir.Match (argument.semantic_expr, [ success; error ]))
+            (branch "Error" expected_error actual_error))
   | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil ->
       Ok (Semantic_ir.Constructor ("None", None))
   | ( (TNullable expected_inner | TOcaml_app ("option", [ expected_inner ])),
@@ -6637,6 +6658,25 @@ let rec emit_argument_adaptation env adaptation argument =
   | Adaptation.Optional_map Adaptation.Identity
   | Adaptation.Option_boundary Adaptation.Identity ->
       Ok argument.semantic_expr
+  | Adaptation.Result_map (Adaptation.Identity, Adaptation.Identity) ->
+      Ok argument.semantic_expr
+  | Adaptation.Result_map (success, error) ->
+      (match Types.constraint_value_type argument.ty with
+       | TOcaml_app ("result", [ success_ty; error_ty ]) ->
+           let branch constructor ty adaptation =
+             let name = "__lg_result_payload" in
+             let value = typed_ir ty (Semantic_ir.Sequence [ Semantic_ir.Ident name ]) in
+             Result.map
+               (fun value ->
+                 (Semantic_ir.PConstructor (constructor, Some (Semantic_ir.PVar name)),
+                  Semantic_ir.Constructor (constructor, Some value)))
+               (emit_argument_adaptation env adaptation value)
+           in
+           Result.bind (branch "Ok" success_ty success) (fun success ->
+               Result.map
+                 (fun error -> Semantic_ir.Match (argument.semantic_expr, [ success; error ]))
+                 (branch "Error" error_ty error))
+       | _ -> Error.error "result adaptation requires a result value")
   | Adaptation.Optional_map adaptation
   | Adaptation.Option_boundary adaptation ->
       let value_ty = Types.constraint_value_type argument.ty in
@@ -6750,7 +6790,7 @@ let rec emit_argument_adaptation env adaptation argument =
           | [] ->
               Ok
                 (Semantic_ir.Record
-                   (List.rev fields, Some projection.type_name))
+                   (List.rev fields, Some (row_call_type_name projection.type_name)))
           | Adaptation.Source_field { expected; actual; adaptation } :: rest ->
               let actual_value =
                 typed_ir actual.ty (Structural_map.field_expr argument actual)
@@ -6867,9 +6907,12 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
   let expected = contextual_variant_type expected actual in
   let rec resolve_external_record_for_expected expected actual =
     match (expected, actual) with
+    | TNamed_record record, _ when not record.nominal ->
+        resolve_external_record_for_expected (TRecord record.fields) actual
     | TRecord _, TOcaml type_name -> (
         match Ocaml_signature.record_type type_name with
-        | Ok (TNamed_record record) -> TNamed_record record
+        | Ok (TNamed_record record) ->
+            resolve_external_record_for_expected expected (TNamed_record record)
         | Ok _ | Error _ -> actual)
     | TRecord _, TOcaml_app (type_name, arguments) -> (
         match Ocaml_signature.record_type type_name with
@@ -6881,8 +6924,22 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
                      (Type_solver.Declared parameter, argument))
               |> Type_solver.of_list
             in
-            Type_solver.apply substitutions (TNamed_record record)
+            resolve_external_record_for_expected expected
+              (Type_solver.apply substitutions (TNamed_record record))
         | Ok _ | Error _ -> actual)
+    | TRecord expected_fields, (TNamed_record _ | TRecord _) ->
+        let resolve_field (field : Types.field) =
+          match Types.find_field field.keyword expected_fields with
+          | None -> field
+          | Some expected_field ->
+              { field with
+                ty = resolve_external_record_for_expected expected_field.ty field.ty }
+        in
+        (match actual with
+         | TNamed_record record ->
+             TNamed_record { record with fields = List.map resolve_field record.fields }
+         | TRecord fields -> TRecord (List.map resolve_field fields)
+         | _ -> actual)
     | TList expected, TList actual ->
         TList (resolve_external_record_for_expected expected actual)
     | TVector expected, TVector actual ->
@@ -11913,7 +11970,20 @@ let create ~compile_expr =
                  ^ Types.source_name reference.ty))
         | Ok _ -> Error.error "weak-clear! expects 1 argument")
     | "tuple" -> (
-        match compile_args () with
+        let expected_items =
+          match Env.expected_type env with
+          | Some (TTuple items) when List.length items = List.length arg_forms -> items
+          | _ -> []
+        in
+        let rec compile_items index values = function
+          | [] -> Ok (List.rev values)
+          | form :: rest ->
+              Result.bind
+                (compile_expr scope
+                   (Env.with_expected_type (List.nth_opt expected_items index) env) form)
+                (fun value -> compile_items (index + 1) (value :: values) rest)
+        in
+        match compile_items 0 [] arg_forms with
         | Error _ as err -> err
         | Ok ([] | [ _ ]) ->
             Error.error "tuple expects at least 2 values"

@@ -33,6 +33,7 @@ type t =
   | Tuple_to_vector of tuple_to_vector
   | Nullable of t
   | Optional_map of t
+  | Result_map of t * t
   | Option_boundary of t
   | Optional_unwrap of t
   | Optional_payload of t
@@ -490,6 +491,13 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
             (fun adaptation -> Option_boundary adaptation)
             (plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                ~sequence_satisfies expected actual)
+      | TOcaml_app ("result", [ expected_ok; expected_error ]),
+        TOcaml_app ("result", [ actual_ok; actual_error ]) ->
+          Result.bind
+            (plan ~row_type_name_for ~protocol_satisfies ~sequence_satisfies expected_ok actual_ok)
+            (fun success ->
+              Result.map (fun error -> Result_map (success, error))
+                (plan ~row_type_name_for ~protocol_satisfies ~sequence_satisfies expected_error actual_error))
       | TOcaml "int", TInt | TInt, TOcaml "int" -> Ok Host_int_boundary
       | expected, actual
         when Option.is_some (Types.reduced_element expected)

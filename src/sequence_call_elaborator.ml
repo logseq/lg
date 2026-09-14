@@ -205,6 +205,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     | _ -> None
   in
   let adapt_unary_function env actual_ty fn =
+    let fn =
+      match fn.ty with
+      | TFn ([ parameter_ty ], _) ->
+          { fn with
+            semantic_expr =
+              Expression_support.constrain_record_function_argument_expr fn parameter_ty }
+      | _ -> fn
+    in
     match fn.ty with
     | TFn ([ expected_ty ], return_ty)
       when Type_solver.is_open expected_ty ->
@@ -797,6 +805,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                 ( Semantic_ir.PVar binding.ocaml_name,
                   Expression_support.record_type_application record.type_name
                     record.type_arguments )
+          | TOcaml _ | TOcaml_app _ ->
+              Semantic_ir.PTyped (Semantic_ir.PVar binding.ocaml_name, ty)
           | _ -> Semantic_ir.PVar binding.ocaml_name
         in
         compile_body scope function_env
@@ -1839,7 +1849,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   | Ok _ -> Error.error "keep expects a function")))
       | _ -> Error.error "keep expects function and collection"
     and compile_reduce scope env arg_forms =
-      let compile_initial fn_form init_form =
+      let compile_initial ?expected_type fn_form init_form =
+        let env =
+          match expected_type with
+          | None -> env
+          | Some ty -> Env.with_expected_type (Some ty) env
+        in
         let fixed_tuple_arity =
           match fn_form with
           | FList
@@ -1860,19 +1875,25 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         match (fixed_tuple_arity, init_form) with
         | Some arity, FVector forms
           when arity > 0 && List.length forms = arity ->
-            let rec compile expressions types = function
+            let expected_items =
+              match Env.expected_type env with
+              | Some (TTuple items) -> items
+              | _ -> []
+            in
+            let rec compile index expressions types = function
               | [] ->
                   Ok
                     (typed_ir (TTuple (List.rev types))
                        (Semantic_ir.Tuple (List.rev expressions)))
               | form :: rest ->
                   Result.bind
-                    (compile_expr scope (Env.with_expected_type None env) form)
+                    (compile_expr scope
+                       (Env.with_expected_type (List.nth_opt expected_items index) env) form)
                     (fun expression ->
-                      compile (expression.semantic_expr :: expressions)
+                      compile (index + 1) (expression.semantic_expr :: expressions)
                         (expression.ty :: types) rest)
             in
-            compile [] [] forms
+            compile 0 [] [] forms
         | (Some _, _) | (None, _) -> compile_expr scope env init_form
       in
       match arg_forms with
@@ -2164,11 +2185,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   | Ok initial_fn ->
                       let refined_fn =
                         match initial_fn.ty with
-                        | TFn
-                            ([ TSet (TUnknown | TMeta _ | TVar _); _ ],
-                              (TSet _ as accumulator_ty)) ->
-                            compile_reducer scope env accumulator_ty inner
-                              fn_form
+                        | TFn ([ accumulator_ty; _ ], return_ty)
+                          when Type_solver.is_open accumulator_ty
+                               && not (Type_solver.is_open return_ty)
+                               && not (Types.is_dynamic return_ty)
+                               && Result.is_ok
+                                    (Type_solver.unify Type_solver.empty accumulator_ty return_ty) ->
+                            compile_reducer scope env return_ty inner fn_form
                         | TFn ([ accumulator_ty; _ ], return_ty)
                           when (Types.is_dynamic return_ty
                                ||
@@ -2222,6 +2245,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                       in
                       let init =
                         match fn.ty with
+                        | TFn (accumulator_ty :: _, _)
+                          when Type_solver.is_open init.ty
+                               && not (Type_solver.is_open accumulator_ty)
+                               && not (Types.is_dynamic accumulator_ty) ->
+                            compile_initial ~expected_type:accumulator_ty fn_form init_form
                         | TFn (accumulator_ty :: _, _) ->
                             specialize_empty_set accumulator_ty
                         | _ -> Ok init

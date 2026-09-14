@@ -1242,7 +1242,8 @@ let rec ocaml_name = function
   | TConstraint (Nil_predicate_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
   | TConstraint (Printable_constraint value_ty) ->
-      "((" ^ ocaml_name value_ty ^ " -> string) * " ^ ocaml_name value_ty ^ ")"
+      "(((" ^ ocaml_name value_ty ^ " -> string) * ("
+      ^ ocaml_name value_ty ^ " -> string)) * " ^ ocaml_name value_ty ^ ")"
   | TConstraint (Exception_data_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> Lg_edn_backend.t) * "
       ^ ocaml_name value_ty ^ ")"

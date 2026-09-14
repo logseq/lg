@@ -773,10 +773,13 @@ let resolve_anonymous_record_patterns env items =
         Semantic_ir.PLocated
           (node_id, location, resolve_pattern pattern)
     | Semantic_ir.PTyped (pattern, Types.TRecord fields) -> (
-        match
-          Compiler_environment.find_anonymous_record
-            ~owner:(Source_context.anonymous_record_owner "") fields env
-        with
+        let owner = Source_context.anonymous_record_owner "" in
+        let record =
+          match Compiler_environment.find_anonymous_record ~owner fields env with
+          | Some _ as record -> record
+          | None -> Compiler_environment.find_anonymous_record_by_layout ~owner fields env
+        in
+        match record with
         | Some record ->
             Semantic_ir.PConstraint
               ( resolve_pattern pattern,

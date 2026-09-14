@@ -4092,6 +4092,34 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     let rec infer_clauses params = function
       | [] -> Ok params
       | [ form ] -> infer_form params form
+      | FList [ FSymbol ("Ok" | "Error" as constructor); FSymbol binding ] :: result :: rest
+        when not (zero_arity_constructor binding)
+             && (match target with
+                 | FSymbol name -> string_mem_assoc name params
+                 | _ -> false) ->
+          let success, error =
+            match inferred_call_return_type ~lookup_function_ty params target with
+            | TOcaml_app ("result", [ success; error ]) -> (success, error)
+            | _ -> (fresh_type_variable "success", fresh_type_variable "error")
+          in
+          let payload = if constructor = "Ok" then success else error in
+          let shadowed = string_assoc_opt binding params in
+          let branch_params = (binding, payload) :: string_remove_assoc binding params in
+          Result.bind (infer_form branch_params result) (fun branch_params ->
+              let payload =
+                if Type_solver.is_open payload then
+                  string_assoc_opt binding branch_params |> Option.value ~default:payload
+                else payload
+              in
+              let params = string_remove_assoc binding branch_params in
+              let params =
+                match shadowed with None -> params | Some ty -> (binding, ty) :: params
+              in
+              let arguments =
+                if constructor = "Ok" then [ payload; error ] else [ success; payload ]
+              in
+              Result.bind (infer_expected (TOcaml_app ("result", arguments)) params target)
+                (fun params -> infer_clauses params rest))
       | FList [ FSymbol "Some"; FSymbol binding ] :: result :: rest
         when not (zero_arity_constructor binding) -> (
           match infer_option_clause params binding result with

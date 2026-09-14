@@ -818,6 +818,16 @@ let rec merge_branch_types left right =
             Option.map
               (fun return_ty -> TFn (parameters, return_ty))
               (merge_branch_types left_return right_return))
+    | TTuple left, TTuple right ->
+        let rec merge_items merged left right =
+          match (left, right) with
+          | [], [] -> Some (TTuple (List.rev merged))
+          | left :: left_rest, right :: right_rest ->
+              Option.bind (merge_branch_types left right) (fun item ->
+                  merge_items (item :: merged) left_rest right_rest)
+          | _ -> None
+        in
+        merge_items [] left right
     | TList left, TList right ->
         Option.map (fun inner -> TList inner) (merge_branch_types left right)
     | TVector left, TVector right ->

@@ -226,14 +226,14 @@ and refine_nonmatching_type existing inferred =
     when Option.is_some (Types.printable_constraint_info existing)
          && Option.is_none (Types.printable_constraint_info inferred) ->
       let value_ty = Types.printable_constraint_info existing |> Option.get in
-      if Types.same_shape value_ty inferred then
+      if not (Type_solver.is_open inferred) && Types.same_shape value_ty inferred then
         refine_type value_ty inferred
       else Types.printable_constraint (refine_type value_ty inferred)
   | existing, inferred
     when Option.is_some (Types.printable_constraint_info inferred)
          && Option.is_none (Types.printable_constraint_info existing) ->
       let value_ty = Types.printable_constraint_info inferred |> Option.get in
-      if Types.same_shape existing value_ty then
+      if not (Type_solver.is_open existing) && Types.same_shape existing value_ty then
         refine_type existing value_ty
       else Types.printable_constraint (refine_type existing value_ty)
   | existing, inferred

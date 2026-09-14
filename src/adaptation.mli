@@ -31,6 +31,7 @@ type t =
   | Tuple_to_vector of tuple_to_vector
   | Nullable of t
   | Optional_map of t
+  | Result_map of t * t
   | Option_boundary of t
   | Optional_unwrap of t
   | Optional_payload of t

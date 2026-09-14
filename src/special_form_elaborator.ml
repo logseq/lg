@@ -3010,7 +3010,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | _, FSymbol name ->
           let ocaml_name = Names.sanitize_name name in
           Ok
-            ( Semantic_ir.PVar ocaml_name,
+            ( capability_pattern ocaml_name target_ty,
                 [
                   ( Names.scoped_key scope name,
                     Types.binding ocaml_name target_ty );

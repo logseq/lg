@@ -17835,6 +17835,64 @@ let test_nested_record_collection_inference_with_shared_fields () =
 (collect (list (record invalid-entity (id "wrong"))))
 |}) |> expect_error_contains "cannot adapt string to identity_value"
 
+let test_nested_host_record_argument_inference () =
+  let source = {|
+(require [ocaml.Lexing :as lexing])
+(type-record sample (position :option<Lexing.position>) (positions :list<Lexing.position>) (fallbacks :list<Lexing.position>))
+(type-record other-sample (position :option<Lexing.position>) (positions :list<Lexing.position>) (fallbacks :list<Lexing.position>) (label :string))
+(defn has-any-offset? [offsets sample]
+  (or (some (fn [position] (contains? offsets (:pos-cnum position))) (:positions sample))
+      (some (fn [position] (contains? offsets (:pos-cnum position))) (:fallbacks sample))))
+(defn has-offset? [offsets sample]
+  (match (:position sample)
+    None false
+    (Some position) (or (contains? offsets (:pos-cnum position))
+                        (contains? offsets (:pos-lnum position)))))
+(def present (record sample (position (Some lexing/dummy-pos))
+                            (positions (list lexing/dummy-pos)) (fallbacks (list))))
+(def absent (record sample (position None) (positions (list)) (fallbacks (list))))
+(def fallback (record sample (position None) (positions (list))
+                             (fallbacks (list lexing/dummy-pos))))
+(defn combined [sample]
+  (and (has-any-offset? #{-1} sample) (has-offset? #{-1} sample)))
+(println (boolean (combined present)))
+(println (has-offset? #{-1} present))
+(println (has-offset? #{2} present))
+(println (has-offset? #{-1} absent))
+(println (boolean (has-any-offset? #{-1} present)))
+(println (boolean (has-any-offset? #{1} present)))
+(println (boolean (has-any-offset? #{-1} absent)))
+(println (boolean (has-any-offset? #{-1} fallback)))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nested_host_record_argument_inference"
+    "true\ntrue\nfalse\nfalse\ntrue\nfalse\nfalse\ntrue\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  let invalid = source ^ {|
+(type-record invalid-sample (position :option<string>))
+(has-offset? #{-1} (record invalid-sample (position (Some "invalid"))))
+|} in
+  compile_string_with_stdlib invalid |> expect_error_contains "incompatible arguments";
+  compile_string_with_stdlib ~target:Lg.Target.Melange invalid
+  |> expect_error_contains "incompatible arguments"
+
+let test_result_payload_printing_inference () =
+  let source = {|
+(defn prepend [prefix input]
+  (match input
+    (Ok value) (Ok (str prefix value))
+    (Error message) (Error message)))
+(defn show [result]
+  (match result (Ok value) (println value) (Error message) (println message)))
+(show (prepend "key:" (Ok "a0")))
+(show (prepend "number:" (Ok 42)))
+(show (prepend "unused:" (Error "failed")))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "result_payload_printing_inference"
+    "key:a0\nnumber:42\nfailed\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_let_shadow_inference_preserves_lexical_scope () =
   let source = {|
 (type-record string-holder (value :string))
@@ -44000,6 +44058,44 @@ let test_reduce_infers_seqable_record_fields () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_reduce_preserves_host_record_context () =
+  let source =
+    {|
+(require [ocaml.Lexing :as lexing])
+(def positions {"origin" lexing/dummy-pos})
+(def offsets
+  (reduce (fn [offsets position] (conj offsets (:pos-cnum position)))
+          #{0} (vals positions)))
+(def empty-offsets
+  (reduce (fn [offsets position] (conj offsets (:pos-cnum position)))
+          #{} (vals positions)))
+(def named-offsets
+  (reduce (fn collect [offsets position] (conj offsets (:pos-cnum position)))
+          #{0} (vals positions)))
+(def nested-offsets
+  (reduce (fn [[first second] position]
+            (tuple (conj first (:pos-cnum position))
+                   (conj second (:pos-cnum position))))
+          (tuple #{} #{}) (vals positions)))
+(def partitioned-offsets
+  (reduce (fn [[negative nonnegative] position]
+            (match (Some (tuple :offset (:pos-cnum position)))
+              (Some (tuple :offset offset)) (tuple (conj negative offset) nonnegative)
+              (Some (tuple :other offset)) (tuple negative (conj nonnegative offset))
+              _ (tuple negative nonnegative)))
+          [#{} #{}] (vals positions)))
+(println (str (contains? offsets -1) ":" (count offsets) ":"
+              (contains? empty-offsets -1) ":" (count empty-offsets) ":"
+              (= offsets named-offsets) ":"
+              (contains? (first nested-offsets) -1) ":"
+              (contains? (first partitioned-offsets) -1)))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "reduce_preserves_host_record_context"
+    "true:2:true:1:true:true:true\n" ocaml_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_thread_macros_accept_keyword_steps () =
   let source =
     {|
@@ -49824,6 +49920,8 @@ let tests =
     ( "callback parameters do not constrain unrelated collections", test_callback_parameters_do_not_constrain_unrelated_collections );
     ( "filterv infers boolean record predicates", test_filterv_infers_boolean_record_predicates );
     ( "nested record collection inference with shared fields", test_nested_record_collection_inference_with_shared_fields );
+    ( "nested host record argument inference", test_nested_host_record_argument_inference );
+    ( "result payload printing inference", test_result_payload_printing_inference );
     ( "let shadow inference preserves lexical scope", test_let_shadow_inference_preserves_lexical_scope );
     ( "let destructuring infers heterogeneous tuple from body", test_let_destructuring_infers_heterogeneous_tuple_from_body );
     ( "result let star sequences and short circuits", test_result_let_star_sequences_and_short_circuits );
@@ -53179,6 +53277,8 @@ let tests =
       test_sequence_operations_accept_host_optional_collections );
     ( "reduce infers seqable record fields",
       test_reduce_infers_seqable_record_fields );
+    ( "reduce preserves host record context",
+      test_reduce_preserves_host_record_context );
     ( "thread macros accept keyword steps",
       test_thread_macros_accept_keyword_steps );
     ( "cond thread macros apply selected steps",
