@@ -204,8 +204,13 @@ let constrain_contains key_ty params name =
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
 let add_record_field_constraint name keyword field_ty params =
-  let satisfies_truthiness value constraint_ty =
-    match Types.truthy_constraint_info constraint_ty with
+  let satisfies_predicate value constraint_ty =
+    let payload =
+      match Types.truthy_constraint_info constraint_ty with
+      | Some _ as payload -> payload
+      | None -> Types.nil_predicate_constraint_info constraint_ty
+    in
+    match payload with
     | Some payload -> Result.is_ok (Type_solver.unify Type_solver.empty payload value)
     | None -> false
   in
@@ -269,8 +274,8 @@ let add_record_field_constraint name keyword field_ty params =
              | TUnknown | TMeta _ | TVar _ -> true
              | _ -> false) ->
           Ok fields
-      | Some existing when satisfies_truthiness existing.ty inferred.ty -> Ok fields
-      | Some existing when satisfies_truthiness inferred.ty existing.ty ->
+      | Some existing when satisfies_predicate existing.ty inferred.ty -> Ok fields
+      | Some existing when satisfies_predicate inferred.ty existing.ty ->
           Ok (inferred :: List.filter (fun field -> field.keyword <> inferred.keyword) fields)
       | Some existing when same_open_shape existing.ty inferred.ty ->
           Ok
@@ -341,8 +346,8 @@ let add_record_field_constraint name keyword field_ty params =
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
         | _, (TUnknown | TMeta _ | TVar _) -> Ok fields
-        | existing, inferred when satisfies_truthiness existing inferred -> Ok fields
-        | existing, inferred when satisfies_truthiness inferred existing ->
+        | existing, inferred when satisfies_predicate existing inferred -> Ok fields
+        | existing, inferred when satisfies_predicate inferred existing ->
             replace_field_type inferred
         | existing, inferred
           when statically_printable existing

@@ -23309,6 +23309,19 @@ let test_record_equality_allows_nil_and_nullable_fields () =
 (println (= {:k nil} (update {:k 5} :k :missing)))
 (println (= (update {:k 5} :k identity) {:k nil}))
 (println (= {:k nil} (update {:k 5} :k identity)))
+(type-record Asset (local-path :option<string>) (title :string))
+(defn prefer-path [local remote]
+  (assoc remote :local-path (or (:local-path local) (:local-path remote))))
+(defn resolve-asset [local incoming]
+  (let [block (if (and (some? (:local-path local)) (nil? (:local-path incoming)))
+                (prefer-path local incoming) incoming)]
+    (when-some [path (:local-path block)] (str path ":" (:title block)))))
+(assert (= (resolve-asset (record Asset (local-path (Some "local")) (title "old"))
+                          (record Asset (local-path nil) (title "new"))) (Some "local:new")))
+(assert (= (resolve-asset (record Asset (local-path (Some "local")) (title "old"))
+                          (record Asset (local-path (Some "remote")) (title "new"))) (Some "remote:new")))
+(assert (nil? (resolve-asset (record Asset (local-path nil) (title "old"))
+                            (record Asset (local-path nil) (title "new")))))
 |}
   in
   let native_source =
