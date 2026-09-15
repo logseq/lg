@@ -193,6 +193,17 @@ let record_type_public_binding module_path name env =
 
 let compile_type_variant ?location scope env next_type name type_parameters
     constructor_forms =
+  let emitted_constructor_name name =
+    let buffer = Buffer.create (String.length name) in
+    String.iter
+      (function
+        | ('a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '\'') as ch ->
+            Buffer.add_char buffer ch
+        | '!' -> Buffer.add_string buffer "_bang"
+        | _ -> Buffer.add_char buffer '_')
+      name;
+    String.capitalize_ascii (Buffer.contents buffer)
+  in
   let constructor_name = function
     | FSymbol constructor as form -> Ok (constructor, Source_context.find form)
     | _ -> Error.error "type-variant constructors must be symbols"
@@ -269,7 +280,8 @@ let compile_type_variant ?location scope env next_type name type_parameters
             if
               List.exists
                 (fun existing ->
-                  existing.constructor_name = constructor.constructor_name)
+                  emitted_constructor_name existing.constructor_name
+                  = emitted_constructor_name constructor.constructor_name)
                 constructors
             then
               Error.error
@@ -293,11 +305,17 @@ let compile_type_variant ?location scope env next_type name type_parameters
             ( Names.scoped_key scope constructor.constructor_name,
               Types.binding
                 ~gadt_constructor:(Option.is_some constructor.result_type)
-                constructor.constructor_name
+                (emitted_constructor_name constructor.constructor_name)
                 (TFn
                    ( constructor.payload_types,
                      Option.value constructor.result_type ~default:result_type
                    )) ))
+      in
+      let constructors =
+        List.map
+          (fun constructor ->
+            { constructor with constructor_name = emitted_constructor_name constructor.constructor_name })
+          constructors
       in
       match declare_type scope env name Variant with
       | Error _ as err -> err

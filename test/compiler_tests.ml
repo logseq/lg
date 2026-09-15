@@ -5683,6 +5683,44 @@ let test_mapv_preserves_source_record_callback_rows () =
   assert_ocaml_runs "mapv_preserves_source_record_callback_rows" "true\n" native;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_tuple_branches_preserve_vector_storage () =
+  let source = {|
+(require [ocaml.Rrbvec :as rrbvec])
+(type-record field-input (amount :int))
+(type-record extended-field-input (amount :int) (name :string))
+(type-variant field-choice (Small :field-input) (Large :field-input) (Complex :field-input))
+(signature consume-fields :fn<vector<tuple<string;variant<Int:int;String:string;Bool:bool>>>;int>)
+(defn consume-fields [fields] (count (rrbvec/to-list fields)))
+(defn fields [value] [(tuple "value" (tag Int (:amount value))) (tuple "name" (tag String "x"))])
+(defn retain-fields [values] (run! (fn [_] nil) values) values)
+(defn choose-fields [extra]
+  (let [[kind values]
+        (match extra
+          (Small value) (tuple "plain" (fields value))
+          (Complex _) (tuple "complex" [(tuple "enabled" (tag Bool true))])
+          (Large value) (tuple "extra" (retain-fields (into (fields value) [(tuple "label" (tag String "x"))]))))]
+    (consume-fields (into [(tuple "type" (tag String kind))] values))))
+(println (choose-fields (Small (record field-input (amount 1)))))
+(println (choose-fields (Large (record field-input (amount 2)))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "tuple_branches_preserve_vector_storage" "3\n4\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_variant_constructors_use_valid_ocaml_names () =
+  let source = {|
+(type-variant change No-change (Save-title :string))
+(defn change-size [change]
+  (match change No-change 0 (Save-title title) (count title)))
+(println (change-size No-change))
+(println (change-size (Save-title "hello")))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "variant_constructors_use_valid_ocaml_names" "0\n5\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  compile_string_with_stdlib "(type-variant collision Save-title Save_title)"
+  |> expect_error_contains "duplicate variant constructor"
+
 let test_run_infers_unannotated_collection () =
   let source = {|
 (require [ocaml.String :as string])
@@ -51003,6 +51041,8 @@ let tests =
       test_lookup_infers_nested_variant_payload );
     ( "run infers unannotated collection", test_run_infers_unannotated_collection );
     ( "mapv preserves source record callback rows", test_mapv_preserves_source_record_callback_rows );
+    ( "tuple branches preserve vector storage", test_tuple_branches_preserve_vector_storage );
+    ( "variant constructors use valid OCaml names", test_variant_constructors_use_valid_ocaml_names );
     ( "tuple vector patterns infer comparable fields", test_tuple_vector_patterns_infer_comparable_fields );
     ( "inferred callback captures shadow global functions",
       test_inferred_callback_captures_shadow_global_functions );

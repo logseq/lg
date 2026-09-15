@@ -807,7 +807,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               ( branch.semantic_expr,
                 [
                   ( Semantic_ir.PTuple
-                      (List.map (fun name -> Semantic_ir.PVar name) names),
+                      (List.map2 capability_pattern names source_items),
                     Semantic_ir.Tuple items );
                 ] ))
           (adapt_items [] target_items source_items names)
@@ -2911,9 +2911,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             | Ok constructor when constructor.gadt_constructor ->
                 Result.map (fun _ -> ()) (constructor_type target_ty constructor)
             | _ -> Ok () in
+          let constructor_name =
+            match lookup_binding scope env name with
+            | Ok { ty = TFn ([], _); ocaml_name; _ } -> ocaml_name
+            | _ -> resolve_ocaml_constructor_target scope env name
+          in
           Result.map (fun () ->
             ( Semantic_ir.PConstructor
-                (resolve_ocaml_constructor_target scope env name, None),
+                (constructor_name, None),
               [] )) check
       | target_ty, FList (FSymbol name :: payload_patterns)
         when is_ocaml_constructor_pattern_target target_ty name
