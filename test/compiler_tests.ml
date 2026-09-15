@@ -13216,6 +13216,22 @@ let test_recursive_mapcat_preserves_vector_elements () =
   assert_ocaml_runs "recursive_mapcat_preserves_vector_elements" "" native;
   compile_with_stdlib Lg.Target.Melange "test/recursive_mapcat.cljc" source |> ignore
 
+let test_mapv_record_fields_preserves_nested_vectors () =
+  let source = {|
+(type-record entry (uuid :string) (title :string))
+(def entries [(record entry (uuid "page-a") (title "Page"))])
+(defn check []
+  (let [expected [["page-a" "Page"]]
+        actual (mapv (fn [entry] [(:uuid entry) (:title entry)]) entries)]
+    (if (= expected actual)
+      nil
+      (throw (Failure (str "expected " (pr-str expected) ", got " (pr-str actual)))))))
+(check)
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "mapv_record_fields_preserves_nested_vectors" "" native;
+  compile_with_stdlib Lg.Target.Melange "test/record_vectors.cljc" source |> ignore
+
 let test_recursive_text_fallback_infers_string_return () =
   let source = {|
 (ns recursive-text (:require [clojure.string :as string]))
@@ -51891,6 +51907,8 @@ let tests =
       test_recursive_text_fallback_infers_string_return );
     ( "recursive mapcat preserves vector elements",
       test_recursive_mapcat_preserves_vector_elements );
+    ( "mapv record fields preserves nested vectors",
+      test_mapv_record_fields_preserves_nested_vectors );
     ( "double converts ints and preserves floats",
       test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",

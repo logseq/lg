@@ -101,6 +101,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
   in
   let compile_contextual_fn scope env ?name ?expected_return_ty
       ?(refine_open_overrides = false) ~param_type_overrides params body_forms =
+    let env = Env.with_expected_type None env in
     let lookup_function_ty name =
       match lookup_function scope env name with
       | Ok fn -> Ok fn.ty
