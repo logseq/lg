@@ -199,11 +199,14 @@
   (if (host-class-suite-form? form)
     true
     (if (seq? form)
-      (reduce
-       (fn [found item]
-         (or found (contains-host-class-suite-form? item)))
-       false
-       form)
+      (if (= 'quote (first form))
+        false
+        ;; Tag labels are syntax; only their payloads evaluate as expressions.
+        (reduce
+         (fn [found item]
+           (or found (contains-host-class-suite-form? item)))
+         false
+         (if (= 'tag (first form)) (drop 2 form) form)))
       (if (vector? form)
         (reduce
          (fn [found item]

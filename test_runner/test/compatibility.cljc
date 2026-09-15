@@ -1,6 +1,7 @@
 (ns lg-test.compatibility-test
   (:require
-   [clojure.test :refer [are deftest is run-tests testing]]))
+   [clojure.test :refer [are deftest is run-tests testing]]
+   [ocaml.Lg_test_runtime :as runtime]))
 
 (def fixture-events (atom (subvec [:seed] 1)))
 (def each-count (atom 0))
@@ -47,5 +48,21 @@
                           (throw (ex-info "boom" {}))))
     (is (thrown-msg? "exact boom"
                      (throw (ex-info "exact boom" {}))))))
+
+(deftest tag-and-quoted-symbol-assertions
+  (let [evaluations (atom 0)]
+    (runtime/begin-case)
+    (is (= (tag String "left")
+           (do (swap! evaluations inc) (tag String "right"))))
+    (is (= (tag Object 1) (tag Object 2)))
+    (is (= 'String 'Object))
+    (are [expected actual] (= expected actual)
+         (tag String "same") (tag String "same")
+         (tag String "left") (tag String "right"))
+    (let [[assertions failures] (runtime/finish-case)]
+      (runtime/begin-case)
+      (is (= 1 @evaluations))
+      (is (= 5 assertions))
+      (is (= 4 (count failures))))))
 
 (run-tests)
