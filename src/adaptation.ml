@@ -30,6 +30,7 @@ type t =
   | Symbol_string_boundary
   | Unit_after_effect
   | Tuple_elements of t list
+  | Variant_payloads of (string * (ty * t) option) list
   | Tuple_to_vector of tuple_to_vector
   | Nullable of t
   | Optional_map of t
@@ -674,6 +675,26 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                 plan_function_overload ~row_type_name_for
                   ~protocol_satisfies ~sequence_satisfies expected actual
                   expected_arities actual_params actual_return
+            | TPoly_variant expected_row, TPoly_variant actual_row
+              when Variant_row.compatible expected_row actual_row ->
+                let rec plan_tags planned = function
+                  | [] -> Ok (Variant_payloads (List.rev planned))
+                  | (tag, payload) :: rest ->
+                      let expected_payload = List.assoc_opt tag expected_row.tags in
+                      (match payload, expected_payload with
+                       | None, (None | Some None) ->
+                           plan_tags ((tag, None) :: planned) rest
+                       | Some actual, Some (Some expected) ->
+                           Result.bind
+                             (plan ~row_type_name_for ~protocol_satisfies
+                                ~sequence_satisfies expected actual)
+                             (fun adaptation ->
+                               plan_tags ((tag, Some (actual, adaptation)) :: planned) rest)
+                       | Some actual, None ->
+                           plan_tags ((tag, Some (actual, Identity)) :: planned) rest
+                       | _ -> Error (Incompatible_types {expected; actual}))
+                in
+                plan_tags [] actual_row.tags
             | TTuple expected_elements, TTuple actual_elements
               when List.length expected_elements = List.length actual_elements ->
                 let rec plan_elements planned expected actual =

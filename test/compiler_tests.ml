@@ -49100,6 +49100,35 @@ let test_polymorphic_variants_preserve_static_payloads () =
   assert_ocaml_runs "polymorphic_variant_payloads" "ready\n42\n7\n" compiled;
   ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_polymorphic_variant_collection_payloads_infer_capabilities () =
+  let source = {|
+(defn find-field [key node]
+  (match node
+    (tag Assoc fields)
+    (some (fn [entry]
+            (match entry (tuple name value) (when (= name key) value))) fields)
+    _ nil))
+(println (pr-str (find-field "title" (tag Assoc (list (tuple "title" 42))))))
+(println (pr-str (find-field "title" (tag Assoc [(tuple "title" "answer")]))))
+(println (pr-str (find-field "missing" (tag Assoc [(tuple "title" 42)]))))
+(defn choose [present]
+  (if present (tag Assoc (list (tuple "title" 7))) (tag Empty)))
+(println (pr-str (find-field "title" (choose true))))
+(println (pr-str (find-field "title" (choose false))))
+(defn nested-count [node]
+  (match node (tag Box inner) (match inner (tag Items items) (count items))))
+(println (nested-count (tag Box (tag Items (list 1 2 3)))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "variant_collection_payload_capabilities"
+    "42\n\"answer\"\nnil\n7\nnil\n3\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    compile_string_with_stdlib ~target
+      (source ^ "(find-field \"title\" (tag Assoc 42))")
+    |> expect_error_contains "incompatible") [Lg.Target.Native; Lg.Target.Melange]
+
 let test_vectors_merge_tuple_variant_rows () =
   let source = {|
 (defn entries [title ready]
@@ -51525,6 +51554,7 @@ let tests =
     ( "OCaml metadata preserves polymorphic variant rows", test_ocaml_type_metadata_preserves_variant_rows );
     ( "polymorphic variants infer rows from patterns", test_polymorphic_variants_infer_rows_from_patterns );
     ( "polymorphic variants support generic and open rows", test_polymorphic_variants_support_generic_and_open_rows );
+    ( "polymorphic variant collection payloads infer capabilities", test_polymorphic_variant_collection_payloads_infer_capabilities );
     ( "vectors merge tuple variant rows", test_vectors_merge_tuple_variant_rows );
     ( "polymorphic variants reject unknown tags and payloads", test_polymorphic_variants_reject_unknown_tags_and_payloads );
     ( "GADT matching refines generic results", test_gadt_matching_refines_generic_results );

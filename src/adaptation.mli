@@ -28,6 +28,7 @@ type t =
   | Symbol_string_boundary
   | Unit_after_effect
   | Tuple_elements of t list
+  | Variant_payloads of (string * (Semantic_type.ty * t) option) list
   | Tuple_to_vector of tuple_to_vector
   | Nullable of t
   | Optional_map of t

@@ -627,6 +627,8 @@ let rec argument_compatible expected actual =
     | None, _ -> false
   else
     match (expected, actual) with
+    | TPoly_variant expected, TPoly_variant actual ->
+        Variant_row.compatible_payloads argument_compatible expected actual
     | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil -> true
     | ( (TNullable expected | TOcaml_app ("option", [ expected ])),
         (TNullable actual | TOcaml_app ("option", [ actual ])) ) ->
@@ -5795,6 +5797,20 @@ let rec emit_argument_adaptation env adaptation argument =
   | Adaptation.Protocol_storage_passthrough -> Ok argument.semantic_expr
   | Adaptation.Unit_after_effect ->
       Ok (Semantic_ir.Sequence [ argument.semantic_expr; Semantic_ir.Unit ])
+  | Adaptation.Variant_payloads tags ->
+      let rec emit branches = function
+        | [] -> Ok (Semantic_ir.Match (argument.semantic_expr, List.rev branches))
+        | (tag, None) :: rest ->
+            emit ((Semantic_ir.PPolyTag (tag, None), Semantic_ir.PolyTag (tag, None)) :: branches) rest
+        | (tag, Some (ty, adaptation)) :: rest ->
+            let name = "__lg_variant_payload" in
+            Result.bind
+              (emit_argument_adaptation env adaptation (typed_ir ty (Semantic_ir.Ident name)))
+              (fun value ->
+                emit ((Semantic_ir.PPolyTag (tag, Some (Semantic_ir.PVar name)),
+                       Semantic_ir.PolyTag (tag, Some value)) :: branches) rest)
+      in
+      emit [] tags
   | Adaptation.Tuple_elements adaptations -> (
       match Types.constraint_value_type argument.ty with
       | TTuple actual_elements
@@ -20650,6 +20666,8 @@ let create ~compile_expr =
                                    && Option.is_some
                                         (Types.record_fields arg.ty) ->
                               plan_and_emit_argument env ~expected:expected_map arg
+                            | _, TPoly_variant _ ->
+                                plan_and_emit_argument env ~expected:expected_ty arg
                             | _, TTuple _
                               when (match arg.ty with TTuple _ -> true | _ -> false)
                                    && not (Types.equal expected_ty arg.ty) ->
