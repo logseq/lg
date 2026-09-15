@@ -13196,6 +13196,21 @@ let test_ocaml_float_and_char_literals_compile () =
   assert_ocaml_runs "ocaml_float_and_char_literals_compile" "3.75:A\n"
     ocaml_source
 
+let test_recursive_text_fallback_infers_string_return () =
+  let source = {|
+(ns recursive-text (:require [clojure.string :as string]))
+(type-record text-node (text :option<string>) (children :vector<text-node>))
+(defn flatten-text [tree]
+  (let [children (string/join "" (map flatten-text (:children tree)))]
+    (or (:text tree) children)))
+(def leaf (record text-node (text (Some "leaf")) (children [])))
+(assert (= (flatten-text (record text-node (text nil) (children [leaf leaf]))) "leafleaf"))
+(assert (= (flatten-text (record text-node (text (Some "")) (children [leaf]))) ""))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_text_fallback_infers_string_return" "" native;
+  compile_with_stdlib Lg.Target.Melange "test/recursive_text.cljc" source |> ignore
+
 let test_match_tuple_preserves_printable_payloads () =
   let source = {|
 (defn render-pairs [pairs]
@@ -51848,6 +51863,8 @@ let tests =
       test_character_literals_preserve_reader_delimiters );
     ( "match tuple preserves printable payloads",
       test_match_tuple_preserves_printable_payloads );
+    ( "recursive text fallback infers string return",
+      test_recursive_text_fallback_infers_string_return );
     ( "double converts ints and preserves floats",
       test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",
