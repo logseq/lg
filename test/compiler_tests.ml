@@ -6614,6 +6614,42 @@ let test_record_set_fields_combine_seqable_and_membership_constraints () =
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 ;;
 
+let test_seqable_inferred_record_rows_accept_wider_nominal_elements () =
+  let definitions = {|
+(ns record-seqable-width-test)
+(type-record candidate (label :string) (value :string))
+(type-record indexed-candidate (index :int) (label :string) (value :string))
+(defn indexed-candidates [candidates]
+  (loop [index 0 result []]
+    (if (= index (count candidates)) result
+      (let [candidate (nth candidates index)]
+        (recur (inc index)
+          (conj result (record indexed-candidate
+                         (index index) (label (:label candidate)) (value (:value candidate)))))))))
+|} in
+  let source = definitions ^ {|
+(let [candidate (nth (indexed-candidates [(record indexed-candidate (index 9) (label "A") (value "a"))]) 0)]
+  (println (str (:index candidate) ":" (:label candidate) ":" (:value candidate))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "seqable_inferred_record_rows_accept_wider_nominal_elements"
+    "0:A:a\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun suffix ->
+    List.iter (fun target ->
+      match compile_string_with_stdlib ~target (definitions ^ suffix) with
+      | Error _ -> ()
+      | Ok _ -> failwith "record sequence adaptation accepted incompatible elements")
+      [ Lg.Target.Native; Lg.Target.Melange ])
+    [ {|
+(type-record invalid-candidate (label :int) (value :string))
+(indexed-candidates [(record invalid-candidate (label 1) (value "a"))])
+|}; {|
+(defn nominal-candidates [^:seq<candidate> values] (count values))
+(nominal-candidates [(record indexed-candidate (index 9) (label "A") (value "a"))])
+|} ]
+;;
+
 let test_loop_record_accumulators_preserve_nested_result_types () =
   let source = {|
 (ns loop-record-test (:require [ocaml.Rrbvec :as rrbvec]))
@@ -51543,6 +51579,8 @@ let tests =
       test_loop_set_membership_preserves_inferred_elements );
     ( "record set fields combine seqable and membership constraints",
       test_record_set_fields_combine_seqable_and_membership_constraints );
+    ( "seqable inferred record rows accept wider nominal elements",
+      test_seqable_inferred_record_rows_accept_wider_nominal_elements );
     ( "loop record accumulators preserve nested result types",
       test_loop_record_accumulators_preserve_nested_result_types );
     ( "module protocols preserve typed registry state",

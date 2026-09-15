@@ -318,6 +318,9 @@ let sequence_element_type = function
 
 let rec sequence_element_compatible ~sequence_satisfies expected actual =
   match expected with
+  | TNamed_record record when not record.nominal ->
+      sequence_element_compatible ~sequence_satisfies
+        (TRecord record.fields) actual
   | TConstraint
       (Seqable_constraint { requirement; element = expected_element; _ }) ->
       sequence_source_compatible ~sequence_satisfies requirement
