@@ -6567,6 +6567,34 @@ let test_loop_empty_vector_initializer_uses_recur_element_type () =
     "2\n" native;
   ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_loop_set_membership_preserves_inferred_elements () =
+  let source = {|
+(ns inferred-set-test)
+(defn collect []
+  (loop [remaining ["a" "a" "b"] seen #{} values []]
+    (if-some [value (first remaining)]
+      (if (contains? seen value)
+        (recur (vec (rest remaining)) seen values)
+        (recur (vec (rest remaining)) (conj seen value) (conj values value)))
+      values)))
+(println (contains? #{} "missing"))
+(println (pr-str (collect)))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "loop_set_membership_preserves_inferred_elements"
+    "false\n[\"a\" \"b\"]\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun source ->
+    List.iter (fun target ->
+      match compile_string_with_stdlib ~target source with
+      | Error _ -> ()
+      | Ok _ -> failwith "set membership widened a concrete or declared element type")
+      [ Lg.Target.Native; Lg.Target.Melange ])
+    [ "(contains? #{1} \"wrong\")";
+      "(signature member? :fn<set<a>;string;bool>)\n\
+       (defn member? [values value] (contains? values value))" ]
+;;
+
 let test_loop_record_accumulators_preserve_nested_result_types () =
   let source = {|
 (ns loop-record-test (:require [ocaml.Rrbvec :as rrbvec]))
@@ -51492,6 +51520,8 @@ let tests =
       test_closed_sum_sequence_binding_ignores_later_branch_payload_context );
     ( "loop empty vector initializer uses recur element type",
       test_loop_empty_vector_initializer_uses_recur_element_type );
+    ( "loop set membership preserves inferred elements",
+      test_loop_set_membership_preserves_inferred_elements );
     ( "loop record accumulators preserve nested result types",
       test_loop_record_accumulators_preserve_nested_result_types );
     ( "module protocols preserve typed registry state",

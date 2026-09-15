@@ -4418,6 +4418,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | TOcaml_app ("Lg_runtime.Runtime_transient.set", _), _ ->
             Error.error
               "contains? value type must match transient set element type"
+        | TSet (TUnknown | TMeta _), _ when not (Types.is_dynamic value.ty) ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.mem",
+                      [ value.semantic_expr; target.semantic_expr ] )))
         | TSet inner, _ when Types.is_dynamic value.ty ->
             compile_dynamic_set_contains target inner value
         | TSet inner, _
