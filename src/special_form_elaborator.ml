@@ -629,6 +629,7 @@ let narrow_false_nil_predicates scope env condition body =
 
 let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     ~pack_constrained_value ~argument_compatible =
+  let recur_type_observers = ref [] in
   let compile_args_for = compile_args_for compile_expr in
   let map_vector source_inner body expression =
     let item_name = "__lg_branch_vector_item" in
@@ -3421,7 +3422,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                          "finally requires a body" finally_forms))))
   and loop_branch_type left right =
     match (left, right) with
-    | TVector left, TVector right when not (Types.equal left right) ->
+    | TVector left, TVector right
+      when not (Types.equal left right)
+           && not (Type_solver.is_open left || Type_solver.is_open right) ->
         heterogeneous_collection_type_error "vector" [ left; right ]
     | _ -> (
     match merge_branch_types left right with
@@ -3452,6 +3455,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       match compile_recur_args [] param_tys arg_forms with
       | Error _ as err -> err
       | Ok args ->
+          Option.iter (fun observe -> observe (List.map (fun arg -> arg.ty) args))
+            (List.assoc_opt loop_name !recur_type_observers);
           let rec validate index expected actual =
             match (expected, actual) with
             | [], [] -> Ok ()
@@ -4335,38 +4340,49 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         | Some _ | None -> fallback)
                       names inferred_param_tys
               in
-              let loop_env =
-                List.fold_left2
-                  (fun env name ty ->
-                    Env.add
-                      (Names.scoped_key scope name)
-                      (Types.binding (Names.sanitize_name name) ty)
-                      env)
-                  env names param_tys
-              in
-              let compile_body env =
-                compile_loop_tail_body scope env loop_name param_tys body_forms
-              in
-              match compile_body loop_env with
-              | Error _ as err -> err
-              | Ok inferred_body ->
-                  let rec stabilize_body remaining return_ty =
+                  let rec stabilize_body remaining param_tys return_ty =
+                    let loop_env =
+                      List.fold_left2
+                        (fun env name ty ->
+                          Env.add (Names.scoped_key scope name)
+                            (Types.binding (Names.sanitize_name name) ty) env)
+                        env names param_tys
+                    in
                     let body_env =
                       Env.add loop_name
                         (Types.binding loop_name (TFn (param_tys, return_ty)))
                         loop_env
                     in
-                    match compile_body body_env with
+                    let refined_params = ref param_tys in
+                    let observe actual =
+                      refined_params := List.map2
+                        (fun current actual ->
+                          if Type_solver.is_open current then
+                            Type_inference_core.refine_type current actual
+                          else current)
+                        !refined_params actual
+                    in
+                    let previous = !recur_type_observers in
+                    recur_type_observers := (loop_name, observe) :: previous;
+                    let compiled = Fun.protect
+                      ~finally:(fun () -> recur_type_observers := previous)
+                      (fun () -> compile_loop_tail_body scope body_env loop_name param_tys body_forms)
+                    in
+                    match compiled with
                     | Error _ as err -> err
                     | Ok body
-                      when remaining = 0 || Types.equal body.ty return_ty ->
-                        Ok body
+                      when Types.equal
+                             (Type_solver.canonical (TFn (param_tys, return_ty)))
+                             (Type_solver.canonical (TFn (!refined_params, body.ty))) ->
+                        Ok (param_tys, body)
+                    | Ok _ when remaining = 0 ->
+                        Error.error "loop parameter and return types did not stabilize"
                     | Ok body ->
-                        stabilize_body (remaining - 1) body.ty
+                        stabilize_body (remaining - 1) !refined_params body.ty
                   in
-                  (match stabilize_body 4 inferred_body.ty with
+                  (match stabilize_body (List.length param_tys + 4) param_tys TUnknown with
                   | Error _ as err -> err
-                  | Ok body ->
+                  | Ok (param_tys, body) ->
                   let sequence_element_type = function
                     | TSeq inner -> Some inner
                     | TOcaml_app (name, [ inner ])

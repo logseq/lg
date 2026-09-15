@@ -6537,6 +6537,72 @@ let test_loop_empty_vector_initializer_uses_recur_element_type () =
     "2\n" native;
   ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_loop_record_accumulators_preserve_nested_result_types () =
+  let source = {|
+(ns loop-record-test (:require [ocaml.Rrbvec :as rrbvec]))
+(type-record row (addr :int))
+(defn consume []
+  (loop [offset 0 rows []]
+    (if (= offset 1)
+      (Ok (tuple offset rows))
+      (recur 1 (conj rows (record row (addr 7)))))))
+(defn feed []
+  (let* [[offset rows] (consume)]
+    (Ok rows)))
+(defn expect-ok [result]
+  (match result (Ok value) value (Error message) (Stdlib.failwith message)))
+(defn feed-list []
+  (let* [[offset rows] (consume)] (Ok (rrbvec/to-list rows))))
+(defn combine []
+  (loop [offset 0 rows []]
+    (if (= offset 1)
+      (Ok (tuple offset rows))
+      (let* [[next decoded] (consume)]
+        (recur next (into rows decoded))))))
+(defn feed-argument [parser chunk]
+  (let [source (str @parser chunk)]
+    (reset! parser source)
+    (let* [[offset rows] (combine)]
+      (reset! parser (subs source offset))
+      (Ok (rrbvec/to-list rows)))))
+(defn read-nested []
+  (let [parser (atom "x")]
+    (let [rows (expect-ok (feed-argument parser ""))]
+      (println (pr-str (mapv :addr rows))))))
+(defn read-rows []
+  (let [rows (expect-ok (feed))]
+    (println (pr-str (mapv :addr rows))))
+  (let [rows (expect-ok (feed-list))]
+    (println (pr-str (mapv :addr rows))))
+  (let* [[offset rows] (combine)]
+    (println (pr-str (mapv :addr rows)))))
+(defn nested []
+  (loop [index 0 rows []]
+    (if (= index 1)
+      rows
+      (let [row (loop [attempt 0]
+                  (if (= attempt 0) (record row (addr 9)) (recur 0)))]
+        (recur 1 (conj rows row))))))
+(read-rows)
+(read-nested)
+(println (pr-str (mapv :addr (nested))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "loop_record_accumulators_preserve_nested_result_types" "[7]\n[7]\n[7]\n[7]\n[9]\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  let incompatible = source ^ {|
+(defn incompatible []
+  (loop [index 0 rows []]
+    (if (= index 0)
+      (recur 1 (conj rows (record row (addr 7))))
+      (if (= index 1) (recur 2 (conj rows "wrong")) rows))))
+|} in
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target incompatible with
+    | Error _ -> ()
+    | Ok _ -> failwith "loop accepted incompatible record and string elements")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_module_protocols_preserve_typed_registry_state () =
   let state =
     typecheck_state
@@ -51395,6 +51461,8 @@ let tests =
       test_closed_sum_sequence_binding_ignores_later_branch_payload_context );
     ( "loop empty vector initializer uses recur element type",
       test_loop_empty_vector_initializer_uses_recur_element_type );
+    ( "loop record accumulators preserve nested result types",
+      test_loop_record_accumulators_preserve_nested_result_types );
     ( "module protocols preserve typed registry state",
       test_module_protocols_preserve_typed_registry_state );
     ( "module elaboration populates typed registry",

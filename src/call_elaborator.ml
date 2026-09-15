@@ -16905,6 +16905,7 @@ let create ~compile_expr =
             (Type_solver.is_open expected || Type_solver.is_open result.ty)
             &&
             match (expected, result.ty) with
+            | TVector _, TVector _ -> true
             | ( TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]),
                 TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) ) ->
                 true
