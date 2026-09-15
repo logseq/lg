@@ -16144,6 +16144,43 @@ let test_recursive_variants_support_nested_data_values () =
   assert_ocaml_runs "recursive_variants_support_nested_data_values" "1:1\n"
     ocaml_source
 
+let test_recursive_conversion_preserves_shadowed_pattern_payloads () =
+  let source = {|
+(require [ocaml.Rrbvec :as rrbvec])
+(type-variant source-value
+  (SourceText :string)
+  (SourceMap :vector<tuple<string;source-value>>))
+(type-variant target-value
+  (TargetText :string)
+  (TargetMap :list<tuple<target-value;target-value>>))
+(defn convert [value]
+  (match value
+    (SourceText value) (TargetText value)
+    (SourceMap entries)
+    (TargetMap (rrbvec/to-list
+                 (mapv (fn [[key value]] (tuple (TargetText key) (convert value))) entries)))))
+(assert (= (convert (SourceMap [(tuple "name" (SourceText "value"))]))
+           (TargetMap (list (tuple (TargetText "name") (TargetText "value"))))))
+(defn equivalent [left right]
+  (match (tuple left right)
+    (tuple (TargetText value) (SourceText expected)) (= value expected)
+    (tuple (TargetMap entries) (SourceMap expected))
+    (and (= (count entries) (count expected))
+         (every? (fn [[key value]]
+                   (boolean (some (fn [[actual-key actual-value]]
+                                    (match actual-key
+                                      (TargetText actual-key)
+                                      (and (= actual-key key) (equivalent actual-value value))
+                                      _ false)) entries))) expected))
+    _ false))
+(assert (equivalent (TargetMap (list (tuple (TargetText "name") (TargetText "value"))))
+                    (SourceMap [(tuple "name" (SourceText "value"))])))
+(assert (not (equivalent (TargetText "different") (SourceText "value"))))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_conversion_preserves_shadowed_pattern_payloads" "" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_recursive_variants_support_callback_results () =
   let source =
     {|
@@ -51958,6 +51995,8 @@ let tests =
       test_recursive_variants_support_nested_data_values );
     ( "recursive variants support callback results",
       test_recursive_variants_support_callback_results );
+    ( "recursive conversion preserves shadowed pattern payloads",
+      test_recursive_conversion_preserves_shadowed_pattern_payloads );
     ( "adjacent records and variants support mutual recursion",
       test_adjacent_records_and_variants_support_mutual_recursion );
     ( "adjacent records support mutual recursion",

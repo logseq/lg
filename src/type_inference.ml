@@ -3008,13 +3008,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | _ -> TUnknown))
     | FList
         (FSymbol "fn" :: (FVector _ as params_form) :: body_forms) -> (
+        let with_locals bindings =
+          bindings
+          @ List.filter (fun (name, _) -> not (List.mem_assoc name bindings)) params
+        in
         match Destructure.parse_param_specs params_form with
         | Ok [ (spec : Destructure.param_spec) ] -> (
             match spec.explicit_ty with
             | Some ty when not (Types.equal ty TUnknown) ->
                 resolve_named_record ty
             | _ when not spec.destructured -> (
-                match infer_all [ (spec.source_name, TUnknown) ] body_forms with
+                match infer_all (with_locals [ (spec.source_name, TUnknown) ]) body_forms with
                 | Ok inferred ->
                     string_assoc_opt spec.source_name inferred
                     |> Option.value ~default:TUnknown
@@ -3024,7 +3028,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   Destructure.pattern_names spec.pattern
                   |> List.map (fun name -> (name, TUnknown))
                 in
-                (match infer_all pattern_params body_forms with
+                (match infer_all (with_locals pattern_params) body_forms with
                 | Ok inferred ->
                     Destructure.infer_pattern_type spec.pattern (fun name ->
                         string_assoc_opt name inferred
@@ -3943,6 +3947,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           in
           (TPoly_variant { row with tags = (tag, payload) :: List.remove_assoc tag row.tags }, bindings)
       | FSymbol "_" -> (ty, [])
+      | FSymbol name when not (Expression_support.is_constructor_name name) ->
+          (ty, [ (name, ty) ])
       | FSymbol name -> (
           match lookup_function_ty name with
           | Ok (TFn ([], return_ty)) -> (return_ty, [])
@@ -4017,7 +4023,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | TTuple items as ty when List.length items = List.length patterns ->
               Some (refine_pattern (FList (FSymbol "tuple" :: patterns)) ty)
           | _ -> None)
-      | FSymbol constructor -> (
+      | FSymbol constructor when Expression_support.is_constructor_name constructor -> (
           match lookup_function_ty constructor with
           | Ok (TFn ([], return_ty)) -> Some (return_ty, [])
           | Ok ((TOcaml _ | TOcaml_app _ | TNamed_record _) as return_ty) ->
@@ -4061,26 +4067,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     let target_needs_inference params =
       Type_solver.is_open (inferred_form_type params target)
     in
-    let constructor_symbol name =
-      let segments =
-        name |> String.split_on_char '/'
-        |> List.concat_map (String.split_on_char '.')
-      in
-      match List.rev segments with
-      | segment :: _ when String.length segment > 0 ->
-          let first = segment.[0] in
-          first >= 'A' && first <= 'Z'
-      | _ -> false
-    in
-    let zero_arity_constructor name =
-      constructor_symbol name
-      ||
-      match lookup_function_ty name with
-      | Ok (TFn ([], _))
-      | Ok (TOcaml _ | TOcaml_app _ | TNamed_record _) ->
-          true
-      | Ok _ | Error _ -> false
-    in
+    let zero_arity_constructor = Expression_support.is_constructor_name in
     let infer_variant_clause params expected_ty bindings result =
       Result.bind (infer_expected expected_ty params target) (fun params ->
           let local_names = List.map fst bindings in
