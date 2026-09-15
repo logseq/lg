@@ -6595,6 +6595,25 @@ let test_loop_set_membership_preserves_inferred_elements () =
        (defn member? [values value] (contains? values value))" ]
 ;;
 
+let test_record_set_fields_combine_seqable_and_membership_constraints () =
+  let source = {|
+(ns record-set-test)
+(type-record selection (selected :set<string>))
+(defn member? [^:set<string> values ^:string value] (contains? values value))
+(defn selected? [state ^:string value]
+  (and (not (empty? (:selected state))) (member? (:selected state) value)))
+(defn selected-first? [state ^:string value]
+  (and (member? (:selected state) value) (not (empty? (:selected state)))))
+(println (selected? (record selection (selected #{"a"})) "a"))
+(println (selected? (record selection (selected #{})) "a"))
+(println (selected-first? (record selection (selected #{"a"})) "a"))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "record_set_fields_combine_seqable_and_membership_constraints"
+    "true\nfalse\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+;;
+
 let test_loop_record_accumulators_preserve_nested_result_types () =
   let source = {|
 (ns loop-record-test (:require [ocaml.Rrbvec :as rrbvec]))
@@ -51522,6 +51541,8 @@ let tests =
       test_loop_empty_vector_initializer_uses_recur_element_type );
     ( "loop set membership preserves inferred elements",
       test_loop_set_membership_preserves_inferred_elements );
+    ( "record set fields combine seqable and membership constraints",
+      test_record_set_fields_combine_seqable_and_membership_constraints );
     ( "loop record accumulators preserve nested result types",
       test_loop_record_accumulators_preserve_nested_result_types );
     ( "module protocols preserve typed registry state",

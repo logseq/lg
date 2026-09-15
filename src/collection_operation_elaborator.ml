@@ -4444,7 +4444,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             (Semantic_ir.Apply
                                (Semantic_ir.Ident (set_module ^ ".mem"),
                                 [ value; target.semantic_expr ]))))
-        | TSet _, _ -> Error.error "contains? value type must match set element type"
+        | TSet inner, _ ->
+            Error.error
+              (Printf.sprintf
+                 "contains? value type must match set element type: expected %s, got %s"
+                 (Types.source_name inner) (Types.source_name value.ty))
         | TVector _, TInt ->
             Ok
               (typed_ir TBool

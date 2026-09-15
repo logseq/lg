@@ -251,7 +251,7 @@ let add_record_field_constraint name keyword field_ty params =
       | _ -> false
     in
     let statically_seqable = function
-      | TRecord _ | TNamed_record _ | TMap_keys
+      | TRecord _ | TNamed_record _ | TMap_keys | TSet _
       | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
           true
       | _ -> false
@@ -316,7 +316,7 @@ let add_record_field_constraint name keyword field_ty params =
     in
     let make_constrained_field ty = make_field ~runtime_map keyword ty in
     let directly_seqable = function
-      | TList _ | TVector _ | TSeq _
+      | TList _ | TVector _ | TSeq _ | TSet _
       | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
           true
       | _ -> false
