@@ -13196,6 +13196,26 @@ let test_ocaml_float_and_char_literals_compile () =
   assert_ocaml_runs "ocaml_float_and_char_literals_compile" "3.75:A\n"
     ocaml_source
 
+let test_recursive_mapcat_preserves_vector_elements () =
+  let source = {|
+(type-record tree-node (label :option<string>) (children :vector<tree-node>))
+(defn label-member [tree]
+  (:label tree))
+(assert (= (label-member (record tree-node (label (Some "probe")) (children []))) (Some "probe")))
+(defn labels [tree]
+  (let [own (if (not= (label-member tree) (Some "skip"))
+              (if-some [label (label-member tree)] [label] []) [])]
+    (into own (mapcat labels (:children tree)))))
+(def leaf (record tree-node (label (Some "leaf")) (children [])))
+(assert (= (labels (record tree-node (label (Some "root")) (children [leaf leaf])))
+           ["root" "leaf" "leaf"]))
+(assert (= (labels (record tree-node (label nil) (children []))) []))
+(assert (= (labels (record tree-node (label (Some "skip")) (children [leaf]))) ["leaf"]))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_mapcat_preserves_vector_elements" "" native;
+  compile_with_stdlib Lg.Target.Melange "test/recursive_mapcat.cljc" source |> ignore
+
 let test_recursive_text_fallback_infers_string_return () =
   let source = {|
 (ns recursive-text (:require [clojure.string :as string]))
@@ -51869,6 +51889,8 @@ let tests =
       test_match_tuple_preserves_printable_payloads );
     ( "recursive text fallback infers string return",
       test_recursive_text_fallback_infers_string_return );
+    ( "recursive mapcat preserves vector elements",
+      test_recursive_mapcat_preserves_vector_elements );
     ( "double converts ints and preserves floats",
       test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",

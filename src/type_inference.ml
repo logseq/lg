@@ -1146,6 +1146,26 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
+  | FList
+      [ FSymbol ("__lg_if-some" | "__lg_if-let");
+        FVector [ FSymbol binding; option_form ]; then_form; else_form ] ->
+      let infer params form =
+        match inferred_form_type params form with
+        | ty when Type_solver.is_open ty ->
+            inferred_call_return_type ~lookup_function_ty params form
+        | ty -> ty
+      in
+      let payload_ty =
+        match infer params option_form with
+        | TNullable payload | TOcaml_app ("option", [ payload ]) -> payload
+        | _ -> TUnknown
+      in
+      let branch_params =
+        (binding, payload_ty) :: string_remove_assoc binding params
+      in
+      Expression_support.merge_branch_types
+        (infer branch_params then_form) (infer params else_form)
+      |> Option.value ~default:TUnknown
   | FList [ FSymbol "Ok"; value ] ->
       let value_ty =
         match inferred_form_type params value with
