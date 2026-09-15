@@ -42287,6 +42287,53 @@ let test_mapv_infers_destructured_callback_parameters () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/mapv_destructured.cljc" source)
 
+let test_callback_collection_result_through_tuple_destructuring () =
+  let source =
+    {|
+(type-record entry (id :string) (title :string))
+(defn normalize-title [normalize title]
+  (let [[titles tags] (normalize [title])]
+    (tuple (if (= 1 (count titles)) (nth titles 0) title) tags)))
+(defn expand-title [normalize title]
+  (let [[title tags] (normalize-title normalize title)
+        entries (mapv (fn [[id name]] (record entry (id id) (title name))) tags)]
+    (tuple title entries)))
+(let [[title entries]
+      (expand-title (fn [titles] (tuple titles [["t1" "First"] ["t2" "Second"]])) "Text")]
+  (println (= "Text" title))
+  (println (= ["t1" "t2"] (mapv :id entries))))
+(let [[title entries] (expand-title (fn [_] (tuple [] [])) "Original")]
+  (println (= "Original" title))
+  (println (empty? entries)))
+(type-variant action (Rename :string) Ignore)
+(defn normalize-action [normalize action]
+  (match action
+    (Rename title)
+    (let [[titles tags] (normalize [title])]
+      (tuple (if (= 1 (count titles)) (Rename (nth titles 0)) action) tags))
+    _ (tuple action [])))
+(defn expand-action [normalizer action]
+  (if-some [normalize normalizer]
+    (let [[action tags] (normalize-action normalize action)
+          entries (mapv (fn [[id name]] (record entry (id id) (title name))) tags)]
+      (tuple action entries))
+    (tuple action [])))
+(let [[action entries]
+      (expand-action (Some (fn [titles] (tuple titles [["tag" "Tag"]]))) (Rename "Text"))]
+  (println (= (Rename "Text") action))
+  (println (= ["tag"] (mapv :id entries))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/callback_tuple_collection.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "callback collection destructuring must remain static";
+  assert_ocaml_runs "callback_collection_result_through_tuple_destructuring"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/callback_tuple_collection.cljc" source)
+
 let test_destructured_defaults_specialize_overloaded_function_values () =
   let source =
     {|
@@ -55068,6 +55115,8 @@ let tests =
       test_map_indexed_infers_generic_seqable_parameters );
     ( "mapv infers destructured callback parameters",
       test_mapv_infers_destructured_callback_parameters );
+    ( "callback collection result through tuple destructuring",
+      test_callback_collection_result_through_tuple_destructuring );
     ( "destructured defaults specialize overloaded function values",
       test_destructured_defaults_specialize_overloaded_function_values );
     ( "Clojure truthiness works in conditions",

@@ -1156,7 +1156,10 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                            match List.nth_opt param_type_overrides index with
                            | Some (Some ty) ->
                                let ty = infer_named_record scope env ty in
-                               if Types.equal ty TUnknown then
+                               if Types.equal ty TUnknown
+                                  || (spec.destructured
+                                     && match ty with TMeta _ -> true | _ -> false)
+                               then
                                  (spec, inferred_ty)
                                else if Types.equal ty TMap_keys then
                                  (spec,

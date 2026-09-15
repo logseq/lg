@@ -3746,8 +3746,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | _ -> TUnknown
         in
         let provisional_params =
+          (* Independent destructured positions must share variables with their source. *)
           List.map
-            (fun name -> (name, initializer_type name forms))
+            (fun name ->
+              let ty = initializer_type name forms in
+              (name, if Types.equal ty TUnknown then fresh_type_variable "let" else ty))
             provisional_names
           @ List.filter
               (fun (name, _) -> not (string_mem name provisional_names))
@@ -3755,18 +3758,38 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         let inferred_locals =
           lazy
-            (infer_body provisional_params body_forms
+            (* Later initializers also constrain earlier destructured bindings. *)
+            (let rec values = function
+               | _pattern :: value :: rest -> value :: values rest
+               | _ -> []
+             in
+             let params =
+               infer_all provisional_params (values forms)
+               |> Result.value ~default:provisional_params
+             in
+             infer_body params body_forms
             |> Result.value ~default:provisional_params)
         in
         let lookup_inferred_local name =
           string_assoc_opt name (Lazy.force inferred_locals)
           |> Option.value ~default:TUnknown
         in
-        let inferred_binding_pattern_type pattern =
-          match Destructure.infer_pattern_type pattern lookup_inferred_local with
-          | Ok (TVector element_ty) when Types.is_dynamic element_ty ->
-              Destructure.infer_generator_pattern_type pattern lookup_inferred_local
-          | result -> result
+        let inferred_binding_pattern_type ?source pattern =
+          let open_call =
+            match source with
+            | Some (FList _ as value) -> (
+                match inferred_initializer_type params value with
+                | TUnknown | TMeta _ | TVar _ | TTuple _ -> true
+                | _ -> false)
+            | _ -> false
+          in
+          if open_call then
+            Destructure.infer_generator_pattern_type pattern lookup_inferred_local
+          else
+            match Destructure.infer_pattern_type pattern lookup_inferred_local with
+            | Ok (TVector element_ty) when Types.is_dynamic element_ty ->
+                Destructure.infer_generator_pattern_type pattern lookup_inferred_local
+            | result -> result
         in
         let rec infer_slot_writes params = function
           | FList [ FSymbol "IVolatile/-vreset!"; FSymbol slot; value ]
@@ -3865,7 +3888,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       | [] -> Ok params
                       | pattern :: value :: rest ->
                           let expected =
-                            inferred_binding_pattern_type pattern
+                            inferred_binding_pattern_type ~source:value pattern
                             |> Result.value ~default:TUnknown
                           in
                           let infer_value =

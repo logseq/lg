@@ -33,6 +33,12 @@ the shared type variable carried by the other branch. A resolved host record
 and its external type name unify with the same type arguments, consistently
 with host-boundary assignability.
 
+Destructured local bindings retain independent inference variables until their
+initializers and uses constrain them. In a mixed `let`, later initializer
+expressions constrain earlier destructured values as well as the final body.
+An open callback result may infer a tuple without merging independent positions
+into one collection element type; known sequence inputs keep sequence semantics.
+
 Declared type parameters are rigid static types. A `TVar` in a sidecar
 signature, record application, callback, collection, option, equality
 operation, or zero-argument function result must remain the same type variable;
