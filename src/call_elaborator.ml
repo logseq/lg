@@ -17915,6 +17915,49 @@ let create ~compile_expr =
                           Semantic_ir.Fun (parameters, body) )))
             | _ -> Error.error "complement expects a statically typed function")
     | _ -> Error.error "complement expects 1 argument"
+  and compile_static_filter_call scope env fn_expression fn_ty predicate_form
+      collection_form =
+    Result.bind
+      (compile_expr scope (Env.with_expected_type None env) collection_form)
+      (fun collection ->
+        match Collection_capability.to_seq_expr env collection with
+        | Error _ -> Error.error "filter expects a seqable collection"
+        | Ok (inner, _sequence) ->
+            let predicate_ty =
+              TFn
+                ( [ inner ],
+                  Types.truthy_constraint
+                    (Type_solver.fresh ()) )
+            in
+            Result.bind
+              (compile_function_arg scope
+                 (Env.with_expected_type (Some predicate_ty) env)
+                 predicate_form)
+              (fun predicate ->
+                Result.bind
+                  (plan_and_emit_argument env ~expected:predicate_ty
+                     predicate)
+                  (fun predicate_arg ->
+                    let collection_expected =
+                      Types.optional_seqable_constraint inner collection.ty
+                    in
+                    Result.bind
+                      (plan_and_emit_argument env
+                         ~expected:collection_expected collection)
+                      (fun collection_arg ->
+                        let target =
+                          match fn_ty with
+                          | TOverloaded_fn arities -> (
+                              match select_overloaded_arity arities 2 with
+                              | Some (index, _) ->
+                                  overloaded_projection fn_expression index
+                              | None -> fn_expression)
+                          | _ -> fn_expression
+                        in
+                        Ok
+                          (typed_ir (TSeq inner)
+                             (Semantic_ir.Apply
+                                (target, [ predicate_arg; collection_arg ])))))))
   and overloaded_projection expression index =
     let rec descend expression remaining =
       if remaining = 0 then
@@ -18221,6 +18264,13 @@ let create ~compile_expr =
     | Ok { host_reference = Some (Ocaml_value _); _ } ->
         compile_inferred_ocaml_call scope env name arg_forms
     | Ok fn -> (
+        let member_name =
+          match String.rindex_opt name '/' with
+          | None -> name
+          | Some separator ->
+              String.sub name (separator + 1)
+                (String.length name - separator - 1)
+        in
         let fn = Types.instantiate_binding fn in
         let fn_value = binding_runtime_value fn in
         let fn =
@@ -18229,8 +18279,33 @@ let create ~compile_expr =
           else fn
         in
         let fn_expression = fn_value.semantic_expr in
+        let static_filter_applicable =
+          match arg_forms with
+          | [ _predicate_form; collection_form ] -> (
+              match
+                compile_expr scope (Env.with_expected_type None env)
+                  collection_form
+              with
+              | Ok collection -> (
+                  match Collection_capability.to_seq_expr env collection with
+                  | Ok (inner, _) -> not (contains_unresolved_type inner)
+                  | Error _ -> false)
+              | Error _ -> false)
+          | _ -> false
+        in
         if fn.multimethod && fn.multimethod_method_types = [] then
           Error.error (name ^ " has no methods")
+        else if
+          member_name = "filter"
+          && List.length arg_forms = 2
+          && not fn.multimethod
+          && static_filter_applicable
+        then
+          match arg_forms with
+          | [ predicate_form; collection_form ] ->
+              compile_static_filter_call scope env fn_expression fn.ty
+                predicate_form collection_form
+          | _ -> assert false
         else if fn.multimethod then
           match fn.ty with
           | TFn (parameter_tys, return_ty)

@@ -1263,6 +1263,24 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
       (match List.rev body_forms with
       | result :: _ -> infer params result
       | [] -> TNil)
+  | FList ((FSymbol "__lg_assoc" | FCoreSymbol Core_assoc) :: target :: pairs) ->
+      let target_ty =
+        match inferred_form_type params target with
+        | ty when Type_solver.is_open ty ->
+            inferred_call_return_type ~lookup_function_ty params target
+        | ty -> ty
+      in
+      (match Types.record_fields target_ty with
+      | Some fields ->
+          let rec updates_existing_fields = function
+            | [] -> true
+            | FKeyword keyword :: _value :: rest ->
+                Option.is_some (Types.find_field keyword fields)
+                && updates_existing_fields rest
+            | _ -> false
+          in
+          if updates_existing_fields pairs then target_ty else TUnknown
+      | None -> TUnknown)
   | FList (FSymbol "match" :: target :: clauses) ->
       let infer params form =
         match inferred_form_type params form with
@@ -2033,6 +2051,18 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_expected expected_ty params target)
               (fun params -> infer_expected_all element_ty params values)
         | _ -> infer_all params (target :: values))
+    | FList [ FSymbol "__lg_complement"; predicate ] -> (
+        match expected_ty with
+        | TFn (parameter_tys, _return_ty)
+          when List.for_all Expression_support.concrete_constraint_type
+                 parameter_tys ->
+            infer_expected
+              (TFn
+                 ( parameter_tys,
+                   Types.truthy_constraint
+                     (fresh_type_variable "complement_result") ))
+              params predicate
+        | _ -> infer_form params predicate)
     | FList (FSymbol "__lg_list-star" :: arguments) -> (
         match List.rev arguments with
         | tail :: prefix ->
@@ -3644,7 +3674,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   inferred_reducer_types scope_params accumulator_ty reducer
                 in
                 refine_type accumulator_ty inferred_accumulator_ty
-            | _ -> inferred_form_type scope_params value
+            | _ -> inferred_form_or_call_type ~lookup_function_ty scope_params value
           in
           match inferred_ty with
           | TUnknown -> (
@@ -4030,6 +4060,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               constrain_symbol (Types.dynamic_constraint TUnknown) params name)
       | FSymbol name, _ ->
           constrain_symbol (Types.dynamic_constraint TUnknown) params name
+      | target, FKeyword _ :: _
+        when Option.is_some
+               (Types.record_fields
+                  (resolve_named_record
+                     (inferred_form_or_call_type ~lookup_function_ty params target))) ->
+          infer_form params target
       | target, key_form :: value_form :: _ ->
           let key_ty =
             inferred_form_or_call_type ~lookup_function_ty params key_form
@@ -6721,7 +6757,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       match select_fn_arity arities (List.length arguments) with
                       | Some arity -> arity.return_ty
                       | None -> unresolved)
-                  | Ok _ | Error _ -> unresolved)
+                  | Ok _ | Error _ ->
+                      inferred_call_return_type ~lookup_function_ty params value)
               | _ -> unresolved)
           | ty -> ty
         in

@@ -30782,6 +30782,47 @@ let test_group_by_preserves_full_concat_elements_with_shorthand_key () =
     (compile_with_stdlib Lg.Target.Melange
        "test/group_by_concat_shorthand.cljc" source)
 
+let test_match_collection_updates_preserve_nominal_elements () =
+  let source = {|
+(ns match-collection-update-test)
+(type-record block (uuid :string) (title :string) (order :int))
+(type-record title-change (uuid :string) (title :string))
+(type-record insertion (uuid :string) (title :string) (order :int) (page :string))
+(type-variant intent (Rename :title-change) (Insert :insertion) (Batch :vector<insertion>))
+(defn new-block [uuid title] (record block (uuid uuid) (title title) (order 0)))
+(defn upsert [blocks uuid]
+  (let [asset (assoc (new-block uuid "Asset") :order 99)]
+    (if (some #(= (:uuid %) uuid) blocks)
+      (mapv #(if (= (:uuid %) uuid) (assoc asset :order (:order %)) %) blocks)
+      (conj (vec blocks) asset))))
+(defn project [blocks operation]
+  (match operation
+    (Rename change)
+    (mapv #(if (= (:uuid %) (:uuid change)) (assoc % :title (:title change)) %) blocks)
+    (Insert value)
+    (conj (vec blocks) (assoc (new-block (:uuid value) (:title value)) :order (:order value)))
+    (Batch values) (reduce (fn [acc value] (project acc (Insert value))) (vec blocks) values)))
+(let [original (record block (uuid "one") (title "Old") (order 42))
+      rename (Rename (record title-change (uuid "one") (title "New")))
+      added (record block (uuid "two") (title "Added") (order 43))]
+  (println (= [(assoc original :title "New")] (project [original] rename)))
+  (println (= [original added]
+              (project [original] (Insert (record insertion
+                                             (uuid "two") (title "Added") (order 43) (page "page"))))))
+  (println (= [(assoc original :title "Asset")] (upsert [original] "one")))
+  (println (= [(record block (uuid "new") (title "Asset") (order 99))] (upsert [] "new"))))
+(let [item (record insertion (uuid "batch") (title "Batch") (order 7) (page "page"))
+      result (project [] (Batch [item]))]
+  (println (= [(record block (uuid "batch") (title "Batch") (order 7))] result)))
+|} in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/match_collection_update.cljc" source
+  in
+  assert_ocaml_runs "match_collection_updates_preserve_nominal_elements"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange
+    "test/match_collection_update.cljc" source)
+
 let test_into_tuple_map_preserves_full_values_when_key_uses_row_subset () =
   let model_source =
     {|
@@ -53565,6 +53606,8 @@ let tests =
       test_group_by_preserves_full_concat_elements_with_shorthand_key );
     ( "into tuple map preserves full values when key uses row subset",
       test_into_tuple_map_preserves_full_values_when_key_uses_row_subset );
+    ( "match collection updates preserve nominal elements",
+      test_match_collection_updates_preserve_nominal_elements );
     ( "filterv contextualizes generic seqable items",
       test_filterv_contextualizes_generic_seqable_items );
     ( "filterv filters static vectors directly",

@@ -94,6 +94,19 @@ let unique_preserving_order values =
   in
   loop [] values
 
+let canonical_existing_path path =
+  try Unix.realpath path with Unix.Unix_error _ -> path
+
+let unique_paths_preserving_order paths =
+  let rec loop seen result = function
+    | [] -> List.rev result
+    | path :: rest ->
+        let canonical = canonical_existing_path path in
+        if List.mem canonical seen then loop seen result rest
+        else loop (canonical :: seen) (path :: result) rest
+  in
+  loop [] [] paths
+
 type source_namespace_info = {
   path : string;
   namespace : string option;
@@ -469,7 +482,7 @@ let compiler_cache_identity =
   let identity = lazy (compute_compiler_cache_identity ()) in
   fun () -> Lazy.force identity
 
-let compile_files_cache_format_version = "compile-files-v3"
+let compile_files_cache_format_version = "compile-files-v6"
 
 let reader_target_cache_key = function
   | None -> "default"
@@ -1014,6 +1027,89 @@ let state_references_in_text text =
   in
   loop 0 []
 
+let absolute_path_from directory path =
+  if Filename.is_relative path then Filename.concat directory path else path
+
+let split_dune_words text =
+  let buffer = Buffer.create 16 in
+  let words = ref [] in
+  let flush () =
+    if Buffer.length buffer > 0 then (
+      words := Buffer.contents buffer :: !words;
+      Buffer.clear buffer)
+  in
+  String.iter
+    (function
+      | '(' | ')' | '"' | '\n' | '\r' | '\t' | ' ' -> flush ()
+      | char -> Buffer.add_char buffer char)
+    text;
+  flush ();
+  List.rev !words
+
+let dune_stanza_blocks stanza text =
+  let prefix = "(" ^ stanza in
+  let rec find offset blocks =
+    match String.index_from_opt text offset '(' with
+    | None -> List.rev blocks
+    | Some start
+      when start + String.length prefix <= String.length text
+           && String.sub text start (String.length prefix) = prefix ->
+        let rec scan index depth in_string escaped =
+          if index >= String.length text then String.length text
+          else
+            let char = text.[index] in
+            if in_string then
+              scan (index + 1) depth
+                (not ((not escaped) && char = '"'))
+                ((not escaped) && char = '\\')
+            else
+              match char with
+              | '"' -> scan (index + 1) depth true false
+              | '(' -> scan (index + 1) (depth + 1) false false
+              | ')' ->
+                  if depth = 1 then index + 1
+                  else scan (index + 1) (depth - 1) false false
+              | _ -> scan (index + 1) depth false false
+        in
+        let stop = scan start 0 false false in
+        find stop (String.sub text start (stop - start) :: blocks)
+    | Some start -> find (start + 1) blocks
+  in
+  find 0 []
+
+let dune_rule_blocks text = dune_stanza_blocks "rule" text
+
+let dune_rule_source_paths dune_dir block =
+  let words = split_dune_words block in
+  let rec source_roots roots = function
+    | "source_tree" :: path :: rest ->
+        source_roots (absolute_path_from dune_dir path :: roots) rest
+    | _ :: rest -> source_roots roots rest
+    | [] -> List.rev roots
+  in
+  let source_files =
+    words
+    |> List.filter (fun word ->
+           has_source_extension word && not (String.starts_with ~prefix:"%{" word))
+    |> List.map (absolute_path_from dune_dir)
+  in
+  source_roots [] words @ source_files
+
+let project_dune_lg_source_paths root =
+  dune_files_under root
+  |> List.concat_map (fun dune_file ->
+         let dune_dir = Filename.dirname dune_file in
+         try
+           read_file dune_file |> dune_rule_blocks
+           |> List.filter (fun block ->
+                  String.contains block '%'
+                  && state_references_in_text block <> []
+                  && String.contains block '-')
+           |> List.concat_map (dune_rule_source_paths dune_dir)
+         with Sys_error _ -> [])
+  |> List.filter Sys.file_exists
+  |> unique_preserving_order
+
 let project_state_paths root =
   dune_files_under root
   |> List.concat_map (fun dune_file ->
@@ -1129,14 +1225,26 @@ let local_package_archives ?(archive_suffix = ".cmxa") root packages =
     let rec loop current_name archives = function
       | [] -> archives
       | line :: rest ->
+          let private_archive name =
+            let archive =
+              Filename.concat build_directory (name ^ archive_suffix)
+            in
+            if Sys.file_exists archive then
+              let object_dir =
+                Filename.concat build_directory ("." ^ name ^ ".objs")
+              in
+              let include_dirs = object_include_dirs object_dir in
+              Some (name, archive, include_dirs)
+            else None
+          in
           let current_name =
             match line_value "name" line with
             | Some name -> Some name
             | None -> current_name
           in
           let archives =
-            match line_value "public_name" line with
-            | Some public_name when List.mem public_name requested ->
+            match (line_value "public_name" line, line_value "name" line) with
+            | Some public_name, _ when List.mem public_name requested ->
                 let library_name =
                   Option.value current_name
                     ~default:
@@ -1154,7 +1262,11 @@ let local_package_archives ?(archive_suffix = ".cmxa") root packages =
                   let include_dirs = object_include_dirs object_dir in
                   (public_name, archive, include_dirs) :: archives
                 else archives
-            | Some _ | None -> archives
+            | _, Some name when List.mem name requested -> (
+                match private_archive name with
+                | Some archive -> archive :: archives
+                | None -> archives)
+            | (Some _, _) | (None, _) -> archives
           in
           loop current_name archives rest
     in
@@ -1209,6 +1321,29 @@ let dune_block_atoms text form =
         collect stop (block :: blocks)
   in
   collect 0 [] |> List.concat_map atoms
+
+let string_contains_substring text pattern =
+  let pattern_length = String.length pattern in
+  let text_length = String.length text in
+  let rec loop offset =
+    if pattern_length = 0 then true
+    else if offset + pattern_length > text_length then false
+    else if String.sub text offset pattern_length = pattern then true
+    else loop (offset + 1)
+  in
+  loop 0
+
+let project_lg_test_libraries root =
+  dune_files_under root
+  |> List.concat_map (fun dune_file ->
+         try
+           read_file dune_file |> dune_stanza_blocks "executable"
+           |> List.filter (fun block ->
+                  string_contains_substring block "lg-test.runtime"
+                  || string_contains_substring block "lg-test.alcotest")
+           |> List.concat_map (fun block -> dune_block_atoms block "libraries")
+         with Sys_error _ -> [])
+  |> unique_preserving_order
 
 let local_package_dependency_map_uncached root =
   let map = Hashtbl.create 64 in
@@ -1339,17 +1474,6 @@ let sort_local_archives_for_link archives =
          if priority_order <> 0 then priority_order
          else String.compare left right)
 
-let string_contains_substring text pattern =
-  let pattern_length = String.length pattern in
-  let text_length = String.length text in
-  let rec loop offset =
-    if pattern_length = 0 then true
-    else if offset + pattern_length > text_length then false
-    else if String.sub text offset pattern_length = pattern then true
-    else loop (offset + 1)
-  in
-  loop 0
-
 let source_references_ocaml_module source module_name =
   string_contains_substring source (module_name ^ ".")
   || string_contains_substring source (module_name ^ "__")
@@ -1376,14 +1500,6 @@ let referenced_local_module_archives ?(archive_suffix = ".cmxa") root ocaml_sour
            && source_references_ocaml_module ocaml_source module_name
         then Some archive
         else None)
-
-let local_archives_by_basename ?(archive_suffix = ".cmxa") root names =
-  let wanted =
-    names |> List.map (fun name -> name ^ archive_suffix)
-  in
-  archive_files_under archive_suffix (Filename.concat root "_build/default")
-  |> List.filter (fun archive ->
-         List.mem (Filename.basename archive) wanted)
 
 let replace_archive_suffix archive suffix =
   (try Filename.chop_extension archive with Invalid_argument _ -> archive)
@@ -1442,7 +1558,9 @@ let native_link_layout ?(archive_suffix = ".cmxa") () =
 let run_ocaml_source ?archive_scan_source packages ocaml_source =
   let ml_path = Filename.temp_file "lg" ".ml" in
   let exe_path = Filename.temp_file "lg" ".exe" in
+  let keep_temp_ml = Sys.getenv_opt "LG_KEEP_TEMP_ML" = Some "1" in
   write_output (Some ml_path) ocaml_source;
+  if keep_temp_ml then Printf.eprintf "lg: temp ml: %s\n%!" ml_path;
   let archive_scan_source =
     Option.value archive_scan_source ~default:ocaml_source
   in
@@ -1479,7 +1597,7 @@ let run_ocaml_source ?archive_scan_source packages ocaml_source =
         if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
           Printf.eprintf "lg: runner source cache hit: %s\n%!"
             manifest.runner_key;
-        Sys.remove ml_path;
+        if not keep_temp_ml then Sys.remove ml_path;
         Sys.remove exe_path;
         let exit_code =
           timed_step "native test executable" (fun () ->
@@ -1491,9 +1609,11 @@ let run_ocaml_source ?archive_scan_source packages ocaml_source =
     timed_step ("discover local link inputs " ^ archive_suffix) (fun () ->
         match root with
         | Some root ->
+            let test_libraries = project_lg_test_libraries root in
             let packages =
               local_package_dependency_closure root
                 (base_packages
+                @ test_libraries
                 @ [
                     "lg";
                     "lg.runtime";
@@ -1520,10 +1640,14 @@ let run_ocaml_source ?archive_scan_source packages ocaml_source =
               List.map
                 (fun (_package, archive, _dirs) -> archive)
                 package_archives
-              @ referenced_local_module_archives ~archive_suffix root
-                  archive_scan_source
-              @ local_archives_by_basename ~archive_suffix root
-                  [ "alcotest_stdlib_ext"; "datascript_types" ]
+              @
+              (if test_libraries = [] then
+                 referenced_local_module_archives ~archive_suffix root
+                   archive_scan_source
+               else [])
+              @ (local_package_archives ~archive_suffix root
+                   [ "alcotest_stdlib_ext"; "datascript_types" ]
+                |> List.map (fun (_package, archive, _dirs) -> archive))
               |> sort_local_archives_for_link
             in
             (archive_packages, include_directories, archives)
@@ -1659,7 +1783,7 @@ let run_ocaml_source ?archive_scan_source packages ocaml_source =
         runner_key;
         runner_executable = cached_exe_path;
       };
-    Sys.remove ml_path;
+    if not keep_temp_ml then Sys.remove ml_path;
     Sys.remove exe_path;
     let exit_code =
       timed_step "native test executable" (fun () ->
@@ -1699,11 +1823,11 @@ let run_ocaml_source ?archive_scan_source packages ocaml_source =
         timed_step "native test executable" (fun () ->
             Sys.command (Filename.quote run_path))
       in
-      Sys.remove ml_path;
+      if not keep_temp_ml then Sys.remove ml_path;
       if run_path = exe_path then Sys.remove exe_path;
       exit exit_code
   | code ->
-      Sys.remove ml_path;
+      if not keep_temp_ml then Sys.remove ml_path;
       Sys.remove exe_path;
       exit code
 
@@ -1802,10 +1926,21 @@ let lg_test_sources input_paths =
     if input_paths = [] then default_lg_test_paths () else input_paths
   in
   let test_sources = expand_test_input_paths input_paths in
+  let project_context_sources =
+    match find_repo_root_opt (Sys.getcwd ()) with
+    | Some root ->
+        project_dune_lg_source_paths root
+        |> List.concat_map expand_test_input_path
+    | None -> []
+  in
   let local_sources =
     local_lg_source_roots () |> List.concat_map expand_test_input_path
+    |> unique_paths_preserving_order
   in
-  let source_index = local_source_index local_sources in
+  let source_index =
+    local_source_index
+      (unique_paths_preserving_order (local_sources @ project_context_sources))
+  in
   let required_namespaces =
     test_sources
     |> List.concat_map (fun path -> (source_namespace_info path).requires)
@@ -1819,6 +1954,7 @@ let lg_test_sources input_paths =
   @ application_sources
   @ test_sources
   @ [ test_runner_source () ]
+  |> unique_paths_preserving_order
 
 let concatenate_compilation_outputs outputs =
   let runtime_open = "open Lg_runtime\n" in
@@ -2138,10 +2274,10 @@ let run_tests ?reader_target target input_paths =
     exit 2);
   let stdlib_state_path, _stdlib_implementation_path = default_stdlib_artifacts () in
   let state_paths =
-    stdlib_state_path
-    :: (match find_repo_root_opt (Sys.getcwd ()) with
-       | Some root -> project_state_paths root
-       | None -> [])
+    (match find_repo_root_opt (Sys.getcwd ()) with
+    | Some root -> project_state_paths root
+    | None -> [])
+    @ [ stdlib_state_path ]
     |> unique_preserving_order
   in
   let sources =
