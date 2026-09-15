@@ -942,6 +942,7 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
     Ok (scope, env, next_type, items)
   in
   let rec compile_pending scope env next_type items unresolved_names pending =
+    let env = predeclare_adjacent_defrecords scope env pending in
     let rec loop scope env next_type items unresolved_names deferred first_error
         made_progress = function
       | [] ->
@@ -954,9 +955,6 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
             | Some error -> Error error
             | None -> Error.error "declared forms made no compilation progress")
       | (index, form) :: rest -> (
-        let env =
-          predeclare_adjacent_defrecords scope env ((index, form) :: rest)
-        in
         let started_at = if report_timings then Sys.time () else 0.0 in
         let compiled = compile_top_level scope env next_type form in
         let elapsed = if report_timings then Sys.time () -. started_at else 0.0 in

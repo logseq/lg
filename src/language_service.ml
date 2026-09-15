@@ -1594,6 +1594,59 @@ let stdlib_core_definition_location_for_filename filename source_name =
            source_definition_location path source name
          else None)
 
+let paren_depth_delta line =
+  let delta = ref 0 in
+  String.iter
+    (function
+      | '(' -> incr delta
+      | ')' -> decr delta
+      | _ -> ())
+    line;
+  !delta
+
+let stdlib_core_signature_for_filename filename source_name =
+  let name = source_symbol_basename source_name in
+  let marker = "(signature clojure.core/" ^ name in
+  let signature_from_source source =
+    let lines = String.split_on_char '\n' source in
+    let signature_line_matches line =
+      let line = String.trim line in
+      let marker_length = String.length marker in
+      String.starts_with ~prefix:marker line
+      && (String.length line = marker_length
+         ||
+         (String.length line > marker_length
+         &&
+         match line.[marker_length] with
+         | ' ' | '\t' | '\r' | '\n' | ')' -> true
+         | _ -> false))
+    in
+    let rec find = function
+      | [] -> None
+      | line :: rest ->
+          if signature_line_matches line then
+            let rec collect depth collected = function
+              | [] -> Some (String.concat "\n" (List.rev collected))
+              | line :: rest ->
+                  let depth = depth + paren_depth_delta line in
+                  let collected = line :: collected in
+                  if depth <= 0 then
+                    Some (String.concat "\n" (List.rev collected))
+                  else collect depth collected rest
+            in
+            let depth = paren_depth_delta line in
+            if depth <= 0 then Some line else collect depth [ line ] rest
+          else find rest
+    in
+    find lines
+  in
+  stdlib_source_candidates_for_filename filename "stdlib/clojure/core.lgi"
+  |> List.find_map (fun path ->
+         if Sys.file_exists path then
+           let source = In_channel.with_open_bin path In_channel.input_all in
+           signature_from_source source
+         else None)
+
 let require_alias_target_location analysis alias =
   let contains_alias child =
     match child.Ast.form with
@@ -1902,19 +1955,22 @@ let source_quick_definition ~filename ~state ~source ~offset =
                       else None))
           | Some _ | None -> source_fallback_definition ~filename ~source ~offset))
 
-let core_value_hover env source_name range =
+let core_value_hover ~filename env source_name range =
   let basename = source_symbol_basename source_name in
-  let candidates =
-    [
-      Names.ocaml_binding_name "clojure.core" basename;
-      Names.ocaml_binding_name "cljs.core" basename;
-      "Clojure.Core." ^ Names.ocaml_member_name basename;
-      "Cljs.Core." ^ Names.ocaml_member_name basename;
-    ]
-  in
-  candidates
-  |> List.find_map (fun path ->
-         value_hover_by_ocaml_path env basename range path)
+  match stdlib_core_signature_for_filename filename basename with
+  | Some signature -> Some { contents = signature; range }
+  | None ->
+      let candidates =
+        [
+          Names.ocaml_binding_name "clojure.core" basename;
+          Names.ocaml_binding_name "cljs.core" basename;
+          "Clojure.Core." ^ Names.ocaml_member_name basename;
+          "Cljs.Core." ^ Names.ocaml_member_name basename;
+        ]
+      in
+      candidates
+      |> List.find_map (fun path ->
+             value_hover_by_ocaml_path env basename range path)
 
 let source_name_of_ocaml_member name =
   let bang_suffix = "_bang" in
@@ -2173,11 +2229,15 @@ let source_quick_hover ~state ~source ~offset =
                             member_range (module_path ^ "." ^ member))
                   | Some _ | None ->
                       if is_core_symbol_candidate source_name then
-                        core_value_hover env source_name token.span
+                        core_value_hover
+                          ~filename:(Filename.concat (Sys.getcwd ()) "source.cljc")
+                          env source_name token.span
                       else None)
               | None ->
                   if is_core_symbol_candidate source_name then
-                    core_value_hover env source_name token.span
+                    core_value_hover
+                      ~filename:(Filename.concat (Sys.getcwd ()) "source.cljc")
+                      env source_name token.span
                   else None)
           | Some _ | None -> None))
 
@@ -2404,7 +2464,15 @@ let semantic_hover analysis occurrence source_name =
 
 let hover analysis ~offset =
   match token_at analysis offset with
-  | Some { desc = Symbol _; _ } -> (
+  | Some ({ desc = Symbol source_name; span } : Ast.token) -> (
+      match
+        if is_core_symbol_candidate source_name then
+          stdlib_core_signature_for_filename analysis.filename source_name
+          |> Option.map (fun contents -> { contents; range = span })
+        else None
+      with
+      | Some _ as hover -> hover
+      | None -> (
       match semantic_occurrence_at analysis offset with
       | Some occurrence -> (
           let occurrence_name =
@@ -2414,7 +2482,7 @@ let hover analysis ~offset =
           match semantic_hover analysis occurrence occurrence_name with
           | Some _ as hover -> hover
           | None -> expression_hover analysis ~offset)
-      | None -> expression_hover analysis ~offset)
+      | None -> expression_hover analysis ~offset))
   | _ -> expression_hover analysis ~offset
 
 let signature_call_at analysis offset =

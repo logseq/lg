@@ -49,6 +49,7 @@ val cacheable_state : state -> state
 val with_source_scope : string -> state -> state
 val source_scope : state -> string
 val state_environment : state -> Env.t
+val has_ocaml_environment : state -> bool
 
 val render_error : source:string -> compile_error -> string
 

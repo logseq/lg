@@ -49,6 +49,7 @@ let cacheable_state = Toolchain.cacheable_state
 let with_source_scope = Toolchain.with_source_scope
 let source_scope = Toolchain.source_scope
 let state_environment = Toolchain.state_environment
+let has_ocaml_environment state = Option.is_some state.Toolchain.ocaml_env
 let render_error = Error.render
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state

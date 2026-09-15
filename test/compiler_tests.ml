@@ -12525,6 +12525,24 @@ let test_ocaml_package_finds_dune_install_interface_without_meta () =
             failwith "Dune interface directory was not returned"
       | Error error -> failwith error.Lg.Error.message)
 
+let test_ocaml_include_path_adds_standalone_interface_dirs () =
+  let root = Filename.temp_dir "lg-include-path-" "" in
+  let interface = Filename.concat root "datascript_lg.cmi" in
+  write_file interface "";
+  let previous = Sys.getenv_opt "LG_OCAML_INCLUDE_PATH" in
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.putenv "LG_OCAML_INCLUDE_PATH" (Option.value previous ~default:"");
+      Sys.remove interface;
+      Unix.rmdir root)
+    (fun () ->
+      Unix.putenv "LG_OCAML_INCLUDE_PATH" root;
+      match Lg.Ocaml_package.include_dirs [ "re" ] with
+      | Ok directories ->
+          if not (List.mem root directories) then
+            failwith "standalone include directory was not returned"
+      | Error error -> failwith error.Lg.Error.message)
+
 let test_ocaml_package_requires_reject_invalid_package_names () =
   Lg.Compiler.compile_string {|
 (require [ocaml.package/bad;name])
@@ -13061,6 +13079,26 @@ let test_direct_ocaml_option_and_result_constructors_compile () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "direct_ocaml_option_and_result_constructors_compile"
     "42:0:Ada:bad\n" ocaml_source
+
+let test_ocaml_option_literal_patterns_infer_open_targets () =
+  let source =
+    {|
+(defn advance-status [value]
+  (match value
+    (Some "todo") (Some "doing")
+    (Some "doing") (Some "done")
+    (Some "done") nil
+    _ (Some "todo")))
+(println
+  (str
+    (match (advance-status (Some "todo")) (Some value) value None "none")
+    ":"
+    (match (advance-status (Some "done")) (Some value) value None "none")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "ocaml_option_literal_patterns_infer_open_targets"
+    "doing:none\n" ocaml_source
 
 let test_ocaml_result_vector_constructors_compile () =
   let source =
@@ -24162,6 +24200,42 @@ let test_assoc_adapts_record_collection_fields () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_assoc_callback_preserves_nominal_record_collection_fields () =
+  let source =
+    {|
+(type-variant semantic-value (String-value :string))
+(type-record property-change
+  (attr :string)
+  (expected :option<semantic-value>)
+  (value :option<semantic-value>))
+(type-record pending-properties
+  (uuid :string)
+  (changes :vector<property-change>))
+(defn normalize-optional-value [value]
+  (match value
+    (Some present) (Some present)
+    None None))
+(defn normalize-property-change [change]
+  (assoc change
+         :expected (normalize-optional-value (:expected change))
+         :value (normalize-optional-value (:value change))))
+(defn normalize-properties [value]
+  (assoc value :changes (mapv normalize-property-change (:changes value))))
+(def sample
+  (record pending-properties
+    (uuid "u")
+    (changes [(record property-change
+                (attr "a")
+                (expected (Some (String-value "old")))
+                (value (Some (String-value "new"))))])))
+(println (:uuid (normalize-properties sample)))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "assoc_callback_preserves_nominal_record_collection_fields" "u\n"
+    ocaml_source
+
 let test_assoc_accepts_protocol_constrained_named_records () =
   let source =
     {|(refer-clojure-exclude replace-value)
@@ -25253,8 +25327,11 @@ let make name age : row = { name; age }
 (def row (fixture/make "Ada" 41))
 (def updated (assoc row :age 42))
 (def constructed (record Mli_record_fixture.row (name "Grace") (age 43)))
+(type-record row (name :int) (age :string))
+(def aliased (record fixture/row (name "Lin") (age 44)))
 (println (str (:name updated) ":" (:age updated)))
 (println (str (:name constructed) ":" (:age constructed)))
+(println (str (:name aliased) ":" (:age aliased)))
 |}
       in
       let native_source = compile_string_with_stdlib source |> expect_ok in
@@ -25283,9 +25360,9 @@ let make name age : row = { name; age }
           failwith
             (Printf.sprintf "generated OCaml did not run, exit code %d" code));
       let actual = read_file output_path in
-      if actual <> "Ada:42\nGrace:43\n" then
+      if actual <> "Ada:42\nGrace:43\nLin:44\n" then
         failwith
-          (Printf.sprintf "expected %S, got %S" "Ada:42\nGrace:43\n" actual))
+          (Printf.sprintf "expected %S, got %S" "Ada:42\nGrace:43\nLin:44\n" actual))
 
 let test_host_functions_are_first_class_values () =
   let source = {|
@@ -52258,6 +52335,8 @@ let tests =
       test_ocaml_package_requires_report_missing_packages );
     ( "OCaml packages find Dune install interfaces without META",
       test_ocaml_package_finds_dune_install_interface_without_meta );
+    ( "OCaml include path adds standalone interface dirs",
+      test_ocaml_include_path_adds_standalone_interface_dirs );
     ( "OCaml package requires reject invalid package names",
       test_ocaml_package_requires_reject_invalid_package_names );
     ( "direct OCaml calls use qualified values",
@@ -52334,6 +52413,8 @@ let tests =
       test_ocaml_option_and_result_constructors_reject_bad_arity );
     ( "direct OCaml option and result constructors compile",
       test_direct_ocaml_option_and_result_constructors_compile );
+    ( "OCaml option literal patterns infer open targets",
+      test_ocaml_option_literal_patterns_infer_open_targets );
     ( "OCaml result vector constructors compile",
       test_ocaml_result_vector_constructors_compile );
     ( "direct declared variant constructors compile",
@@ -53269,6 +53350,8 @@ let tests =
       test_assoc_updates_statically_typed_map_record_fields );
     ( "assoc adapts record collection fields",
       test_assoc_adapts_record_collection_fields );
+    ( "assoc callback preserves nominal record collection fields",
+      test_assoc_callback_preserves_nominal_record_collection_fields );
     ( "assoc accepts protocol constrained named records",
       test_assoc_accepts_protocol_constrained_named_records );
     ( "nested named records resolve protocol receivers",

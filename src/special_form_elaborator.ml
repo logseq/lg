@@ -2782,7 +2782,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       match compile_expr scope env form with
       | Error _ as err -> err
       | Ok pattern ->
-          if Types.equal expected_ty pattern.ty then
+          if Types.equal expected_ty pattern.ty || Type_solver.is_open expected_ty
+          then
             match form with
             | FInt value -> Ok (Semantic_ir.PInt value)
             | FString value | FKeyword value -> Ok (Semantic_ir.PString value)

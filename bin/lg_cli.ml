@@ -14,7 +14,7 @@ let usage () =
      --run-files <input.cljc>... | \
      --run-files-from <state> <implementation.ml> <input.cljc>... | repl \
      [--state <lg_stdlib_native.state>] | mobile build [options] [paths...] | \
-     --lsp [--state <saved-state>]. \
+     test [paths...] | --lsp [--state <saved-state>]. \
      Batch commands default to all .clj, .cljc, .cljs, and .lgi files in the \
      current directory.";
   exit 2
@@ -41,6 +41,10 @@ let read_file path =
 
 let source_extensions = [ ".lgi"; ".clj"; ".cljc"; ".cljs" ]
 
+let sorted_readdir directory =
+  try Sys.readdir directory |> Array.to_list |> List.sort String.compare
+  with Sys_error _ -> []
+
 let has_source_extension path =
   List.exists (Filename.check_suffix path) source_extensions
 
@@ -62,6 +66,243 @@ let expand_input_paths paths =
   let paths = if paths = [] then [ "." ] else paths in
   List.concat_map expand_input_path paths
 
+let rec source_files_under directory =
+  if not (Sys.file_exists directory && Sys.is_directory directory) then []
+  else
+    Sys.readdir directory |> Array.to_list |> List.sort String.compare
+    |> List.concat_map (fun name ->
+           let path = Filename.concat directory name in
+           if Sys.file_exists path && Sys.is_directory path then
+             source_files_under path
+           else if has_source_extension path then [ path ]
+           else [])
+
+let expand_test_input_path path =
+  if Sys.file_exists path && Sys.is_directory path then source_files_under path
+  else expand_input_path path
+
+let expand_test_input_paths paths =
+  List.concat_map expand_test_input_path paths
+
+let unique_preserving_order values =
+  let rec loop seen values =
+    match values with
+    | [] -> List.rev seen
+    | value :: rest ->
+        if List.mem value seen then loop seen rest
+        else loop (value :: seen) rest
+  in
+  loop [] values
+
+type source_namespace_info = {
+  path : string;
+  namespace : string option;
+  requires : string list;
+}
+
+let source_namespace_info path =
+  let source = read_file path in
+  match Lg.Lexer.tokenize source with
+  | Error _ -> { path; namespace = None; requires = [] }
+  | Ok tokens -> (
+      match Lg.Parser.parse tokens with
+      | Error _ -> { path; namespace = None; requires = [] }
+      | Ok forms ->
+          let namespace =
+            List.find_map
+              (function
+                | Lg.Ast.FList (FSymbol "ns" :: FSymbol namespace :: _) ->
+                    Some namespace
+                | _ -> None)
+              forms
+          in
+          let require_keyword = function
+            | Lg.Ast.FKeyword "require" | FKeyword ":require"
+            | FSymbol ":require" | FSymbol "require" ->
+                true
+            | _ -> false
+          in
+          let add_require requires = function
+            | Lg.Ast.FVector (FSymbol namespace :: _)
+            | FList (FSymbol namespace :: _)
+            | FSymbol namespace ->
+                namespace :: requires
+            | _ -> requires
+          in
+          let requires =
+            forms
+            |> List.fold_left
+                 (fun requires -> function
+                   | Lg.Ast.FList (FSymbol "ns" :: _namespace :: clauses) ->
+                       List.fold_left
+                         (fun requires -> function
+                           | Lg.Ast.FList (keyword :: specs)
+                             when require_keyword keyword ->
+                               List.fold_left add_require requires specs
+                           | _ -> requires)
+                         requires clauses
+                   | _ -> requires)
+                 []
+            |> List.rev |> List.sort_uniq String.compare
+          in
+          { path; namespace; requires })
+
+let project_namespace namespace =
+  not
+    (String.starts_with ~prefix:"ocaml." namespace
+    || String.starts_with ~prefix:"clojure." namespace
+    || String.starts_with ~prefix:"cljs." namespace)
+
+let ocaml_namespace_module_root namespace =
+  let prefix = "ocaml." in
+  if String.starts_with ~prefix namespace then
+    let rest =
+      String.sub namespace (String.length prefix)
+        (String.length namespace - String.length prefix)
+    in
+    match String.split_on_char '.' rest with
+    | module_name :: _ when module_name <> "" -> Some module_name
+    | _ -> None
+  else None
+
+let local_source_index paths =
+  paths |> List.map source_namespace_info
+  |> List.filter_map (fun info ->
+         Option.map (fun namespace -> (namespace, info)) info.namespace)
+
+let required_project_sources source_index roots =
+  let table = Hashtbl.create 64 in
+  List.iter
+    (fun (namespace, info) ->
+      let existing = Hashtbl.find_opt table namespace |> Option.value ~default:[] in
+      Hashtbl.replace table namespace (existing @ [ info ]))
+    source_index;
+  let rec visit namespace (seen, paths) =
+    if List.mem namespace seen || not (project_namespace namespace) then
+      (seen, paths)
+    else
+      match Hashtbl.find_opt table namespace with
+      | None -> (namespace :: seen, paths)
+      | Some infos ->
+          List.fold_left
+            (fun (seen, paths) info ->
+              let seen, paths =
+                List.fold_left
+                  (fun state required -> visit required state)
+                  (seen, paths) info.requires
+              in
+              (seen, info.path :: paths))
+            (namespace :: seen, paths) infos
+  in
+  let _seen, paths =
+    List.fold_left
+      (fun state namespace -> visit namespace state)
+      ([], []) roots
+  in
+  List.rev paths |> unique_preserving_order
+
+let order_paths_by_namespace_dependencies paths =
+  let infos = List.map source_namespace_info paths in
+  let interface_first infos =
+    List.sort
+      (fun left right ->
+        let left_rank =
+          if Filename.check_suffix left.path ".lgi" then 0 else 1
+        in
+        let right_rank =
+          if Filename.check_suffix right.path ".lgi" then 0 else 1
+        in
+        match Int.compare left_rank right_rank with
+        | 0 -> String.compare left.path right.path
+        | order -> order)
+      infos
+  in
+  let table = Hashtbl.create 64 in
+  List.iter
+    (fun info ->
+      match info.namespace with
+      | Some namespace ->
+          let existing =
+            Hashtbl.find_opt table namespace |> Option.value ~default:[]
+          in
+          Hashtbl.replace table namespace (interface_first (info :: existing))
+      | None -> ())
+    infos;
+  let namespace_requires = Hashtbl.create 64 in
+  Hashtbl.iter
+    (fun namespace infos ->
+      let requires =
+        infos
+        |> List.concat_map (fun info -> info.requires)
+        |> List.sort_uniq String.compare
+      in
+      Hashtbl.replace namespace_requires namespace requires)
+    table;
+  let local_namespace namespace = Hashtbl.mem table namespace in
+  let rec visit visiting visited ordered info =
+    if List.mem info.path visited then (visited, ordered)
+    else if List.mem info.path visiting then (visited, info.path :: ordered)
+    else
+      let visiting = info.path :: visiting in
+      let visited, ordered =
+        match info.namespace with
+        | None -> (visited, ordered)
+        | Some namespace when Filename.check_suffix info.path ".lgi" ->
+            let _ = namespace in
+            (visited, ordered)
+        | Some namespace ->
+            Hashtbl.find table namespace
+            |> List.filter (fun sibling ->
+                   Filename.check_suffix sibling.path ".lgi"
+                   && sibling.path <> info.path)
+            |> List.fold_left
+                 (fun (visited, ordered) interface_info ->
+                   visit visiting visited ordered interface_info)
+                 (visited, ordered)
+      in
+      let visited, ordered =
+        (match info.namespace with
+        | Some namespace -> (
+            match Hashtbl.find_opt namespace_requires namespace with
+            | Some requires -> requires
+            | None -> info.requires)
+        | None -> info.requires)
+        |> List.filter local_namespace
+        |> List.fold_left
+             (fun (visited, ordered) namespace ->
+               Hashtbl.find table namespace
+               |> List.fold_left
+                    (fun (visited, ordered) dependency ->
+                      visit visiting visited ordered dependency)
+                    (visited, ordered))
+             (visited, ordered)
+      in
+      (info.path :: visited, info.path :: ordered)
+  in
+  let _visited, ordered =
+    List.fold_left
+      (fun (visited, ordered) info -> visit [] visited ordered info)
+      ([], []) infos
+  in
+  List.rev ordered |> unique_preserving_order
+
+let required_ocaml_module_roots sources =
+  sources
+  |> List.concat_map (fun path -> (source_namespace_info path).requires)
+  |> List.filter_map ocaml_namespace_module_root
+  |> List.sort_uniq String.compare
+
+let directory_contains_file suffix directory =
+  Sys.file_exists directory && Sys.is_directory directory
+  && sorted_readdir directory |> List.exists (String.ends_with ~suffix)
+
+let object_include_dirs object_dir =
+  let public_cmi = Filename.concat object_dir "public_cmi" in
+  let byte = Filename.concat object_dir "byte" in
+  if directory_contains_file ".cmi" public_cmi then [ public_cmi ]
+  else if directory_contains_file ".cmi" byte then [ byte ]
+  else []
+
 let write_output output_path contents =
   match output_path with
   | None -> print_string contents
@@ -74,11 +315,28 @@ let write_output output_path contents =
 type cached_prefix_output = {
   source_packages : string list;
   compilation : Lg.Compiler.compilation;
+  has_state : bool;
+}
+
+type cached_prefix_state = {
+  state : Lg.Compiler.state;
+}
+
+type cached_prefix_write = {
+  write_source_packages : string list;
+  write_compilation : Lg.Compiler.compilation;
+  write_state : Lg.Compiler.state;
+}
+
+type cached_runner_manifest = {
+  runner_key : string;
+  runner_executable : string;
 }
 
 type compiler_state =
   | Live of Lg.Compiler.state
   | Replayed of Lg.Compiler.state
+  | Cached of string
 
 type saved_compilation_state = {
   target : Lg.Target.t;
@@ -111,13 +369,8 @@ let read_saved_compilation_state path =
 let compile_cache_enabled () =
   Sys.getenv_opt "LG_DISABLE_COMPILE_CACHE" <> Some "1"
 
-let compile_cache_min_seconds () =
-  match Sys.getenv_opt "LG_COMPILE_CACHE_MIN_SECONDS" with
-  | Some value -> Option.value (float_of_string_opt value) ~default:0.1
-  | None -> 0.1
-
 let default_compile_cache_max_bytes =
-  Int64.mul 256L (Int64.mul 1024L 1024L)
+  Int64.mul 2048L (Int64.mul 1024L 1024L)
 
 let compile_cache_max_bytes () =
   match Sys.getenv_opt "LG_COMPILE_CACHE_MAX_BYTES" with
@@ -138,6 +391,23 @@ let rec ensure_directory path =
     ensure_directory (Filename.dirname path);
     try Unix.mkdir path 0o755 with
     | Unix.Unix_error (Unix.EEXIST, _, _) when Sys.is_directory path -> ())
+
+let write_marshal_file path value =
+  ensure_directory (Filename.dirname path);
+  let oc = open_out_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr oc)
+    (fun () -> Marshal.to_channel oc value [])
+
+let read_marshal_file path =
+  if not (Sys.file_exists path) then None
+  else
+    try
+      let ic = open_in_bin path in
+      Fun.protect
+        ~finally:(fun () -> close_in_noerr ic)
+        (fun () -> Some (Marshal.from_channel ic))
+    with Sys_error _ | End_of_file | Failure _ -> None
 
 let compile_cache_directory () =
   match Sys.getenv_opt "LG_CACHE_DIR" with
@@ -199,6 +469,8 @@ let compiler_cache_identity =
   let identity = lazy (compute_compiler_cache_identity ()) in
   fun () -> Lazy.force identity
 
+let compile_files_cache_format_version = "compile-files-v3"
+
 let reader_target_cache_key = function
   | None -> "default"
   | Some target -> Lg.Target.to_string target
@@ -218,12 +490,13 @@ let next_prefix_key ~target ?reader_target previous_key input_path source =
 let saved_state_prefix_key ~target ?reader_target state_path =
   Digest.string
     (String.concat "\000"
-       [
-         compiler_cache_identity ();
-         "saved-state";
-         Lg.Target.to_string target;
-         reader_target_cache_key reader_target;
-         Digest.to_hex (Digest.file state_path);
+         [
+            compiler_cache_identity ();
+            compile_files_cache_format_version;
+            "saved-state";
+            Lg.Target.to_string target;
+            reader_target_cache_key reader_target;
+            Digest.to_hex (Digest.file state_path);
        ])
   |> Digest.to_hex
 
@@ -234,6 +507,14 @@ let cache_path key suffix =
   Filename.concat (compile_cache_generation_directory ())
     (key ^ suffix ^ ".marshal")
 
+let runner_cache_path key =
+  Filename.concat (compile_cache_generation_directory ())
+    ("runner-" ^ key ^ ".exe")
+
+let runner_manifest_path key =
+  Filename.concat (compile_cache_generation_directory ())
+    ("runner-manifest-" ^ key ^ ".marshal")
+
 type cache_entry_files = {
   paths : string list;
   size : int64;
@@ -241,7 +522,7 @@ type cache_entry_files = {
 }
 
 let cache_entry_key filename =
-  let suffixes = [ ".output.marshal" ] in
+  let suffixes = [ ".output.marshal"; ".state.marshal" ] in
   suffixes
   |> List.find_map (fun suffix ->
          if Filename.check_suffix filename suffix then
@@ -324,8 +605,8 @@ let prune_compile_cache () =
 
 let touch_cache_entry key =
   let now = Unix.gettimeofday () in
-  let path = cache_path key ".output" in
-  if Sys.file_exists path then Unix.utimes path now now
+  [ cache_path key ".output"; cache_path key ".state" ]
+  |> List.iter (fun path -> if Sys.file_exists path then Unix.utimes path now now)
 
 let report_corrupt_cache_entry key messages =
   if Sys.getenv_opt "LG_COMPILE_CACHE_DEBUG" = Some "1" then
@@ -343,14 +624,33 @@ let read_cached_prefix_output key =
             Lg.Compiler_artifact.read ~kind:"prefix-output" ~path:output_path
           with
           | Ok cached_output ->
-            touch_cache_entry key;
-            Some (cached_output : cached_prefix_output)
+            let cached_output = (cached_output : cached_prefix_output) in
+            if cached_output.has_state then (
+              touch_cache_entry key;
+              Some cached_output)
+            else None
           | Error message ->
             report_corrupt_cache_entry key [ message ];
             Lg.Compiler_artifact.remove_if_present output_path;
             None)
 
-let write_cached_prefix key output =
+let read_cached_prefix_state key =
+  if not (compile_cache_enabled ()) then None
+  else
+    with_compile_cache_lock (fun () ->
+        let state_path = cache_path key ".state" in
+        if not (Sys.file_exists state_path) then None
+        else
+          match Lg.Compiler_artifact.read ~kind:"prefix-state" ~path:state_path with
+          | Ok cached_state ->
+            touch_cache_entry key;
+            Some ((cached_state : cached_prefix_state).state)
+          | Error message ->
+            report_corrupt_cache_entry key [ message ];
+            Lg.Compiler_artifact.remove_if_present state_path;
+            None)
+
+let write_cached_prefix key (output : cached_prefix_write) =
   if compile_cache_enabled () then
     try
       let started_at = Sys.time () in
@@ -358,15 +658,41 @@ let write_cached_prefix key output =
           let directory = compile_cache_generation_directory () in
           ensure_directory directory;
           Lg.Compiler_artifact.write ~kind:"prefix-output"
-            ~path:(cache_path key ".output") output);
+            ~path:(cache_path key ".output")
+            {
+              source_packages = output.write_source_packages;
+              compilation = output.write_compilation;
+              has_state = true;
+            };
+          Lg.Compiler_artifact.write ~kind:"prefix-state"
+            ~path:(cache_path key ".state")
+            { state = output.write_state });
       if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
         Printf.eprintf "lg: wrote cached prefix: %.3fs\n%!"
           (Sys.time () -. started_at)
     with _ -> ()
 
+let timed_step label f =
+  if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then (
+    let started_at = Unix.gettimeofday () in
+    Fun.protect
+      ~finally:(fun () ->
+        Printf.eprintf "lg: %s: %.3fs\n%!" label
+          (Unix.gettimeofday () -. started_at))
+      f)
+  else f ()
+
 let report_cache_hit input_path =
   if Sys.getenv_opt "LG_COMPILE_CACHE_DEBUG" = Some "1" then
     Printf.eprintf "lg: compile cache hit: %s\n%!" input_path
+
+let report_cache_miss input_path key reason =
+  if Sys.getenv_opt "LG_COMPILE_CACHE_DEBUG" = Some "1" then
+    let short_key =
+      String.sub key 0 (min 8 (String.length key))
+    in
+    Printf.eprintf "lg: compile cache miss: %s (%s, %s)\n%!" input_path
+      short_key reason
 
 type mode =
   | Compile of { input_path : string; output_path : string option }
@@ -412,6 +738,7 @@ type mode =
       implementation_path : string;
       input_paths : string list;
     }
+  | Test of { input_paths : string list }
   | Lsp of { state_path : string option }
 
 let extract_compilation_options args =
@@ -449,6 +776,7 @@ let parse_args argv =
     | [ _program; "--lsp" ] -> Lsp { state_path = None }
     | [ _program; "--lsp"; "--state"; state_path ] ->
         Lsp { state_path = Some state_path }
+    | _program :: "test" :: input_paths -> Test { input_paths }
     | [ _program; "--interface"; input ] ->
         Interface { input_path = input; output_path = None }
     | [ _program; "--interface"; input; "-o"; output ] ->
@@ -562,7 +890,7 @@ type native_link_layout = {
   archives : string list;
 }
 
-let development_link_layout executable_directory =
+let development_link_layout ?(archive_suffix = ".cmxa") executable_directory =
   let build_directory = Filename.dirname executable_directory in
   let rrbvec_directory = Filename.concat build_directory "vendor/rrbvec" in
   let compiler_directory = Filename.concat build_directory "src" in
@@ -570,7 +898,13 @@ let development_link_layout executable_directory =
   let backend_directory =
     Filename.concat build_directory "runtime_edn_backend_native"
   in
-  let compiler_archive = Filename.concat compiler_directory "lg.cmxa" in
+  let test_runtime_directory =
+    Filename.concat build_directory "test_runner/runtime"
+  in
+  let test_alcotest_directory =
+    Filename.concat build_directory "test_runner/alcotest"
+  in
+  let compiler_archive = Filename.concat compiler_directory ("lg" ^ archive_suffix) in
   if not (Sys.file_exists compiler_archive) then None
   else
     Some
@@ -587,23 +921,485 @@ let development_link_layout executable_directory =
             Filename.concat runtime_directory ".lg_runtime.objs/native";
             Filename.concat backend_directory
               ".lg_edn_backend_native.objs/byte";
+            test_runtime_directory;
+            Filename.concat test_runtime_directory
+              ".lg_test_runtime.objs/byte";
+            test_alcotest_directory;
+            Filename.concat test_alcotest_directory
+              ".lg_test_alcotest.objs/byte";
           ];
         archives =
-          [
-            Filename.concat rrbvec_directory "rrbvec.cmxa";
-            Filename.concat backend_directory "lg_edn_backend_native.cmxa";
-            Filename.concat runtime_directory "lg_runtime.cmxa";
-            compiler_archive;
-          ];
+          List.filter Sys.file_exists
+            [
+              Filename.concat rrbvec_directory ("rrbvec" ^ archive_suffix);
+              Filename.concat backend_directory ("lg_edn_backend_native" ^ archive_suffix);
+              Filename.concat runtime_directory ("lg_runtime" ^ archive_suffix);
+              compiler_archive;
+              Filename.concat test_runtime_directory
+                ("lg_test_runtime" ^ archive_suffix);
+              Filename.concat test_alcotest_directory
+                ("lg_test_alcotest" ^ archive_suffix);
+            ];
       }
 
-let installed_link_layout executable_directory =
+let rec dune_files_under_uncached directory =
+  if not (Sys.file_exists directory && Sys.is_directory directory) then []
+  else
+    sorted_readdir directory
+    |> List.concat_map (fun name ->
+           let path = Filename.concat directory name in
+           if name = "_build" || name = ".git" || name = "_opam" then []
+           else if Sys.file_exists path && Sys.is_directory path then
+             dune_files_under_uncached path
+           else if name = "dune" then [ path ]
+           else [])
+
+let dune_files_cache = Hashtbl.create 8
+
+let dune_files_under directory =
+  match Hashtbl.find_opt dune_files_cache directory with
+  | Some files -> files
+  | None ->
+      let files = dune_files_under_uncached directory in
+      Hashtbl.replace dune_files_cache directory files;
+      files
+
+let line_value form line =
+  let prefix = "(" ^ form ^ " " in
+  let line = String.trim line in
+  if String.starts_with ~prefix line && String.ends_with ~suffix:")" line then
+    let rec trim_closing_parens value =
+      let value = String.trim value in
+      let length = String.length value in
+      if length > 0 && value.[length - 1] = ')' then
+        trim_closing_parens (String.sub value 0 (length - 1))
+      else value
+    in
+    let value =
+      String.sub line (String.length prefix)
+        (String.length line - String.length prefix)
+      |> trim_closing_parens
+    in
+    if value = "" then None else Some value
+  else None
+
+let state_references_in_text text =
+  let pattern = "%{lib:" in
+  let pattern_length = String.length pattern in
+  let text_length = String.length text in
+  let rec find_pattern offset =
+    if offset + pattern_length > text_length then None
+    else if String.sub text offset pattern_length = pattern then Some offset
+    else find_pattern (offset + 1)
+  in
+  let rec loop offset references =
+    match find_pattern offset with
+    | None -> List.rev references
+    | Some start -> (
+        match String.index_from_opt text (start + pattern_length) '}' with
+        | None -> List.rev references
+        | Some stop ->
+            let body =
+              String.sub text (start + pattern_length)
+                (stop - start - pattern_length)
+            in
+            let references =
+              match String.split_on_char ':' body with
+              | [ library; state_file ]
+                when String.ends_with ~suffix:".state" state_file ->
+                  (library, state_file) :: references
+              | _ -> references
+            in
+            loop (stop + 1) references)
+  in
+  loop 0 []
+
+let project_state_paths root =
+  dune_files_under root
+  |> List.concat_map (fun dune_file ->
+         read_file dune_file |> state_references_in_text
+         |> List.filter_map (fun (library, state_file) ->
+                let library_path =
+                  library |> String.split_on_char '.'
+                  |> List.fold_left Filename.concat ""
+                in
+                let path =
+                  Filename.concat root
+                    (Filename.concat "_build/install/default/lib"
+                       (Filename.concat library_path state_file))
+                in
+                if Sys.file_exists path then Some path else None))
+  |> unique_preserving_order
+
+let workspace_module_interface_dirs root module_roots =
+  let wanted =
+    module_roots
+    |> List.map (fun name -> String.lowercase_ascii name ^ ".cmi")
+  in
+  let build_root = Filename.concat root "_build/default" in
+  let rec scan directories directory =
+    if not (Sys.file_exists directory && Sys.is_directory directory) then directories
+    else
+      let basename = Filename.basename directory in
+      if
+        List.mem basename [ ".git"; ".ppx"; "_doc"; "melange" ]
+        || String.ends_with ~suffix:".eobjs" basename
+      then directories
+      else
+        let directories =
+          if
+            List.mem basename [ "byte"; "public_cmi" ]
+            && List.exists
+                 (fun file ->
+                   List.mem (String.lowercase_ascii file) wanted)
+                 (sorted_readdir directory)
+          then directory :: directories
+          else directories
+        in
+        sorted_readdir directory
+        |> List.fold_left
+             (fun directories entry ->
+               let child = Filename.concat directory entry in
+               if Sys.file_exists child && Sys.is_directory child then
+                 scan directories child
+               else directories)
+             directories
+  in
+  scan [] build_root |> List.sort_uniq String.compare
+
+let configure_ocaml_module_interface_dirs root module_roots =
+  let separator = if Sys.win32 then ';' else ':' in
+  let dirs = workspace_module_interface_dirs root module_roots in
+  if dirs <> [] then
+    let value =
+      String.concat (String.make 1 separator)
+        (dirs
+        @ (Sys.getenv_opt "LG_OCAML_INCLUDE_PATH"
+          |> Option.map (String.split_on_char separator)
+          |> Option.value ~default:[]))
+    in
+    Unix.putenv "LG_OCAML_INCLUDE_PATH" value
+
+let local_default_implementation_map_uncached root =
+  let map = Hashtbl.create 16 in
+  dune_files_under root
+  |> List.iter (fun dune_file ->
+         let lines = read_file dune_file |> String.split_on_char '\n' in
+         let public_names = List.filter_map (line_value "public_name") lines in
+         match List.filter_map (line_value "default_implementation") lines with
+         | implementation :: _ ->
+             List.iter
+               (fun public_name -> Hashtbl.replace map public_name implementation)
+               public_names
+         | [] -> ());
+  map
+
+let local_default_implementation_map_cache = Hashtbl.create 8
+
+let local_default_implementation_map root =
+  match Hashtbl.find_opt local_default_implementation_map_cache root with
+  | Some map -> map
+  | None ->
+      let map = local_default_implementation_map_uncached root in
+      Hashtbl.replace local_default_implementation_map_cache root map;
+      map
+
+let resolve_local_default_implementation implementations package =
+  Hashtbl.find_opt implementations package |> Option.value ~default:package
+
+let local_package_archives ?(archive_suffix = ".cmxa") root packages =
+  let default_implementations = local_default_implementation_map root in
+  let requested =
+    packages
+    |> List.map (resolve_local_default_implementation default_implementations)
+    |> List.sort_uniq String.compare
+  in
+  let build_root = Filename.concat root "_build/default" in
+  let archive_for_dune_file dune_file =
+    let relative_directory =
+      let directory = Filename.dirname dune_file in
+      let prefix = root ^ Filename.dir_sep in
+      if String.starts_with ~prefix directory then
+        String.sub directory (String.length prefix)
+          (String.length directory - String.length prefix)
+      else directory
+    in
+    let build_directory = Filename.concat build_root relative_directory in
+    let lines = read_file dune_file |> String.split_on_char '\n' in
+    let rec loop current_name archives = function
+      | [] -> archives
+      | line :: rest ->
+          let current_name =
+            match line_value "name" line with
+            | Some name -> Some name
+            | None -> current_name
+          in
+          let archives =
+            match line_value "public_name" line with
+            | Some public_name when List.mem public_name requested ->
+                let library_name =
+                  Option.value current_name
+                    ~default:
+                      (public_name |> String.map (function '-' -> '_' | c -> c))
+                in
+                let archive =
+                  Filename.concat build_directory
+                    (library_name ^ archive_suffix)
+                in
+                if Sys.file_exists archive then
+                  let object_dir =
+                    Filename.concat build_directory
+                      ("." ^ library_name ^ ".objs")
+                  in
+                  let include_dirs = object_include_dirs object_dir in
+                  (public_name, archive, include_dirs) :: archives
+                else archives
+            | Some _ | None -> archives
+          in
+          loop current_name archives rest
+    in
+    loop None [] lines
+  in
+  dune_files_under root |> List.concat_map archive_for_dune_file
+  |> List.sort_uniq (fun (_left_package, left_archive, _left_dirs)
+                         (_right_package, right_archive, _right_dirs) ->
+         String.compare left_archive right_archive)
+
+let dune_block_atoms text form =
+  let marker = "(" ^ form in
+  let marker_length = String.length marker in
+  let text_length = String.length text in
+  let delimiter = function
+    | ' ' | '\n' | '\r' | '\t' | '(' | ')' -> true
+    | _ -> false
+  in
+  let atoms block =
+    block
+    |> String.map (fun char -> if delimiter char then ' ' else char)
+    |> String.split_on_char ' '
+    |> List.filter (fun atom ->
+           atom <> "" && atom <> form
+           && not (String.starts_with ~prefix:";" atom)
+           && not (String.starts_with ~prefix:":" atom)
+           && not (String.starts_with ~prefix:"%" atom)
+           && atom <> "->")
+  in
+  let rec find_from offset =
+    if offset + marker_length > text_length then None
+    else if String.sub text offset marker_length = marker then Some offset
+    else find_from (offset + 1)
+  in
+  let rec collect offset blocks =
+    match find_from offset with
+    | None -> List.rev blocks
+    | Some start ->
+        let rec stop_at index depth =
+          if index >= text_length then text_length
+          else
+            let depth =
+              match text.[index] with
+              | '(' -> depth + 1
+              | ')' -> depth - 1
+              | _ -> depth
+            in
+            if depth = 0 then index + 1 else stop_at (index + 1) depth
+        in
+        let stop = stop_at start 0 in
+        let block = String.sub text start (stop - start) in
+        collect stop (block :: blocks)
+  in
+  collect 0 [] |> List.concat_map atoms
+
+let local_package_dependency_map_uncached root =
+  let map = Hashtbl.create 64 in
+  let default_implementations = local_default_implementation_map root in
+  dune_files_under root
+  |> List.iter (fun dune_file ->
+         let text = read_file dune_file in
+         let public_names =
+           text |> String.split_on_char '\n'
+           |> List.filter_map (line_value "public_name")
+         in
+         match public_names with
+         | [] -> ()
+         | _ ->
+             let deps =
+               dune_block_atoms text "libraries"
+               |> List.map
+                    (resolve_local_default_implementation
+                       default_implementations)
+             in
+             List.iter
+               (fun public_name ->
+                 let existing =
+                   Hashtbl.find_opt map public_name |> Option.value ~default:[]
+                 in
+                 Hashtbl.replace map public_name
+                   (unique_preserving_order (existing @ deps)))
+               public_names);
+  map
+
+let local_package_dependency_map_cache = Hashtbl.create 8
+
+let local_package_dependency_map root =
+  match Hashtbl.find_opt local_package_dependency_map_cache root with
+  | Some map -> map
+  | None ->
+      let map = local_package_dependency_map_uncached root in
+      Hashtbl.replace local_package_dependency_map_cache root map;
+      map
+
+let local_package_dependency_closure root packages =
+  let dependency_map = local_package_dependency_map root in
+  let rec visit seen = function
+    | [] -> List.rev seen
+    | package :: rest ->
+        if List.mem package seen then visit seen rest
+        else
+          let deps =
+            Hashtbl.find_opt dependency_map package |> Option.value ~default:[]
+          in
+          visit (package :: seen) (deps @ rest)
+  in
+  visit [] packages
+
+let rec archive_files_under_uncached archive_suffix directory =
+  if not (Sys.file_exists directory && Sys.is_directory directory) then []
+  else
+    sorted_readdir directory
+    |> List.concat_map (fun name ->
+           let path = Filename.concat directory name in
+           if List.mem name [ ".git"; ".ppx"; "_doc"; "melange" ] then []
+           else if Sys.file_exists path && Sys.is_directory path then
+             archive_files_under_uncached archive_suffix path
+           else if String.ends_with ~suffix:archive_suffix name then [ path ]
+           else [])
+
+let archive_files_cache = Hashtbl.create 8
+
+let archive_files_under archive_suffix directory =
+  let key = archive_suffix ^ "\000" ^ directory in
+  match Hashtbl.find_opt archive_files_cache key with
+  | Some files -> files
+  | None ->
+      let files = archive_files_under_uncached archive_suffix directory in
+      Hashtbl.replace archive_files_cache key files;
+      files
+
+let module_name_of_archive archive =
+  Filename.basename archive |> Filename.remove_extension
+  |> fun name ->
+  if name = "" then name
+  else
+    String.make 1 (Char.uppercase_ascii name.[0])
+    ^ String.sub name 1 (String.length name - 1)
+
+let local_archive_link_priority archive =
+  match Filename.basename archive |> Filename.remove_extension with
+  | "rrbvec" -> 10
+  | "re" -> 14
+  | "yojson" -> 15
+  | "melange_edn" -> 20
+  | "melange_edn_native" -> 30
+  | "lg_edn_backend_native" -> 40
+  | "lg_runtime" -> 50
+  | "lg_test_runtime" -> 60
+  | "fmt" -> 61
+  | "astring" -> 62
+  | "uutf" -> 63
+  | "cmdliner" -> 64
+  | "alcotest_stdlib_ext" -> 65
+  | "alcotest_engine" -> 66
+  | "alcotest" -> 67
+  | "lg_test_alcotest" -> 70
+  | "seq" -> 75
+  | "bigstringaf" -> 76
+  | "angstrom" -> 77
+  | "ptime" -> 78
+  | "timedesc_tzdb_full" -> 79
+  | "timedesc_tzlocal_unix_or_utc" -> 80
+  | "timedesc" -> 81
+  | "fsrs" -> 90
+  | "datascript_types" -> 100
+  | "persistent_sorted_set" | "persistent_sorted_set_native" -> 105
+  | "datascript" -> 110
+  | "datascript_native" -> 120
+  | "datascript_lg" -> 130
+  | "transit_core" -> 140
+  | "transit_native" -> 150
+  | _ -> 1000
+
+let sort_local_archives_for_link archives =
+  archives
+  |> List.sort (fun left right ->
+         let priority_order =
+           Int.compare (local_archive_link_priority left)
+             (local_archive_link_priority right)
+         in
+         if priority_order <> 0 then priority_order
+         else String.compare left right)
+
+let string_contains_substring text pattern =
+  let pattern_length = String.length pattern in
+  let text_length = String.length text in
+  let rec loop offset =
+    if pattern_length = 0 then true
+    else if offset + pattern_length > text_length then false
+    else if String.sub text offset pattern_length = pattern then true
+    else loop (offset + 1)
+  in
+  loop 0
+
+let source_references_ocaml_module source module_name =
+  string_contains_substring source (module_name ^ ".")
+  || string_contains_substring source (module_name ^ "__")
+  || string_contains_substring source ("open " ^ module_name)
+  || string_contains_substring source ("module " ^ module_name)
+  || string_contains_substring source ("include " ^ module_name)
+
+let referenced_local_module_archives ?(archive_suffix = ".cmxa") root ocaml_source =
+  let ignored =
+    [
+      "Lg";
+      "Lg_runtime";
+      "Lg_edn_backend";
+      "Rrbvec";
+      "Lg_test_runtime";
+      "Lg_test_alcotest";
+    ]
+  in
+  archive_files_under archive_suffix (Filename.concat root "_build/default")
+  |> List.filter_map (fun archive ->
+        let module_name = module_name_of_archive archive in
+        if
+           (not (List.mem module_name ignored))
+           && source_references_ocaml_module ocaml_source module_name
+        then Some archive
+        else None)
+
+let local_archives_by_basename ?(archive_suffix = ".cmxa") root names =
+  let wanted =
+    names |> List.map (fun name -> name ^ archive_suffix)
+  in
+  archive_files_under archive_suffix (Filename.concat root "_build/default")
+  |> List.filter (fun archive ->
+         List.mem (Filename.basename archive) wanted)
+
+let replace_archive_suffix archive suffix =
+  (try Filename.chop_extension archive with Invalid_argument _ -> archive)
+  ^ suffix
+
+let installed_link_layout ?(archive_suffix = ".cmxa") executable_directory =
   let prefix = Filename.dirname executable_directory in
   let library_directory = Filename.concat prefix "lib/lg" in
   let rrbvec_directory = Filename.concat library_directory "rrbvec" in
   let runtime_directory = Filename.concat library_directory "runtime" in
   let backend_directory = Filename.concat library_directory "edn-backend/native" in
-  let compiler_archive = Filename.concat library_directory "lg.cmxa" in
+  let test_runtime_directory = Filename.concat prefix "lib/lg-test/runtime" in
+  let test_alcotest_directory = Filename.concat prefix "lib/lg-test/alcotest" in
+  let compiler_archive =
+    Filename.concat library_directory ("lg" ^ archive_suffix)
+  in
   if not (Sys.file_exists compiler_archive) then None
   else
     Some
@@ -614,75 +1410,415 @@ let installed_link_layout executable_directory =
             rrbvec_directory;
             runtime_directory;
             backend_directory;
+            test_runtime_directory;
+            test_alcotest_directory;
           ];
         archives =
-          [
-            Filename.concat rrbvec_directory "rrbvec.cmxa";
-            Filename.concat backend_directory "lg_edn_backend_native.cmxa";
-            Filename.concat runtime_directory "lg_runtime.cmxa";
-            compiler_archive;
-          ];
+          List.filter Sys.file_exists
+            [
+              Filename.concat rrbvec_directory ("rrbvec" ^ archive_suffix);
+              Filename.concat backend_directory
+                ("lg_edn_backend_native" ^ archive_suffix);
+              Filename.concat runtime_directory ("lg_runtime" ^ archive_suffix);
+              compiler_archive;
+              Filename.concat test_runtime_directory
+                ("lg_test_runtime" ^ archive_suffix);
+              Filename.concat test_alcotest_directory
+                ("lg_test_alcotest" ^ archive_suffix);
+            ];
       }
 
-let native_link_layout () =
+let native_link_layout ?(archive_suffix = ".cmxa") () =
   let executable_path =
     if Filename.is_relative Sys.executable_name then
       Filename.concat (Sys.getcwd ()) Sys.executable_name
     else Sys.executable_name
   in
   let executable_directory = Filename.dirname executable_path in
-  match development_link_layout executable_directory with
+  match development_link_layout ~archive_suffix executable_directory with
   | Some _ as layout -> layout
-  | None -> installed_link_layout executable_directory
+  | None -> installed_link_layout ~archive_suffix executable_directory
 
-let run_ocaml_source packages ocaml_source =
+let run_ocaml_source ?archive_scan_source packages ocaml_source =
   let ml_path = Filename.temp_file "lg" ".ml" in
   let exe_path = Filename.temp_file "lg" ".exe" in
   write_output (Some ml_path) ocaml_source;
-  let packages =
+  let archive_scan_source =
+    Option.value archive_scan_source ~default:ocaml_source
+  in
+  let base_packages =
     List.sort_uniq String.compare
-      ("melange-edn-native" :: "re" :: "unix" :: packages)
+      (("melange-edn-native" :: "re" :: "str" :: "unix" :: "yojson" :: packages)
+      @
+      if List.mem "lg-test.alcotest" packages then
+        [ "alcotest"; "alcotest.engine" ]
+      else [])
+  in
+  let root = find_repo_root_opt (Sys.getcwd ()) in
+  let cache_runner =
+    compile_cache_enabled () && Sys.getenv_opt "LG_DISABLE_RUNNER_CACHE" <> Some "1"
+  in
+  let runner_source_key =
+    Digest.string
+      (String.concat "\000"
+         [
+           compiler_cache_identity ();
+           "runner-source-v1";
+           Option.value root ~default:(Sys.getcwd ());
+           String.concat "," base_packages;
+           ocaml_source;
+         ])
+    |> Digest.to_hex
+  in
+  if cache_runner then
+    match
+      (read_marshal_file (runner_manifest_path runner_source_key)
+        : cached_runner_manifest option)
+    with
+    | Some manifest when Sys.file_exists manifest.runner_executable ->
+        if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+          Printf.eprintf "lg: runner source cache hit: %s\n%!"
+            manifest.runner_key;
+        Sys.remove ml_path;
+        Sys.remove exe_path;
+        let exit_code =
+          timed_step "native test executable" (fun () ->
+              Sys.command (Filename.quote manifest.runner_executable))
+        in
+        exit exit_code
+    | Some _ | None -> ();
+  let discover_local_link_inputs archive_suffix =
+    timed_step ("discover local link inputs " ^ archive_suffix) (fun () ->
+        match root with
+        | Some root ->
+            let packages =
+              local_package_dependency_closure root
+                (base_packages
+                @ [
+                    "lg";
+                    "lg.runtime";
+                    "lg.rrbvec";
+                    "lg.edn-backend.native";
+                    "lg-test.runtime";
+                    "lg-test.alcotest";
+                  ])
+            in
+            let package_archives =
+              local_package_archives ~archive_suffix root packages
+            in
+            let archive_packages =
+              List.map
+                (fun (package, _archive, _dirs) -> package)
+                package_archives
+            in
+            let include_directories =
+              List.concat_map
+                (fun (_package, _archive, dirs) -> dirs)
+                package_archives
+            in
+            let archives =
+              List.map
+                (fun (_package, archive, _dirs) -> archive)
+                package_archives
+              @ referenced_local_module_archives ~archive_suffix root
+                  archive_scan_source
+              @ local_archives_by_basename ~archive_suffix root
+                  [ "alcotest_stdlib_ext"; "datascript_types" ]
+              |> sort_local_archives_for_link
+            in
+            (archive_packages, include_directories, archives)
+        | None -> ([], [], []))
+  in
+  let native_local_archive_packages, native_local_include_directories,
+      native_local_archives =
+    discover_local_link_inputs ".cmxa"
+  in
+  let bytecode_missing =
+    native_local_archives
+    |> List.filter (fun archive ->
+           not (Sys.file_exists (replace_archive_suffix archive ".cma")))
+  in
+  let bytecode_layout_available =
+    Option.is_some (native_link_layout ~archive_suffix:".cma" ())
+  in
+  let archive_suffix, compiler =
+    match Sys.getenv_opt "LG_TEST_NATIVE" with
+    | Some "1" -> (".cmxa", "ocamlopt")
+    | _ when bytecode_missing = [] && bytecode_layout_available ->
+        (".cma", "ocamlc")
+    | _ ->
+        (if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+          let missing =
+            match bytecode_missing with
+            | [] -> "runtime layout"
+            | paths -> String.concat ", " (List.map Filename.basename paths)
+          in
+          Printf.eprintf "lg: bytecode runner unavailable: %s\n%!" missing);
+        (".cmxa", "ocamlopt")
+  in
+  let local_archive_packages, local_include_directories, local_archives =
+    if archive_suffix = ".cmxa" then
+      ( native_local_archive_packages,
+        native_local_include_directories,
+        native_local_archives )
+    else discover_local_link_inputs archive_suffix
+  in
+  let local_object_include_directories =
+    timed_step "discover local object includes" (fun () ->
+        local_archives
+        |> List.concat_map (fun archive ->
+               let directory = Filename.dirname archive in
+               let name =
+                 Filename.basename archive |> Filename.remove_extension
+               in
+               object_include_dirs
+                 (Filename.concat directory ("." ^ name ^ ".objs")))
+    )
+  in
+  let packages =
+    base_packages
     |> List.filter (fun package ->
            not
              (List.mem package
-                [ "lg";
+                [
+                  "lg";
                   "lg.runtime";
                   "lg.rrbvec";
                   "lg.edn-backend";
-                  "lg.edn-backend.native" ]))
+                  "lg.edn-backend.native";
+                  "lg-test.runtime";
+                  "lg-test.alcotest";
+                ]
+             || List.mem package local_archive_packages))
   in
   let package_options =
     "-package " ^ Filename.quote (String.concat "," packages) ^ " -linkpkg "
   in
   let layout =
-    match native_link_layout () with
+    match native_link_layout ~archive_suffix () with
     | Some layout -> layout
     | None ->
       prerr_endline "lg: could not locate installed native runtime artifacts";
       exit 2
   in
-  let include_options =
+  let local_archive_basenames = List.map Filename.basename local_archives in
+  let replaced_layout_archive_dirs =
+    layout.archives
+    |> List.filter (fun archive ->
+           List.mem (Filename.basename archive) local_archive_basenames)
+    |> List.map Filename.dirname
+  in
+  let path_is_inside directory path =
+    let prefix = directory ^ Filename.dir_sep in
+    path = directory || String.starts_with ~prefix path
+  in
+  let layout_include_directories =
     layout.include_directories
-    |> List.map (fun directory -> "-I " ^ Filename.quote directory)
-    |> String.concat " "
+    |> List.filter (fun directory ->
+           not
+             (List.exists
+                (fun archive_dir -> path_is_inside archive_dir directory)
+                replaced_layout_archive_dirs))
+  in
+  let include_options =
+    timed_step "prepare link flags" (fun () ->
+        (layout_include_directories
+        @ local_include_directories
+        @ local_object_include_directories
+        @ List.map Filename.dirname local_archives)
+        |> unique_preserving_order
+        |> List.map (fun directory -> "-I " ^ Filename.quote directory)
+        |> String.concat " ")
   in
   let archives =
-    layout.archives |> List.map Filename.quote |> String.concat " "
+    (layout.archives
+    |> List.filter (fun archive ->
+           not (List.mem (Filename.basename archive) local_archive_basenames)))
+    @ local_archives
+    |> unique_preserving_order
+  in
+  let archive_identity archive =
+    try
+      let stat = Unix.stat archive in
+      Printf.sprintf "%s:%f:%d" archive stat.Unix.st_mtime stat.st_size
+    with Unix.Unix_error _ -> archive
+  in
+  let runner_key =
+    Digest.string
+      (String.concat "\000"
+         (compiler :: package_options :: include_options :: ocaml_source
+          :: List.map archive_identity archives))
+    |> Digest.to_hex
+  in
+  let cached_exe_path = runner_cache_path runner_key in
+  if cache_runner && Sys.file_exists cached_exe_path then (
+    if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+      Printf.eprintf "lg: runner cache hit: %s\n%!" runner_key;
+    write_marshal_file (runner_manifest_path runner_source_key)
+      {
+        runner_key;
+        runner_executable = cached_exe_path;
+      };
+    Sys.remove ml_path;
+    Sys.remove exe_path;
+    let exit_code =
+      timed_step "native test executable" (fun () ->
+          Sys.command (Filename.quote cached_exe_path))
+    in
+    exit exit_code);
+  if Sys.getenv_opt "LG_TEST_DEBUG_SOURCES" = Some "1" then
+    List.iter (Printf.eprintf "lg native archive: %s\n%!") archives;
+  let archives =
+    archives
+    |> List.map Filename.quote |> String.concat " "
   in
   let compile_cmd =
-    Printf.sprintf "ocamlfind ocamlopt %s%s -o %s %s %s" package_options
+    Printf.sprintf "ocamlfind %s %s%s -o %s %s %s" compiler package_options
       include_options (Filename.quote exe_path) archives (Filename.quote ml_path)
   in
-  match Sys.command compile_cmd with
+  let compile_exit =
+    timed_step "native link" (fun () -> Sys.command compile_cmd)
+  in
+  match compile_exit with
   | 0 ->
-      let exit_code = Sys.command (Filename.quote exe_path) in
+      let run_path =
+        if cache_runner then (
+          ensure_directory (Filename.dirname cached_exe_path);
+          (try Sys.rename exe_path cached_exe_path with
+          | Sys_error _ | Unix.Unix_error _ -> ());
+          if Sys.file_exists cached_exe_path then
+            write_marshal_file (runner_manifest_path runner_source_key)
+              {
+                runner_key;
+                runner_executable = cached_exe_path;
+              };
+          if Sys.file_exists cached_exe_path then cached_exe_path else exe_path)
+        else exe_path
+      in
+      let exit_code =
+        timed_step "native test executable" (fun () ->
+            Sys.command (Filename.quote run_path))
+      in
       Sys.remove ml_path;
-      Sys.remove exe_path;
+      if run_path = exe_path then Sys.remove exe_path;
       exit exit_code
   | code ->
       Sys.remove ml_path;
       Sys.remove exe_path;
       exit code
+
+let executable_directory () =
+  let executable_path =
+    if Filename.is_relative Sys.executable_name then
+      Filename.concat (Sys.getcwd ()) Sys.executable_name
+    else Sys.executable_name
+  in
+  Filename.dirname executable_path
+
+let default_stdlib_artifacts () =
+  let executable_directory = executable_directory () in
+  let build_directory = Filename.dirname executable_directory in
+  let development_state =
+    Filename.concat build_directory "stdlib/lg_stdlib_native.state"
+  in
+  let development_implementation =
+    Filename.concat build_directory "stdlib/lg_stdlib_native.ml"
+  in
+  let prefix = Filename.dirname executable_directory in
+  let installed_state =
+    Filename.concat prefix "lib/lg/stdlib/lg_stdlib_native.state"
+  in
+  let installed_implementation =
+    Filename.concat prefix "lib/lg/stdlib/lg_stdlib_native.ml"
+  in
+  match
+    List.find_opt
+      (fun (state, implementation) ->
+        Sys.file_exists state && Sys.file_exists implementation)
+      [
+        (development_state, development_implementation);
+        (installed_state, installed_implementation);
+      ]
+  with
+  | Some artifacts -> artifacts
+  | None ->
+      prerr_endline
+        "lg: unable to find lg stdlib artifacts for test execution";
+      exit 2
+
+let default_test_support_directory () =
+  let executable_directory = executable_directory () in
+  let build_directory = Filename.dirname executable_directory in
+  let development_directory =
+    Filename.concat build_directory "test_runner/clojure"
+  in
+  let prefix = Filename.dirname executable_directory in
+  let installed_directories =
+    [
+      Filename.concat prefix "share/lg-test/clojure";
+      Filename.concat prefix "lib/lg-test/sources";
+    ]
+  in
+  match
+    List.find_opt Sys.file_exists (development_directory :: installed_directories)
+  with
+  | Some directory -> directory
+  | None ->
+      prerr_endline "lg: unable to find lg-test support sources";
+      exit 2
+
+let test_support_sources () =
+  let directory = default_test_support_directory () in
+  [
+    Filename.concat directory "test.cljc";
+    Filename.concat directory "test_native.cljc";
+  ]
+
+let test_runner_source () =
+  Filename.concat (default_test_support_directory ()) "run.cljc"
+
+let default_lg_test_paths () =
+  if Sys.file_exists "lg-test" && Sys.is_directory "lg-test" then [ "lg-test" ]
+  else [ "." ]
+
+let local_lg_source_roots () =
+  let project_roots =
+    if Sys.file_exists "lg" && Sys.is_directory "lg" then [ "lg" ] else []
+  in
+  let dependency_roots =
+    let duniverse = "duniverse" in
+    if Sys.file_exists duniverse && Sys.is_directory duniverse then
+      sorted_readdir duniverse
+      |> List.filter_map (fun name ->
+             let root = Filename.concat (Filename.concat duniverse name) "lg" in
+             if Sys.file_exists root && Sys.is_directory root then Some root
+             else None)
+    else []
+  in
+  project_roots @ dependency_roots
+
+let lg_test_sources input_paths =
+  let input_paths =
+    if input_paths = [] then default_lg_test_paths () else input_paths
+  in
+  let test_sources = expand_test_input_paths input_paths in
+  let local_sources =
+    local_lg_source_roots () |> List.concat_map expand_test_input_path
+  in
+  let source_index = local_source_index local_sources in
+  let required_namespaces =
+    test_sources
+    |> List.concat_map (fun path -> (source_namespace_info path).requires)
+    |> List.filter project_namespace
+    |> List.sort_uniq String.compare
+  in
+  let application_sources =
+    required_project_sources source_index required_namespaces
+  in
+  test_support_sources ()
+  @ application_sources
+  @ test_sources
+  @ [ test_runner_source () ]
 
 let concatenate_compilation_outputs outputs =
   let runtime_open = "open Lg_runtime\n" in
@@ -706,47 +1842,41 @@ let concatenate_compilation_outputs outputs =
 
 let read_compiler_state = function
   | Live state | Replayed state -> Ok state
+  | Cached key -> (
+      match read_cached_prefix_state key with
+      | Some state -> Ok state
+      | None -> compiler_error ("missing cached compiler state " ^ key))
 
 let resume_compiler_state ~target ~packages ~sources = function
   | Live state -> Ok state
-  | Replayed state ->
-      Lg.Compiler.restore_ocaml_environment ~target ~packages state sources
+  | Replayed _ | Cached _ as compiler_state ->
+      Result.bind (read_compiler_state compiler_state) (fun state ->
+          Lg.Compiler.restore_ocaml_environment ~target ~packages state sources)
 
-let replay_cached_prefix compiler_state prepared =
-  Result.bind (read_compiler_state compiler_state) (fun state ->
-      Lg.Compiler.compile_prepared_chunk_with_diagnostics ~check_ocaml:false
-        state prepared
-      |> Result.map fst)
-
-let order_prepared_sources ?reader_target target compiler_state sources =
-  let source_texts =
-    List.map (fun (path, source, _prepared) -> (path, source)) sources
-  in
-  match
-    Lg.Toolchain.order_workspace_from_state ~target ?reader_target compiler_state
-      source_texts
-  with
-  | Error _ as error -> error
-  | Ok paths ->
-      let rec reorder ordered = function
-        | [] -> Ok (List.rev ordered)
-        | path :: rest -> (
-            match
-              List.find_opt
-                (fun (source_path, _source, _prepared) -> source_path = path)
-                sources
-            with
-            | Some source -> reorder (source :: ordered) rest
-            | None -> compiler_error ("missing analyzed source " ^ path))
-      in
-      reorder [] paths
-
-let order_input_paths ?reader_target target compiler_state input_paths =
-  let sources = List.map (fun path -> (path, read_file path)) input_paths in
-  Lg.Toolchain.order_workspace_from_state ~target ?reader_target compiler_state
+let order_prepared_sources ?reader_target:_ _target _compiler_state sources =
+  let paths =
     sources
+    |> List.map (fun (path, _source, _prepared) -> path)
+    |> order_paths_by_namespace_dependencies
+  in
+  let rec reorder ordered = function
+    | [] -> Ok (List.rev ordered)
+    | path :: rest -> (
+        match
+          List.find_opt
+            (fun (source_path, _source, _prepared) -> source_path = path)
+            sources
+        with
+        | Some source -> reorder (source :: ordered) rest
+        | None -> compiler_error ("missing analyzed source " ^ path))
+  in
+  reorder [] paths
 
-let compile_files ?(use_cache = true) ?reader_target target input_paths =
+let order_input_paths ?reader_target:_ _target _compiler_state input_paths =
+  Ok (order_paths_by_namespace_dependencies input_paths)
+
+let compile_files ?(use_cache = true) ?(check_ocaml = true) ?reader_target
+    target input_paths =
   let input_paths = expand_input_paths input_paths in
   let rec loop prefix_key compiler_state packages outputs diagnostics =
     function
@@ -780,36 +1910,38 @@ let compile_files ?(use_cache = true) ?reader_target target input_paths =
             with
             | Some cached ->
                 report_cache_hit input_path;
-                Result.bind
-                  (replay_cached_prefix compiler_state prepared)
-                  (fun state ->
-                    loop prefix_key (Replayed state)
-                      (List.rev_append cached.source_packages packages)
-                      (cached.compilation.ocaml_source :: outputs)
-                      (cached.compilation.diagnostics :: diagnostics)
-                      rest)
+                loop prefix_key (Cached prefix_key)
+                  (List.rev_append cached.source_packages packages)
+                  (cached.compilation.ocaml_source :: outputs)
+                  (cached.compilation.diagnostics :: diagnostics)
+                  rest
             | None ->
+                report_cache_miss input_path prefix_key
+                  (if Sys.file_exists (cache_path prefix_key ".output") then
+                     "unusable"
+                   else "missing");
                 Result.bind
-                  (resume_compiler_state ~target ~packages
-                     ~sources:(List.rev outputs) compiler_state)
+                  (timed_step "resume OCaml environment" (fun () ->
+                       resume_compiler_state ~target ~packages
+                         ~sources:(List.rev outputs) compiler_state))
                   (fun state ->
                     if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
                       Printf.eprintf "lg: compiling %s\n%!" input_path;
                     let started_at = Sys.time () in
-                    match
-                      Lg.Compiler.compile_prepared_chunk_with_diagnostics state
-                        prepared
+                      match
+                        Lg.Compiler.compile_prepared_chunk_with_diagnostics state
+                          ~check_ocaml prepared
                     with
                     | Error _ as err -> err
                     | Ok (state, compilation) ->
-                        if
-                          use_cache
-                          &&
-                          Sys.time () -. started_at
-                          >= compile_cache_min_seconds ()
-                        then
-                          write_cached_prefix prefix_key
-                            { source_packages; compilation };
+                    let _elapsed = Sys.time () -. started_at in
+                    if use_cache then
+                      write_cached_prefix prefix_key
+                        {
+                          write_source_packages = source_packages;
+                          write_compilation = compilation;
+                          write_state = Lg.Compiler.cacheable_state state;
+                            };
                         loop prefix_key (Live state)
                           (List.rev_append source_packages packages)
                           (compilation.ocaml_source :: outputs)
@@ -817,7 +1949,12 @@ let compile_files ?(use_cache = true) ?reader_target target input_paths =
                           rest)))
   in
   let initial_prefix_key =
-    if use_cache then compiler_cache_identity () else "cache-disabled"
+    if use_cache then
+      Digest.string
+        (String.concat "\000"
+           [ compiler_cache_identity (); compile_files_cache_format_version ])
+      |> Digest.to_hex
+    else "cache-disabled"
   in
   let result =
     Result.bind
@@ -866,15 +2003,21 @@ let compile_chunk_from_saved_state ?reader_target target state_path input_path =
                 |> Result.map (fun (state, compilation) ->
                        (state, packages, compilation)))))
 
-let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
-    state_path input_paths =
+let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
+    ?reader_target target state_path input_paths =
   let input_paths = expand_input_paths input_paths in
-  match read_saved_compilation_state state_path with
+  match
+    timed_step ("read saved state " ^ state_path) (fun () ->
+        read_saved_compilation_state state_path)
+  with
   | Error _ as error -> error
   | Ok saved ->
     if saved.target <> target then
       compiler_error "saved compiler state target does not match --target"
-    else
+    else (
+      if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+        Printf.eprintf "lg: saved state has OCaml env: %b\n%!"
+          (Lg.Compiler.has_ocaml_environment saved.state);
     let result =
     let rec read_sources sources packages = function
       | [] -> Ok (List.rev sources, List.sort_uniq String.compare packages)
@@ -892,15 +2035,13 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
                 rest)
     in
     Result.bind
-      (read_sources [] saved.packages input_paths)
+      (timed_step "prepare sources" (fun () ->
+           read_sources [] saved.packages input_paths))
       (fun (sources, packages) ->
         Result.bind
-          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
-             [ saved.ocaml_source ])
-          (fun initial_state ->
-            Result.bind
-              (order_prepared_sources ?reader_target target initial_state sources)
-              (fun sources ->
+          (timed_step "order sources" (fun () ->
+               order_prepared_sources ?reader_target target saved.state sources))
+          (fun sources ->
         let rec compile prefix_key compiler_state outputs diagnostics =
           function
           | [] ->
@@ -920,38 +2061,39 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
               with
               | Some cached ->
                   report_cache_hit input_path;
-                  Result.bind
-                    (replay_cached_prefix compiler_state prepared)
-                    (fun state ->
-                      compile prefix_key (Replayed state)
-                        (cached.compilation.ocaml_source :: outputs)
-                        (cached.compilation.diagnostics :: diagnostics)
-                        rest)
+                  compile prefix_key (Cached prefix_key)
+                    (cached.compilation.ocaml_source :: outputs)
+                    (cached.compilation.diagnostics :: diagnostics)
+                    rest
               | None ->
+                  report_cache_miss input_path prefix_key
+                    (if Sys.file_exists (cache_path prefix_key ".output") then
+                       "unusable"
+                     else "missing");
                   Result.bind
-                    (resume_compiler_state ~target ~packages
-                       ~sources:(saved.ocaml_source :: List.rev outputs)
-                       compiler_state)
+                    (timed_step "resume OCaml environment" (fun () ->
+                         if check_ocaml then
+                           resume_compiler_state ~target ~packages
+                             ~sources:(saved.ocaml_source :: List.rev outputs)
+                             compiler_state
+                         else read_compiler_state compiler_state))
                     (fun state ->
                       if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
                         Printf.eprintf "lg: compiling %s\n%!" input_path;
                       let started_at = Sys.time () in
                       match
                         Lg.Compiler.compile_prepared_chunk_with_diagnostics
-                          state prepared
+                          ~check_ocaml state prepared
                       with
                       | Error _ as err -> err
                       | Ok (state, compilation) ->
-                          if
-                            use_cache
-                            &&
-                            Sys.time () -. started_at
-                            >= compile_cache_min_seconds ()
-                          then
+                          let _elapsed = Sys.time () -. started_at in
+                          if use_cache then
                             write_cached_prefix prefix_key
                               {
-                                source_packages = [];
-                                compilation;
+                                write_source_packages = [];
+                                write_compilation = compilation;
+                                write_state = Lg.Compiler.cacheable_state state;
                               };
                           compile prefix_key (Live state)
                             (compilation.ocaml_source :: outputs)
@@ -963,10 +2105,10 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
             saved_state_prefix_key ~target ?reader_target state_path
           else "cache-disabled"
         in
-        compile initial_prefix_key (Live initial_state) [] [] sources)))
+        compile initial_prefix_key (Replayed saved.state) [] [] sources))
     in
     if use_cache then prune_compile_cache ();
-    result
+    result)
 
 let infer_interface target input_path =
   let source = read_file input_path in
@@ -989,6 +2131,56 @@ let report_error (err : Lg.Compiler.compile_error) =
   in
   prerr_endline (Lg.Compiler.render_error ~source err);
   exit 1
+
+let run_tests ?reader_target target input_paths =
+  if target <> Lg.Target.Native then (
+    prerr_endline "lg: test currently supports the native target";
+    exit 2);
+  let stdlib_state_path, _stdlib_implementation_path = default_stdlib_artifacts () in
+  let state_paths =
+    stdlib_state_path
+    :: (match find_repo_root_opt (Sys.getcwd ()) with
+       | Some root -> project_state_paths root
+       | None -> [])
+    |> unique_preserving_order
+  in
+  let sources =
+    timed_step "discover test sources" (fun () -> lg_test_sources input_paths)
+  in
+  (match find_repo_root_opt (Sys.getcwd ()) with
+  | Some root ->
+      timed_step "discover OCaml module interfaces" (fun () ->
+          configure_ocaml_module_interface_dirs root
+            (required_ocaml_module_roots sources))
+  | None -> ());
+  if Sys.getenv_opt "LG_TEST_DEBUG_SOURCES" = Some "1" then
+    List.iter (Printf.eprintf "lg test source: %s\n%!") sources;
+  let rec attempt last_error = function
+    | [] -> (
+        match last_error with
+        | Some err -> report_error err
+        | None ->
+            prerr_endline "lg: unable to find a compiler state for tests";
+            exit 2)
+    | state_path :: rest -> (
+        match
+          compile_files_from_saved_state ?reader_target target state_path sources
+            ~check_ocaml:false
+        with
+        | Error err -> attempt (Some err) rest
+        | Ok (_state, packages, ocaml_source, diagnostics) ->
+            let saved =
+              match read_saved_compilation_state state_path with
+              | Ok saved -> saved
+              | Error err -> report_error err
+            in
+            report_diagnostics diagnostics;
+            timed_step "run test source" (fun () ->
+                run_ocaml_source ~archive_scan_source:ocaml_source packages
+                  (concatenate_compilation_outputs
+                     [ saved.ocaml_source; ocaml_source ])))
+  in
+  attempt None state_paths
 
 let run_lsp state_path =
   let executable_directory = Filename.dirname Sys.executable_name in
@@ -1200,4 +2392,5 @@ let () =
           run_ocaml_source packages
             (concatenate_compilation_outputs
                [ read_file implementation_path; ocaml_source ]))
+  | Test { input_paths } -> run_tests ?reader_target target input_paths
   | Lsp { state_path } -> run_lsp state_path

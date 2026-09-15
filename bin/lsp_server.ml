@@ -306,7 +306,6 @@ let configure_workspace_include_path root =
     workspace_compiled_interface_dirs root |> String.concat ":"
   in
   if include_path <> "" then (
-    Unix.putenv "LG_OCAML_INCLUDE_PATH_AUTHORITATIVE" "1";
     Unix.putenv "LG_OCAML_INCLUDE_PATH" include_path;
     Unix.putenv "OCAMLPATH" include_path)
 

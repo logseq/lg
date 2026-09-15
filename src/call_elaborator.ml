@@ -12158,6 +12158,15 @@ let create ~compile_expr =
         in
         match arg_forms with
         | FSymbol type_name :: field_forms -> (
+            let type_name =
+              match String.split_on_char '/' type_name with
+              | [ alias; member ] -> (
+                  match Resolver.ocaml_alias_module_path scope env alias with
+                  | Some module_path ->
+                      module_path ^ "." ^ Names.ocaml_member_name member
+                  | None -> type_name)
+              | _ -> type_name
+            in
             match
               match lookup_record_type scope env type_name with
               | Ok _ as record -> record

@@ -1220,13 +1220,17 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
     match target with
     | Target.Melange -> "melange" :: packages
     | Target.Js_of_ocaml -> "re" :: "js_of_ocaml" :: packages
-    | Target.Native -> "re" :: packages
+    | Target.Native ->
+        "re" :: "lg.rrbvec" :: "lg.runtime" :: "lg.edn-backend.native"
+        :: packages
   in
   match Ocaml_package.include_dirs packages with
   | Error _ as error -> error
   | Ok include_dirs ->
       let include_dirs = target_include_dirs target include_dirs in
       Ocaml_signature.add_include_dirs include_dirs;
+      if Option.is_some state.ocaml_env then Ok state
+      else
       let rec restore compiler_env index = function
         | [] -> Ok { state with ocaml_env = compiler_env }
         | source :: rest -> (

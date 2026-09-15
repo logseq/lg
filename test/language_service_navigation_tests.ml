@@ -10,6 +10,17 @@ let expect_substring_index source fragment =
   in
   search 0
 
+let string_contains_substring text pattern =
+  let pattern_length = String.length pattern in
+  let text_length = String.length text in
+  let rec search index =
+    if pattern_length = 0 then true
+    else if index + pattern_length > text_length then false
+    else if String.sub text index pattern_length = pattern then true
+    else search (index + 1)
+  in
+  search 0
+
 let expect_definition analysis ~source ~fragment =
   let offset = expect_substring_index source fragment in
   match Lg.Language_service.definition analysis ~offset with
@@ -113,6 +124,7 @@ let test_core_functions_resolve_navigation () =
 (ns nav.core)
 (def stored (atom 1))
 (def updated (reset! stored 2))
+(def mapped (map inc [1 2]))
 |}
   in
   let analysis =
@@ -133,7 +145,19 @@ let test_core_functions_resolve_navigation () =
     Lg.Language_service.references analysis ~offset:reset_offset
     |> List.map (fun (span : Lg.Ast.source_span) -> span.start_offset)
     <> [ reset_offset ]
-  then fail "expected source fallback references for reset!"
+  then fail "expected source fallback references for reset!";
+  (match
+     Lg.Language_service.hover analysis
+       ~offset:(expect_substring_index source "map inc")
+   with
+  | Some hover
+    when String.starts_with ~prefix:"(signature clojure.core/map "
+           hover.Lg.Language_service.contents
+         && string_contains_substring hover.contents ":overload<"
+         && not (string_contains_substring hover.contents "Runtime_reduced") ->
+      ()
+  | Some hover -> fail ("unexpected source-level map hover: " ^ hover.contents)
+  | None -> fail "expected source-level map hover")
 
 let test_core_functions_resolve_from_duniverse_lg_stdlib () =
   let root =
@@ -259,7 +283,10 @@ let test_quick_hover_resolves_without_semantic_analysis () =
       fail ("unexpected quick stdlib member hover: " ^ hover.contents)
   | None -> fail "quick stdlib member hover missing");
   (match quick "atom 1" with
-  | Some hover when String.starts_with ~prefix:"atom : " hover.contents -> ()
+  | Some hover
+    when String.starts_with ~prefix:"(signature clojure.core/atom "
+           hover.contents ->
+      ()
   | Some hover -> fail ("unexpected quick core hover: " ^ hover.contents)
   | None -> fail "quick core hover missing")
 

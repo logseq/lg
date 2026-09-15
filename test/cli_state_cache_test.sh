@@ -189,14 +189,14 @@ LG_COMPILE_CACHE_MIN_SECONDS=0 \
 LG_CACHE_DIR="$test_dir/output-cache" \
   "$cli" --compile-files-from "$stdlib_state" "$source_file" -o "$test_dir/output.ml"
 
-if find "$test_dir/output-cache/compile-files" \
-    -name '*.state.marshal' -type f | grep -q .; then
-  echo "ordinary multi-file compilation persisted cumulative prefix state" >&2
-  exit 1
-fi
 if ! find "$test_dir/output-cache/compile-files" \
     -name '*.output.marshal' -type f | grep -q .; then
   echo "ordinary multi-file compilation did not retain its output cache" >&2
+  exit 1
+fi
+if ! find "$test_dir/output-cache/compile-files" \
+    -name '*.state.marshal' -type f | grep -q .; then
+  echo "ordinary multi-file compilation did not retain its prefix state cache" >&2
   exit 1
 fi
 

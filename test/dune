@@ -144,6 +144,23 @@
    %{dep:../bin/lg_repl_worker.bc.exe}
    %{dep:../stdlib/lg_stdlib_native.state})))
 
+(rule
+ (alias runtest)
+ (deps
+  lg_test_cli_test.sh
+  ../bin/lg_cli.exe
+  ../stdlib/lg_stdlib_native.state
+  ../stdlib/lg_stdlib_native.ml
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_native.cljc
+  ../test_runner/clojure/run.cljc
+  ../test_runner/runtime/lg_test_runtime.cmxa
+  ../test_runner/alcotest/lg_test_alcotest.cmxa)
+ (action
+  (chdir
+   %{workspace_root}
+   (run bash %{dep:lg_test_cli_test.sh} %{exe:../bin/lg_cli.exe}))))
+
 (test
  (name compiler_gate_tests)
  (modules

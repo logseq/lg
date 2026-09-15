@@ -74,10 +74,7 @@ let project_include_dirs () =
     ]
   @ project_compiled_interface_dirs ()
 
-let base_include_dirs =
-  lazy
-    (if Ocaml_package.authoritative_include_path () then env_include_dirs ()
-     else env_include_dirs () @ project_include_dirs ())
+let base_include_dirs = lazy (env_include_dirs () @ project_include_dirs ())
 let include_dirs () = Lazy.force base_include_dirs
 let native_package_include_dirs = ref []
 let melange_package_include_dirs = ref []
