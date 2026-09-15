@@ -917,14 +917,21 @@ let initialize_result =
         `Assoc
           [ ("textDocumentSync", `Int 1);
             ("hoverProvider", `Bool true);
+            ("declarationProvider", `Bool true);
             ("definitionProvider", `Bool true);
+            ("typeDefinitionProvider", `Bool true);
+            ("implementationProvider", `Bool true);
             ("documentFormattingProvider", `Bool true);
+            ("documentRangeFormattingProvider", `Bool true);
             ("codeActionProvider", `Bool true);
             ("referencesProvider", `Bool true);
             ("documentHighlightProvider", `Bool true);
             ("renameProvider", `Assoc [ ("prepareProvider", `Bool true) ]);
+            ("selectionRangeProvider", `Bool true);
             ("documentSymbolProvider", `Bool true);
             ("workspaceSymbolProvider", `Bool true);
+            ("foldingRangeProvider", `Bool true);
+            ("inlayHintProvider", `Bool true);
             ( "semanticTokensProvider",
               `Assoc
                 [ ( "legend",
@@ -948,7 +955,9 @@ let initialize_result =
                         ("tokenModifiers", `List []) ] );
                   ("full", `Bool true) ] );
             ( "completionProvider",
-              `Assoc [ ("triggerCharacters", `List []) ] );
+              `Assoc
+                [ ("triggerCharacters", `List []);
+                  ("resolveProvider", `Bool true) ] );
             ( "signatureHelpProvider",
               `Assoc
                 [ ( "triggerCharacters",
@@ -1000,6 +1009,31 @@ let document_position params document =
   let line = position |> member "line" |> to_int in
   let character = position |> member "character" |> to_int in
   offset_of_position document.text line character
+
+let offset_of_lsp_position text position =
+  let line = position |> member "line" |> to_int in
+  let character = position |> member "character" |> to_int in
+  offset_of_position text line character
+
+let document_range_offsets params document =
+  let range = params |> member "range" in
+  let start_offset = offset_of_lsp_position document.text (range |> member "start") in
+  let end_offset = offset_of_lsp_position document.text (range |> member "end") in
+  (min start_offset end_offset, max start_offset end_offset)
+
+let located_forms document =
+  match semantic_analysis document with
+  | Some analysis -> analysis.Lg.Language_service.forms
+  | None -> (
+      match Lg.Lexer.tokenize document.text with
+      | Error _ -> []
+      | Ok tokens -> (
+          match
+            Lg.Parser.parse_located ~eof_offset:(String.length document.text)
+              tokens
+          with
+          | Ok forms -> forms
+          | Error _ -> []))
 
 let hover_json document (hover : Lg.Language_service.hover) =
   `Assoc
@@ -1086,6 +1120,8 @@ let definition_result uri document offset =
             [ ("uri", `String definition_uri);
               ("range", range_of_location definition_text location) ]
 
+let location_result uri document offset = definition_result uri document offset
+
 let completion_items_json items =
   items
   |> List.map (fun (item : Lg.Language_service.completion_item) ->
@@ -1109,6 +1145,8 @@ let completion_result uri document offset =
         Lg.Language_service.completions analysis ~offset
         |> completion_items_json
 
+let completion_resolve_result item = item
+
 let formatting_result document =
   match Lg.Formatter.format document.text with
   | Error _ -> `List []
@@ -1121,6 +1159,24 @@ let formatting_result document =
                 range_of_offsets document.text 0 (String.length document.text) );
               ("newText", `String formatted) ];
         ]
+
+let range_formatting_result document =
+  fun params ->
+    let start_offset, end_offset = document_range_offsets params document in
+    let source =
+      String.sub document.text start_offset (end_offset - start_offset)
+    in
+    match Lg.Formatter.format source with
+    | Error _ -> `List []
+    | Ok formatted when formatted = source -> `List []
+    | Ok formatted ->
+        `List
+          [
+            `Assoc
+              [ ( "range",
+                  range_of_offsets document.text start_offset end_offset );
+                ("newText", `String formatted) ];
+          ]
 
 let code_actions_result uri document =
   match document.analysis with
@@ -1320,6 +1376,137 @@ let document_symbols_result document =
       Lg.Language_service.document_symbols analysis
       |> List.map (document_symbol_json document.text)
       |> fun symbols -> `List symbols
+
+let span_contains_offset (span : Lg.Ast.source_span) offset =
+  span.start_offset <= offset && offset <= span.end_offset
+
+let span_line_bounds text (span : Lg.Ast.source_span) =
+  let start_line, start_character =
+    position_coordinates_of_offset text span.start_offset
+  in
+  let end_line, end_character =
+    position_coordinates_of_offset text span.end_offset
+  in
+  (start_line, start_character, end_line, end_character)
+
+let folding_range_json text (span : Lg.Ast.source_span) =
+  let start_line, start_character, end_line, end_character =
+    span_line_bounds text span
+  in
+  `Assoc
+    [ ("startLine", `Int start_line);
+      ("startCharacter", `Int start_character);
+      ("endLine", `Int end_line);
+      ("endCharacter", `Int end_character);
+      ("kind", `String "region") ]
+
+let rec folding_spans_of_form (form : Lg.Ast.located_form) =
+  let nested = List.concat_map folding_spans_of_form form.children in
+  form.span :: nested
+
+let folding_ranges_result document =
+  located_forms document |> List.concat_map folding_spans_of_form
+  |> List.filter (fun span ->
+         let start_line, _, end_line, _ = span_line_bounds document.text span in
+         end_line > start_line)
+  |> List.sort_uniq compare
+  |> List.map (folding_range_json document.text)
+  |> fun ranges -> `List ranges
+
+let rec selection_spans_at_offset offset (form : Lg.Ast.located_form) =
+  if not (span_contains_offset form.span offset) then []
+  else
+    let nested =
+      form.children
+      |> List.concat_map (selection_spans_at_offset offset)
+    in
+    form.span :: nested
+
+let selection_range_chain text fallback_offset spans =
+  let spans =
+    spans
+    |> List.sort (fun (left : Lg.Ast.source_span) right ->
+           Int.compare
+             (left.end_offset - left.start_offset)
+             (right.end_offset - right.start_offset))
+  in
+  let rec build = function
+    | [] ->
+        `Assoc
+          [
+            ( "range",
+              range_of_offsets text fallback_offset fallback_offset );
+          ]
+    | [ (span : Lg.Ast.source_span) ] ->
+        `Assoc
+          [
+            ( "range",
+              range_of_offsets text span.start_offset span.end_offset );
+          ]
+    | (span : Lg.Ast.source_span) :: rest ->
+        let fields =
+          [
+            ( "range",
+              range_of_offsets text span.start_offset span.end_offset );
+          ]
+        in
+        let parent = build rest in
+        `Assoc (fields @ [ ("parent", parent) ])
+  in
+  build spans
+
+let selection_ranges_result document params =
+  let positions = params |> member "positions" |> to_list in
+  let forms = located_forms document in
+  positions
+  |> List.map (fun position ->
+         let offset = offset_of_lsp_position document.text position in
+         forms
+         |> List.concat_map (selection_spans_at_offset offset)
+         |> List.sort_uniq compare
+         |> selection_range_chain document.text offset)
+  |> fun ranges -> `List ranges
+
+let inlay_hint_for_symbol document analysis
+    (symbol : Lg.Language_service.document_symbol) =
+  match symbol.kind with
+  | `Variable | `Function -> (
+      match
+        Lg.Language_service.hover analysis
+          ~offset:symbol.selection_range.start_offset
+      with
+      | None -> None
+      | Some hover -> (
+          match String.index_opt hover.contents ':' with
+          | None -> None
+          | Some separator ->
+              let type_name =
+                String.sub hover.contents (separator + 1)
+                  (String.length hover.contents - separator - 1)
+                |> String.trim
+              in
+              if String.equal type_name "" then None
+              else
+                Some
+                  (`Assoc
+                    [ ( "position",
+                        position_of_offset document.text
+                          symbol.selection_range.end_offset );
+                      ("label", `String (": " ^ type_name));
+                      ("kind", `Int 1) ])))
+  | `Module | `Type | `Interface | `Method | `Field | `Constructor -> None
+
+let inlay_hints_result document params =
+  match semantic_analysis document with
+  | None -> `List []
+  | Some analysis ->
+      let start_offset, end_offset = document_range_offsets params document in
+      Lg.Language_service.document_symbols analysis
+      |> List.filter (fun (symbol : Lg.Language_service.document_symbol) ->
+             symbol.selection_range.start_offset >= start_offset
+             && symbol.selection_range.end_offset <= end_offset)
+      |> List.filter_map (inlay_hint_for_symbol document analysis)
+      |> fun hints -> `List hints
 
 let lexical_symbol_kind = function
   | "module" | "module-alias" | "module-apply" | "module-functor" -> Some 2
@@ -1580,7 +1767,10 @@ let rec loop shutdown_requested =
           response id `Null;
           loop true
       | Some ("textDocument/hover" as method_), (`Int _ | `String _)
+      | Some ("textDocument/declaration" as method_), (`Int _ | `String _)
       | Some ("textDocument/definition" as method_), (`Int _ | `String _)
+      | Some ("textDocument/typeDefinition" as method_), (`Int _ | `String _)
+      | Some ("textDocument/implementation" as method_), (`Int _ | `String _)
       | Some ("textDocument/completion" as method_), (`Int _ | `String _)
       | Some ("textDocument/signatureHelp" as method_), (`Int _ | `String _) ->
           let uri = document_uri params in
@@ -1592,8 +1782,14 @@ let rec loop shutdown_requested =
                 (match method_ with
                 | "textDocument/hover" ->
                     hover_result uri document offset
+                | "textDocument/declaration" ->
+                    location_result uri document offset
                 | "textDocument/definition" ->
                     definition_result uri document offset
+                | "textDocument/typeDefinition" ->
+                    location_result uri document offset
+                | "textDocument/implementation" ->
+                    location_result uri document offset
                 | "textDocument/completion" ->
                     completion_result uri document offset
                 | "textDocument/signatureHelp" ->
@@ -1602,12 +1798,24 @@ let rec loop shutdown_requested =
           in
           response id result;
           loop shutdown_requested
+      | Some "completionItem/resolve", (`Int _ | `String _) ->
+          response id (completion_resolve_result params);
+          loop shutdown_requested
       | Some "textDocument/formatting", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
             match ensure_document uri with
             | None -> `List []
             | Some document -> formatting_result document
+          in
+          response id result;
+          loop shutdown_requested
+      | Some "textDocument/rangeFormatting", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match ensure_document uri with
+            | None -> `List []
+            | Some document -> range_formatting_result document params
           in
           response id result;
           loop shutdown_requested
@@ -1653,9 +1861,36 @@ let rec loop shutdown_requested =
           in
           response id result;
           loop shutdown_requested
+      | Some "textDocument/foldingRange", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match ensure_document uri with
+            | None -> `List []
+            | Some document -> folding_ranges_result document
+          in
+          response id result;
+          loop shutdown_requested
+      | Some "textDocument/selectionRange", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match ensure_document uri with
+            | None -> `List []
+            | Some document -> selection_ranges_result document params
+          in
+          response id result;
+          loop shutdown_requested
       | Some "workspace/symbol", (`Int _ | `String _) ->
           let query = params |> member "query" |> to_string in
           response id (workspace_symbols_result query);
+          loop shutdown_requested
+      | Some "textDocument/inlayHint", (`Int _ | `String _) ->
+          let uri = document_uri params in
+          let result =
+            match ensure_document uri with
+            | None -> `List []
+            | Some document -> inlay_hints_result document params
+          in
+          response id result;
           loop shutdown_requested
       | Some "textDocument/semanticTokens/full", (`Int _ | `String _) ->
           let uri = document_uri params in

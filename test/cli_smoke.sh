@@ -258,6 +258,14 @@ send_lsp_message() {
   send_lsp_message '{"jsonrpc":"2.0","id":20,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":27}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":21,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljc"},"position":{"line":0,"character":6}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":22,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"file:///tmp/incomplete.cljc"},"range":{"start":{"line":1,"character":21},"end":{"line":1,"character":21}},"context":{"diagnostics":[]}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":23,"method":"textDocument/declaration","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":24,"method":"textDocument/typeDefinition","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":25,"method":"textDocument/implementation","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"position":{"line":2,"character":22}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":26,"method":"completionItem/resolve","params":{"label":"add-one","kind":6,"detail":"int -> int"}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":27,"method":"textDocument/rangeFormatting","params":{"textDocument":{"uri":"file:///tmp/format.cljc"},"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":18}},"options":{"tabSize":2,"insertSpaces":true}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":28,"method":"textDocument/foldingRange","params":{"textDocument":{"uri":"file:///tmp/editor.cljc"}}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":29,"method":"textDocument/selectionRange","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"positions":[{"line":2,"character":22}]}}'
+  send_lsp_message '{"jsonrpc":"2.0","id":30,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///tmp/service.cljc"},"range":{"start":{"line":0,"character":0},"end":{"line":3,"character":0}}}}'
   send_lsp_message '{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/editor.cljc"}}}'
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
@@ -265,15 +273,22 @@ send_lsp_message() {
 
 grep -q '"name":"lg"' "$lsp_output"
 grep -q '"hoverProvider":true' "$lsp_output"
+grep -q '"declarationProvider":true' "$lsp_output"
 grep -q '"definitionProvider":true' "$lsp_output"
+grep -q '"typeDefinitionProvider":true' "$lsp_output"
+grep -q '"implementationProvider":true' "$lsp_output"
 grep -q '"completionProvider"' "$lsp_output"
 grep -q '"documentFormattingProvider":true' "$lsp_output"
+grep -q '"documentRangeFormattingProvider":true' "$lsp_output"
 grep -q '"codeActionProvider":true' "$lsp_output"
 grep -q '"referencesProvider":true' "$lsp_output"
 grep -q '"documentHighlightProvider":true' "$lsp_output"
 grep -q '"renameProvider"' "$lsp_output"
+grep -q '"selectionRangeProvider":true' "$lsp_output"
 grep -q '"documentSymbolProvider":true' "$lsp_output"
 grep -q '"workspaceSymbolProvider":true' "$lsp_output"
+grep -q '"foldingRangeProvider":true' "$lsp_output"
+grep -q '"inlayHintProvider":true' "$lsp_output"
 grep -q '"semanticTokensProvider"' "$lsp_output"
 grep -q '"signatureHelpProvider"' "$lsp_output"
 if grep -q '"method":"client/registerCapability"' "$lsp_output"; then
@@ -321,6 +336,14 @@ grep -q '"id":20,"result":{"signatures":\[{"label":"add-one : int -> int"' "$lsp
 grep -q '"id":21,"result":{"contents"' "$lsp_output"
 grep -Fq '"id":22,"result":[{"title":"Insert missing )","kind":"quickfix","isPreferred":true' "$lsp_output"
 grep -Fq '"newText":")"' "$lsp_output"
+grep -q '"id":23,"result":{"uri":"file:///tmp/service.cljc","range":{"start":{"line":0,"character":5}' "$lsp_output"
+grep -q '"id":24,"result":{"uri":"file:///tmp/service.cljc","range":{"start":{"line":0,"character":5}' "$lsp_output"
+grep -q '"id":25,"result":{"uri":"file:///tmp/service.cljc","range":{"start":{"line":0,"character":5}' "$lsp_output"
+grep -Fq '"id":26,"result":{"label":"add-one","kind":6,"detail":"int -> int"}' "$lsp_output"
+grep -Fq '"id":27,"result":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":18}},"newText":"(def answer 41)\n"}]' "$lsp_output"
+grep -q '"id":28,"result":\[' "$lsp_output"
+grep -q '"id":29,"result":\[{"range"' "$lsp_output"
+grep -q '"id":30,"result":\[' "$lsp_output"
 grep -Fq "\"uri\":\"file://$watched_consumer\",\"diagnostics\":[{\"range\"" "$lsp_output"
 grep -q 'int -> int' "$lsp_output"
 grep -q '"label":"add-one"' "$lsp_output"
