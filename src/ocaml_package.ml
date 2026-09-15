@@ -169,23 +169,102 @@ let package_library_build_dirs root package =
   |> List.concat
   |> List.sort_uniq String.compare
 
+let package_root_candidates root package =
+  let add candidate candidates =
+    if candidate = "" || List.mem candidate candidates then candidates
+    else candidate :: candidates
+  in
+  let rec drop_hyphen_suffixes candidates name =
+    match String.rindex_opt name '-' with
+    | None -> candidates
+    | Some index ->
+        let prefix = String.sub name 0 index in
+        drop_hyphen_suffixes (add prefix candidates) prefix
+  in
+  let hyphenated = String.map (function '_' -> '-' | c -> c) package in
+  let first_component =
+    match String.split_on_char '.' hyphenated with
+    | first :: _ -> first
+    | [] -> hyphenated
+  in
+  []
+  |> add package
+  |> add hyphenated
+  |> add first_component
+  |> fun candidates -> drop_hyphen_suffixes candidates hyphenated
+  |> fun candidates -> drop_hyphen_suffixes candidates first_component
+  |> add (hyphenated ^ "-ocaml")
+  |> List.concat_map (fun name ->
+         [ Filename.concat root name;
+           Filename.concat (Filename.concat root "duniverse") name ])
+  |> List.filter (fun path -> Sys.file_exists path && Sys.is_directory path)
+  |> unique_directories
+
+let package_library_build_dirs_under_candidates root package =
+  package_root_candidates root package
+  |> List.concat_map (fun candidate_root ->
+         dune_files_under candidate_root
+         |> List.concat_map (fun dune_file ->
+                let source_directory = Filename.dirname dune_file in
+                let relative_directory =
+                  let prefix = root ^ Filename.dir_sep in
+                  if String.starts_with ~prefix source_directory then
+                    String.sub source_directory (String.length prefix)
+                      (String.length source_directory - String.length prefix)
+                  else source_directory
+                in
+                let build_directory =
+                  Filename.concat (Filename.concat root "_build/default")
+                    relative_directory
+                in
+                let lines =
+                  try read_file dune_file |> String.split_on_char '\n'
+                  with Sys_error _ -> []
+                in
+                let rec loop current_name dirs = function
+                  | [] -> dirs
+                  | line :: rest ->
+                      let current_name =
+                        match line_value "name" line with
+                        | Some name -> Some name
+                        | None -> current_name
+                      in
+                      let dirs =
+                        match line_value "public_name" line with
+                        | Some public_name when public_name = package ->
+                            let library_name =
+                              Option.value current_name
+                                ~default:
+                                  (public_name
+                                  |> String.map (function '-' -> '_' | c -> c))
+                            in
+                            let object_dir =
+                              Filename.concat build_directory
+                                ("." ^ library_name ^ ".objs")
+                            in
+                            [ Filename.concat object_dir "byte";
+                              Filename.concat object_dir "public_cmi" ]
+                            |> List.filter contains_compiled_interface
+                            |> List.rev_append dirs
+                        | Some _ | None -> dirs
+                      in
+                      loop current_name dirs rest
+                in
+                loop None [] lines))
+  |> List.sort_uniq String.compare
+
 let local_dune_package_directories package =
   match find_project_root (Sys.getcwd ()) with
   | None -> []
-  | Some root -> package_library_build_dirs root package
+  | Some root -> (
+      match package_library_build_dirs_under_candidates root package with
+      | _ :: _ as directories -> directories
+      | [] -> package_library_build_dirs root package)
 
-let cached_local_dune_package_directories package =
+let candidate_local_dune_package_directories package =
   match find_project_root (Sys.getcwd ()) with
   | None -> []
-  | Some root -> (
-      match Hashtbl.find_opt package_library_build_dir_index_cache root with
-      | None -> []
-      | Some index ->
-          index
-          |> List.filter_map (fun (public_name, dirs) ->
-                 if public_name = package then Some dirs else None)
-          |> List.concat
-          |> List.sort_uniq String.compare)
+  | Some root -> package_library_build_dirs_under_candidates root package
 
 let skip_local_project_scan package =
   List.mem package
@@ -265,7 +344,7 @@ let query package =
           match direct_dirs with
           | _ :: _ -> direct_dirs
           | [] when skip_local_project_scan package ->
-              cached_local_dune_package_directories package
+              candidate_local_dune_package_directories package
           | [] -> []
         in
         let result =
@@ -292,12 +371,6 @@ let query package =
         finish result
 
 let include_dirs packages =
-  (if
-     List.exists (fun package -> not (skip_local_project_scan package)) packages
-   then
-    match find_project_root (Sys.getcwd ()) with
-    | None -> ()
-    | Some root -> ignore (package_library_build_dir_index root));
   let rec loop directories = function
     | [] -> Ok (unique_directories directories)
     | package :: rest -> (
