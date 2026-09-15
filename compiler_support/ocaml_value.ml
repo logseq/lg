@@ -87,7 +87,15 @@ let init ?melange include_dirs =
   | Some (cached_dirs, env) when cached_dirs = include_dirs -> env
   | Some _ | None ->
       List.iter (fun dir -> Load_path.add_dir ~hidden:false dir) include_dirs;
-      let env = Compmisc.initial_env () in
+      (* Compmisc.initial_env resets Ident/Uid counters, invalidating live
+         incremental environments when a new include directory is added. *)
+      let env =
+        Typemod.initial_env
+          ~loc:(Location.in_file "command line")
+          ~initially_opened_module:
+            (if !Clflags.nopervasives then None else Some "Stdlib")
+          ~open_implicit_modules:(List.rev !Clflags.open_modules)
+      in
       initial_env_cache := Some (include_dirs, env);
       env
 

@@ -30804,6 +30804,50 @@ let test_local_name_binding_does_not_inherit_core_function_type () =
   ignore (compile_with_stdlib Lg.Target.Melange
     "test/local_name_inference.cljc" source)
 
+let test_incremental_record_identities_survive_include_directory_changes () =
+  let sources = [
+    ("record_api.cljc", {|
+(ns record-api)
+(type-record config (base-url :string) (graph-id :string)
+  (graph-name :option<string>) (token :string))
+|});
+    ("record_host.cljc", {|
+(ns record-host)
+(type-record session (graph-id :string) (revision :int))
+(type-record projection (graph-name :option<string>) (revision :int))
+(type-record request (method :string) (url :string) (body :string) (token :string))
+(type-record settings (appearance :string) (language :string) (spell-check :bool)
+  (auto-correction :bool) (tabs :vector<string>) (base-url :string))
+|});
+    ("record_consumer.cljc", {|
+(ns record-consumer (:require [record-api :as api] [ocaml.Stdlib :as host]))
+(def config (record api/config (base-url "https://example.test") (graph-id "graph")
+  (graph-name nil) (token "access")))
+(host/print-endline (:base-url config))
+(host/print-endline (:graph-id config))
+|})
+  ] in
+  let compile target =
+    let _, outputs =
+      List.fold_left
+        (fun (state, outputs) (filename, source) ->
+          if filename = "record_host.cljc" then
+            Lg.Ocaml_signature.add_include_dirs
+              [Filename.temp_dir "lg-record-env-" ""];
+          let state, output =
+            Lg.Compiler.compile_chunk_with_filename ~target ~filename state source
+            |> expect_ok
+          in
+          state, output :: outputs)
+        (Lg.Compiler.empty_state, []) sources
+    in
+    String.concat "\n" (List.rev outputs)
+  in
+  let native = compile Lg.Target.Native in
+  assert_ocaml_runs "incremental_record_identities_survive_include_directory_changes"
+    "https://example.test\ngraph\n" native;
+  ignore (compile Lg.Target.Melange)
+
 let test_match_collection_updates_preserve_nominal_elements () =
   let source = {|
 (ns match-collection-update-test)
@@ -53630,6 +53674,8 @@ let tests =
       test_into_tuple_map_preserves_full_values_when_key_uses_row_subset );
     ( "match collection updates preserve nominal elements",
       test_match_collection_updates_preserve_nominal_elements );
+    ( "incremental record identities survive include directory changes",
+      test_incremental_record_identities_survive_include_directory_changes );
     ( "local name binding does not inherit core function type",
       test_local_name_binding_does_not_inherit_core_function_type );
     ( "filterv contextualizes generic seqable items",

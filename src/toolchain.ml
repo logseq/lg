@@ -1055,22 +1055,11 @@ module Ocaml_typechecker = struct
                  message = origin.message;
                })
 
-  let initial_env_cache = ref None
-
   let initial_env () =
-    let include_dirs = Ocaml_signature.active_include_dirs () in
-    match !initial_env_cache with
-    | Some (cached_dirs, env) when cached_dirs = include_dirs -> env
-    | _ ->
-        Ocaml_signature.init ();
-        if not (Ocaml_signature.is_melange_target ()) then
-          [ "unix"; "str" ]
-          |> List.map (Filename.concat Config.standard_library)
-          |> List.filter Sys.file_exists
-          |> List.iter (Load_path.add_dir ~hidden:false);
-        let env = Compmisc.initial_env () in
-        initial_env_cache := Some (include_dirs, env);
-        env
+    Ocaml_signature.init ();
+    Lg_compiler_support.Ocaml_value.init
+      ~melange:(Ocaml_signature.is_melange_target ())
+      (Ocaml_signature.active_include_dirs ())
 
   let analyze ?compiler_env structure =
     let diagnostics = ref [] in
