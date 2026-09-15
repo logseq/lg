@@ -19653,6 +19653,7 @@ let create ~compile_expr =
                     if preserve_optional then (template, actual)
                     else align_optional_inference template actual
                   in
+                  let actual = Expression_support.contextual_variant_type actual template in
                   match (template, actual) with
                   | ( TFn (template_params, template_return),
                       TFn (actual_params, actual_return) )

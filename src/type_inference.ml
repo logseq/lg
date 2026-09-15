@@ -653,6 +653,8 @@ let rec inferred_form_type params = function
   | FBool _ -> TBool
   | FSymbol "nil" -> TNil
   | FSymbol ("true" | "false") -> TBool
+  | FList (FSymbol "tuple" :: items) ->
+      TTuple (List.map (inferred_form_type params) items)
   | FList [ FSymbol "__lg_constantly"; result ] ->
       Types.constant_function (inferred_form_type params result)
   | FList (FSymbol "do" :: body_forms) -> (
@@ -4010,6 +4012,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | _ -> (ty, [])
     in
     let variant_pattern = function
+      | FVector patterns -> (
+          match inferred_form_type params target with
+          | TTuple items as ty when List.length items = List.length patterns ->
+              Some (refine_pattern (FList (FSymbol "tuple" :: patterns)) ty)
+          | _ -> None)
       | FSymbol constructor -> (
           match lookup_function_ty constructor with
           | Ok (TFn ([], return_ty)) -> Some (return_ty, [])
@@ -5746,7 +5753,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       in
                       constrain_seqable element_ty params collection)
           | _ -> infer_all params arguments)
-    | FList [ FSymbol ("__lg_map" | "__lg_mapv"); fn; collection ] ->
+    | FList [ FSymbol ("__lg_map" | "__lg_mapv" | "__lg_run"); fn; collection ] ->
         let inferred_element_ty = inferred_unary_function_param params fn in
         let inferred_element_ty =
           match inferred_element_ty with

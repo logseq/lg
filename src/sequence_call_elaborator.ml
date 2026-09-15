@@ -657,6 +657,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         in
         let function_ = lookup_function scope env name in
         match function_ with
+        | Ok _ when (match Resolver.lookup_binding scope env name with
+                     | Ok binding -> List.exists Option.is_some binding.row_param_types
+                     | Error _ -> false) ->
+            compile_deferred_call ()
         | Ok { ty = TOcaml "__declared_fn" | TUnknown | TMeta _ | TVar _; _ } ->
             compile_deferred_call ()
         | Ok function_ when Types.is_dynamic function_.ty ->

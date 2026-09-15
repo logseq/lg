@@ -5652,6 +5652,48 @@ let test_lookup_infers_nested_variant_payload () =
   (match value (Some (tag Unknown payload)) payload _ 0))
 |} |> expect_error_contains "Unknown"
 
+let test_tuple_vector_patterns_infer_comparable_fields () =
+  let source = {|
+(type-record ordered (order :option<string>) (created-at :int))
+(type-record other (order :string) (created-at :int))
+(defn compare-records [left right]
+  (match (tuple (:order left) (:order right))
+    [(Some left-order) (Some right-order)] (compare left-order right-order)
+    [(Some _) None] -1
+    [None (Some _)] 1
+    [None None] (compare (:created-at left) (:created-at right))))
+(println (neg? (compare-records
+  (record ordered (order (Some "a")) (created-at 1))
+  (record ordered (order (Some "b")) (created-at 2)))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "tuple_vector_patterns_infer_comparable_fields" "true\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_mapv_preserves_source_record_callback_rows () =
+  let source = {|
+(type-record item (name :string) (amount :int))
+(type-record extended-item (name :string) (amount :int) (extra :bool))
+(defn describe-item [item] (str (:name item) ":" (:amount item)))
+(println (= ["one:1" "two:2"]
+  (mapv describe-item [(record item (name "one") (amount 1))
+                       (record item (name "two") (amount 2))])))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "mapv_preserves_source_record_callback_rows" "true\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_run_infers_unannotated_collection () =
+  let source = {|
+(require [ocaml.String :as string])
+(defn print-lengths [values]
+  (run! (fn [value] (println (string/length value))) values))
+(print-lengths ["a" "abc"])
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "run_infers_unannotated_collection" "1\n3\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_record_assoc_evaluates_operands_once () =
   let source = {|
 (def events (atom []))
@@ -18382,10 +18424,11 @@ let test_recursive_host_variant_module_aliases () =
       Unix.rmdir dir)
     (fun () ->
       write_file (Filename.concat dir "recursive_alias_fixture__Inner.ml") {|
-  type t = [ `Leaf of string | `Children of t list ]
+  type t = [ `Leaf of string | `Children of t list | `Assoc of (string * t) list ]
   let rec size : t -> int = function
     | `Leaf value -> String.length value
     | `Children children -> List.fold_left (fun n child -> n + size child) 0 children
+    | `Assoc entries -> List.fold_left (fun n (_, child) -> n + size child) 0 entries
   module Util = struct let size = size end
 |};
       write_file ml {|
@@ -18393,6 +18436,7 @@ module Inner = Recursive_alias_fixture__Inner
 module Public = Inner
 let make () : Public.t = `Children [`Leaf "abc"; `Children [`Leaf "de"]]
 let consume (value : Public.t) = Inner.size value
+let object_value () : Public.t = `Assoc ["type", `Leaf "abc"]
 |};
       if Sys.command (Printf.sprintf "cd %s && ocamlc -c recursive_alias_fixture__Inner.ml && ocamlc -c recursive_alias_fixture.ml" (Filename.quote dir)) <> 0 then
         failwith "recursive alias fixture did not compile";
@@ -18406,6 +18450,7 @@ let consume (value : Public.t) = Inner.size value
         failwith "recursive variant imports must retain the same type through module aliases";
       let source = {|
 (require [ocaml.Recursive_alias_fixture :as fixture]
+         [ocaml.Stdlib :as stdlib]
          [ocaml.Recursive_alias_fixture.Inner :as inner]
          [ocaml.Recursive_alias_fixture.Public :as public]
          [ocaml.Recursive_alias_fixture.Public.Util :as util])
@@ -18426,6 +18471,18 @@ let consume (value : Public.t) = Inner.size value
 (println (match (fixture/make)
   (tag Children [(tag Leaf text) & _]) (count text)
   _ 0))
+(defn leaf-value [value]
+  (match value (tag Leaf text) text _ ""))
+(println (match (fixture/make)
+  (tag Children [child & _]) (case (leaf-value child) "abc" 7 0)
+  _ 0))
+(defn lookup-entry [entries key]
+  (some (fn [entry] (match entry (tuple name value) (when (= name key) value))) entries))
+(defn entry-value [entries key]
+  (match (lookup-entry entries key) (Some (tag Leaf text)) text _ (stdlib/invalid-arg "missing")))
+(println (match (fixture/object-value)
+  (tag Assoc entries) (case (entry-value entries "type") "abc" 8 0)
+  _ 0))
 |} in
       let compiled = compile_string_with_stdlib source |> expect_ok in
       write_file generated
@@ -18437,7 +18494,7 @@ let consume (value : Public.t) = Inner.size value
            Filename.concat dir "recursive_alias_fixture.cmo";
            Filename.concat dir "recursive_alias_generated.cmo"] output_path) <> 0 then
         failwith "recursive alias generated code did not run";
-      if read_file output_path <> "15\n5\n4\n3\n3\n" then failwith "recursive alias traversal changed";
+      if read_file output_path <> "15\n5\n4\n3\n3\n7\n8\n" then failwith "recursive alias traversal changed";
       List.iter
         (fun value ->
           compile_string_with_stdlib
@@ -50944,6 +51001,9 @@ let tests =
       test_record_assoc_evaluates_operands_once );
     ( "lookup infers nested variant payload",
       test_lookup_infers_nested_variant_payload );
+    ( "run infers unannotated collection", test_run_infers_unannotated_collection );
+    ( "mapv preserves source record callback rows", test_mapv_preserves_source_record_callback_rows );
+    ( "tuple vector patterns infer comparable fields", test_tuple_vector_patterns_infer_comparable_fields );
     ( "inferred callback captures shadow global functions",
       test_inferred_callback_captures_shadow_global_functions );
     ( "inferred symbols distinguish nullary constructors from functions",
