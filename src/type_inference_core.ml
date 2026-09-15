@@ -317,14 +317,15 @@ and refine_nonmatching_type existing inferred =
   | existing, TMap_keys
     when Option.is_some (Types.seqable_constraint_info existing) ->
       Types.dynamic_map TKeyword (Types.dynamic_constraint TUnknown)
-  | existing, inferred
-    when Option.is_some (Types.seqable_constraint_info existing)
-         && Option.is_some (Types.dynamic_map_types inferred) ->
-      inferred
-  | existing, inferred
-    when Option.is_some (Types.dynamic_map_types existing)
-         && Option.is_some (Types.seqable_constraint_info inferred) ->
-      existing
+  | (TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) as map_ty),
+      TConstraint (Seqable_constraint { element; _ })
+  | TConstraint (Seqable_constraint { element; _ }),
+      (TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) as map_ty) ->
+      (match element with
+      | TTuple [ inferred_key; inferred_value ] ->
+          Types.dynamic_map (refine_type key inferred_key)
+            (refine_type value inferred_value)
+      | _ -> map_ty)
   | (TOcaml_app ("Lg_runtime.Runtime_transient.map", [ _; _ ]) as existing),
     inferred
     when Option.is_some (Types.seqable_constraint_info inferred) ->

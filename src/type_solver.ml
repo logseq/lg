@@ -536,6 +536,15 @@ let rec unify substitutions left right =
         Result.bind (unify substitutions element_ty TChar) (fun substitutions ->
             unify substitutions storage_ty TString)
     | ( TConstraint
+          (Seqable_constraint { element; storage; requirement }),
+        (TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) as map_ty) )
+    | ( (TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) as map_ty),
+        TConstraint
+          (Seqable_constraint { element; storage; requirement }) )
+      when requirement <> Optional_sequential ->
+        Result.bind (unify substitutions element (TTuple [ key; value ]))
+          (fun substitutions -> unify substitutions storage map_ty)
+    | ( TConstraint
           (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
         (TOcaml_app (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
          as collection_ty) )

@@ -2152,10 +2152,31 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   restore_explicit_parameter_types ~resolve_named_record specs
                     inferred
                 in
+                let substitutions =
+                  List.fold_left2
+                    (fun substitutions (spec : Destructure.param_spec) expected ->
+                      let lookup name =
+                        string_assoc_opt name inferred
+                        |> Option.value ~default:TUnknown
+                      in
+                      let actual =
+                        if spec.destructured then
+                          (match expected with
+                          | TTuple _ ->
+                              Destructure.infer_generator_pattern_type spec.pattern lookup
+                          | _ -> Destructure.infer_pattern_type spec.pattern lookup)
+                          |> Result.value ~default:TUnknown
+                        else lookup spec.source_name
+                      in
+                      Type_solver.unify substitutions expected actual
+                      |> Result.value ~default:substitutions)
+                    Type_solver.empty specs parameter_tys
+                in
                 shadowed
                 @ List.filter
                     (fun (name, _) -> not (string_mem name local_names))
-                    inferred)
+                    (List.map (fun (name, ty) -> name, Type_solver.apply substitutions ty)
+                       inferred))
               infer_body
         | _ -> infer_all params body_forms)
     | FList

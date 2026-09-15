@@ -30848,6 +30848,29 @@ let test_incremental_record_identities_survive_include_directory_changes () =
     "https://example.test\ngraph\n" native;
   ignore (compile Lg.Target.Melange)
 
+let test_group_by_infers_fields_read_through_keep_destructuring () =
+  let source = {|
+(ns grouped-fields-test (:require [ocaml.String :as bytes]))
+(type-record candidate (label :string) (value :string))
+(type-record heading (label :string) (level :int))
+(def ^:set<string> empty-labels #{})
+(defn duplicated-labels [candidates]
+  (let [by-label (group-by #(bytes/lowercase-ascii (:label %)) candidates)]
+    (into empty-labels (keep (fn [[label values]]
+                 (when (> (count (set (map :value values))) 1) label))
+               by-label))))
+(def first-page (record candidate (label "Roadmap") (value "first")))
+(def second-page (record candidate (label "roadmap") (value "second")))
+(println (= #{"roadmap"} (duplicated-labels [first-page second-page])))
+(println (= #{} (duplicated-labels [first-page first-page])))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native
+    "test/group_by_keep_fields.cljc" source in
+  assert_ocaml_runs "group_by_infers_fields_read_through_keep_destructuring"
+    "true\ntrue\n" native;
+  ignore (compile_with_stdlib Lg.Target.Melange
+    "test/group_by_keep_fields.cljc" source)
+
 let test_match_collection_updates_preserve_nominal_elements () =
   let source = {|
 (ns match-collection-update-test)
@@ -53676,6 +53699,8 @@ let tests =
       test_match_collection_updates_preserve_nominal_elements );
     ( "incremental record identities survive include directory changes",
       test_incremental_record_identities_survive_include_directory_changes );
+    ( "group-by infers fields read through keep destructuring",
+      test_group_by_infers_fields_read_through_keep_destructuring );
     ( "local name binding does not inherit core function type",
       test_local_name_binding_does_not_inherit_core_function_type );
     ( "filterv contextualizes generic seqable items",
