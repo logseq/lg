@@ -1828,6 +1828,12 @@ let untyped_first_class_function_error = function
            type containing the supported Vars")
   | _ -> None
 
+let rec clj_function_type = function
+  | TFn ([ TUnit ], return_ty) -> TFn ([], clj_function_type return_ty)
+  | TFn (parameters, return_ty) ->
+      TFn (List.map clj_function_type parameters, clj_function_type return_ty)
+  | ty -> ty
+
 let lookup_function scope env name =
   match lookup_binding scope env name with
   | Ok binding ->
@@ -1842,6 +1848,17 @@ let lookup_function scope env name =
               | Ok { parameters = []; return_type; _ }
                 when not (Types.equal return_type TUnknown) ->
                   Ok (typed_ir return_type (Semantic_ir.Ident target))
+              | Ok { parameters; return_type }
+                when parameters <> [] && List.for_all
+                       (fun (parameter : Ocaml_signature.parameter) ->
+                         parameter.label = Ocaml_signature.Positional)
+                       parameters ->
+                  let ty =
+                    TFn (List.map (fun (parameter : Ocaml_signature.parameter) -> parameter.ty) parameters,
+                         return_type)
+                    |> clj_function_type
+                  in
+                  Ok (typed_ir ty (Semantic_ir.Ident target))
               | Ok _ | Error _ -> Error.error ("unknown function " ^ name))
           | None -> Error.error ("unknown function " ^ name)))
 
@@ -2036,12 +2053,6 @@ let dynamic_key_record_type env expected_field_ty =
     match records with
     | [ record ] -> Some (TNamed_record record)
   | [] | _ :: _ :: _ -> None
-
-let rec clj_function_type = function
-  | TFn ([ TUnit ], return_ty) -> TFn ([], clj_function_type return_ty)
-  | TFn (parameters, return_ty) ->
-      TFn (List.map clj_function_type parameters, clj_function_type return_ty)
-  | ty -> ty
 
 let lookup_function_ty scope env name =
   match lookup_function scope env name with

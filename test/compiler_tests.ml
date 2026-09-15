@@ -24981,6 +24981,28 @@ let make name age : row = { name; age }
         failwith
           (Printf.sprintf "expected %S, got %S" "Ada:42\nGrace:43\n" actual))
 
+let test_host_functions_are_first_class_values () =
+  let source = {|
+(ns host-functions (:require [ocaml.Char :as char]
+                             [ocaml.String :as bytes]
+                             [ocaml.List :as list]))
+(def to-char char/chr)
+(def all-bytes (bytes/init 256 char/chr))
+(println (char/code (to-char 65)))
+(println (bytes/length all-bytes))
+(println (char/code (bytes/get all-bytes 255)))
+(println (pr-str (mapv list/rev [(list 1 2) (list 3 4)])))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "host_functions_are_first_class_values"
+    "65\n256\n255\n[(2 1) (4 3)]\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  compile_string_with_stdlib {|
+(ns bad-host-function (:require [ocaml.Char :as char]))
+(def to-char char/chr)
+(to-char "wrong")
+|} |> expect_error_contains "string"
+
 let test_optional_field_from_indexed_record_preserves_type () =
   let dir = Filename.temp_dir "lg-keep-alias-" "" in
   let fixture = {|
@@ -24996,6 +25018,7 @@ let input : t = `List [`String "purple"; `Null]
     (fun () ->
   if Sys.command (Printf.sprintf "ocamlc -c %s" (Filename.quote path)) <> 0 then
     failwith "could not compile recursive alias fixture";
+  Lg.Ocaml_signature.set_melange_target false;
   Lg.Ocaml_signature.add_include_dirs [dir];
   let model = {|
 (ns app.style-model)
@@ -52964,6 +52987,8 @@ let tests =
       test_external_record_exposes_static_fields_without_redefinition );
     ( "mli record exposes static fields without external record",
       test_mli_record_exposes_static_fields_without_external_record );
+    ( "host functions are first class values",
+      test_host_functions_are_first_class_values );
     ( "optional field from indexed record preserves type",
       test_optional_field_from_indexed_record_preserves_type );
     ( "external record alias survives incremental namespaces",
