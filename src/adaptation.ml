@@ -683,7 +683,12 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
             | TPoly_variant expected_row, TPoly_variant actual_row
               when Variant_row.compatible expected_row actual_row ->
                 let rec plan_tags planned = function
-                  | [] -> Ok (Variant_payloads (List.rev planned))
+                  | [] ->
+                      if List.for_all
+                           (function _, None | _, Some (_, Identity) -> true | _ -> false)
+                           planned
+                      then Ok Identity
+                      else Ok (Variant_payloads (List.rev planned))
                   | (tag, payload) :: rest ->
                       let expected_payload = List.assoc_opt tag expected_row.tags in
                       (match payload, expected_payload with

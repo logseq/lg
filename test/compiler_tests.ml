@@ -6614,6 +6614,45 @@ let test_record_set_fields_combine_seqable_and_membership_constraints () =
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 ;;
 
+let test_recursive_variant_identity_adaptation () =
+  let dir = Filename.concat (test_dir ()) "recursive_json_fixture" in
+  if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
+  let fixture = {|
+type t = [ `Assoc of (string * t) list | `List of t list | `String of string | `Null ]
+let to_assoc : t -> (string * t) list = function `Assoc fields -> fields | _ -> []
+|} in
+  Fun.protect
+    ~finally:(fun () ->
+      Array.iter (fun name -> Sys.remove (Filename.concat dir name)) (Sys.readdir dir);
+      Unix.rmdir dir)
+    (fun () ->
+  write_file (Filename.concat dir "recursive_json_fixture.ml") fixture;
+  if Sys.command (Printf.sprintf "cd %s && ocamlc -c recursive_json_fixture.ml" (Filename.quote dir)) <> 0
+  then failwith "recursive JSON fixture did not compile";
+  Lg.Ocaml_signature.set_melange_target false;
+  Lg.Ocaml_signature.add_include_dirs [dir];
+  let source = {|
+(require [ocaml.Recursive_json_fixture :as json-util])
+(type-variant value (Text :string) (Object :vector<tuple<string;value>>))
+(defn object-json [entries] (tag Assoc (apply list entries)))
+(defn encode [value]
+  (let [[kind payload]
+        (match value
+          (Text text) (tuple "text" (tag String text))
+          (Object entries)
+          (tuple "object" (tag List (apply list
+             (mapv (fn [[key child]]
+                     (object-json [(tuple "key" (tag String key)) (tuple "value" (encode child))])) entries)))))]
+    (object-json [(tuple "type" (tag String kind)) (tuple "value" payload)])))
+(defn fields [input]
+  (match input (tag Assoc _) (json-util/to-assoc input) _ (list)))
+(run! #(println (count (fields (encode %))))
+      [(Text "hello") (Object [(tuple "nested" (Text "world"))])])
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_variant_identity_adaptation" "2\n2\n"
+    ("module Recursive_json_fixture = struct\n" ^ fixture ^ "end\n" ^ output))
+
 let test_seqable_record_elements_adapt_nested_maps () =
   let definitions = {|
 (defn total [^:map<keyword;int> attrs] (reduce + 0 (vals attrs)))
@@ -51626,6 +51665,8 @@ let tests =
       test_loop_set_membership_preserves_inferred_elements );
     ( "record set fields combine seqable and membership constraints",
       test_record_set_fields_combine_seqable_and_membership_constraints );
+    ( "recursive variant identity adaptation",
+      test_recursive_variant_identity_adaptation );
     ( "seqable tuple elements preserve capability payloads",
       test_seqable_tuple_elements_preserve_capability_payloads );
     ( "seqable record elements adapt nested maps",
