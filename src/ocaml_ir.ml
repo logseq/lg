@@ -217,7 +217,11 @@ let rec to_source = function
         |> String.concat "; "
       in
       let value = "{" ^ fields ^ "}" in
-      (match type_name with None -> value | Some name -> "(" ^ value ^ " : " ^ name ^ ")")
+      (match type_name with
+      | None -> value
+      | Some name ->
+          "((fun (__lg_record_value : " ^ name
+          ^ ") -> __lg_record_value) " ^ value ^ ")")
   | RecordUpdate (record, fields) ->
       let fields =
         fields
@@ -778,8 +782,19 @@ and to_parsetree ~context = function
              match type_name with
              | None -> expression
              | Some name ->
-                 Ast_helper.Exp.constraint_ ~loc expression
-                   (core_type_of_source name))
+                 let argument = "__lg_record_value" in
+                 let pattern = PConstraint (PVar argument, name) in
+                 let body =
+                   Ast_helper.Exp.ident ~loc
+                     { txt = Longident.Lident argument; loc }
+                 in
+                 let function_ =
+                   Ast_helper.Exp.function_ ~loc
+                     [ function_parameter pattern ]
+                     None (Pfunction_body body)
+                 in
+                 Ast_helper.Exp.apply ~loc
+                   function_ [ (Nolabel, expression) ])
   | RecordUpdate (record, fields) -> (
       match to_parsetree ~context record with
       | Error _ as err -> err

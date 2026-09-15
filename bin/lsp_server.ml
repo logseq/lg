@@ -613,6 +613,9 @@ let eager_workspace_file_limit = 16
 let should_eager_analyze_workspace () =
   Hashtbl.length workspace_sources <= eager_workspace_file_limit
 
+let should_eager_publish_diagnostics () =
+  Sys.getenv_opt "LG_LSP_EAGER_DIAGNOSTICS" = Some "1"
+
 let lazy_large_workspace_document uri document =
   Hashtbl.mem workspace_sources uri
   && Option.is_none document.analysis
@@ -1719,7 +1722,7 @@ let handle_notification method_ params =
       let uri = document |> member "uri" |> to_string in
       let text = document |> member "text" |> to_string in
       if Hashtbl.mem workspace_sources uri then (
-        if should_eager_analyze_workspace () then
+        if should_eager_publish_diagnostics () && should_eager_analyze_workspace () then
           update_current_workspace_document uri text
           |> List.iter publish_current_diagnostics
         else (

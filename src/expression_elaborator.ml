@@ -295,10 +295,14 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_if_let scope env binding then_form else_form
   | FList [ FSymbol "__lg_if-some"; binding; then_form; else_form ] ->
       compile_if_some scope env binding then_form else_form
+  | FList [ FSymbol "__lg_some-thread"; binding; then_form ] ->
+      compile_some_thread scope env binding then_form
   | FList (FSymbol "__lg_if-let" :: _) ->
       Error.error "if-let requires [name option], then, and else"
   | FList (FSymbol "__lg_if-some" :: _) ->
       Error.error "if-some requires [name option], then, and else"
+  | FList (FSymbol "__lg_some-thread" :: _) ->
+      Error.error "some-> requires [name option] and a threaded form"
   | FList (FSymbol "__lg_when-let" :: binding :: body_forms) ->
       compile_when_let scope env binding body_forms
   | FList (FSymbol "__lg_when-some" :: binding :: body_forms) ->
@@ -771,6 +775,10 @@ and compile_if_let scope env binding then_form else_form =
 and compile_if_some scope env binding then_form else_form =
   (Lazy.force context).special_forms.compile_if_some scope env binding then_form
     else_form
+
+and compile_some_thread scope env binding then_form =
+  (Lazy.force context).special_forms.compile_some_thread scope env binding
+    then_form
 
 and compile_when_let scope env binding body_forms =
   (Lazy.force context).special_forms.compile_when_let scope env binding

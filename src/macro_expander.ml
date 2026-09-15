@@ -413,6 +413,19 @@ let rec eval context = function
             | Error _ as err -> err
             | Ok locals -> eval { context with locals } then_form))
   | FList
+      [
+        FSymbol "__lg_some-thread";
+        FVector [ pattern; expression ];
+        then_form;
+      ] -> (
+      match eval context expression with
+      | Error _ as err -> err
+      | Ok (Form (FSymbol "nil")) -> Ok nil
+      | Ok value -> (
+          match bind_pattern context.locals pattern value with
+          | Error _ as err -> err
+          | Ok locals -> eval { context with locals } then_form))
+  | FList
       (FSymbol ("__lg_when-let" | "__lg_when-some" as binding_name)
       :: FVector [ pattern; expression ] :: body) -> (
       match eval context expression with

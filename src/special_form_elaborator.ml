@@ -23,6 +23,8 @@ type t = {
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_if_some :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
+  compile_some_thread :
+    string -> Env.t -> Ast.form -> Ast.form -> expression_result;
   compile_when_let :
     string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
   compile_when_some :
@@ -1892,6 +1894,142 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           (fun some_env -> compile_expr scope some_env then_form)
           (fun () -> compile_expr scope env else_form)
           "if-some branches have incompatible types; define a closed sum type"
+  and compile_some_thread scope env binding_form then_form =
+    match
+      parse_option_binding binding_form
+        "some-> requires [name option] and a threaded form"
+    with
+    | Error _ as err -> err
+    | Ok (pattern, option_form) -> (
+        let option_expression =
+          match compile_expr scope (Env.with_expected_type None env) option_form with
+          | Ok expression
+            when not
+                   (Type_solver.is_open expression.ty
+                   || match expression.ty with
+                      | TUnknown | TMeta _ | TVar _ -> true
+                      | _ -> false) ->
+              Ok expression
+          | Ok _ | Error _ ->
+              compile_expr scope
+                (Env.with_expected_type (Some (TNullable TUnknown)) env)
+                option_form
+        in
+        match option_expression with
+        | Error _ as err -> err
+        | Ok option_expr ->
+            let compile_threaded payload_ty wrap_absent =
+              let payload_name = "__lg_option_value" in
+              let payload = typed_ir payload_ty (Semantic_ir.Ident payload_name) in
+              match Destructure.bind_pattern ~env payload pattern with
+              | Error _ as err -> err
+              | Ok bindings -> (
+                  let env_bindings =
+                    bindings
+                    |> List.map (fun (binding : Destructure.local_binding) ->
+                           ( Names.scoped_key scope binding.source_name,
+                             Types.binding binding.ocaml_name binding.ty ))
+                  in
+                  let some_env = Env.add_bindings env_bindings env in
+                  match
+                    compile_expr scope (Env.with_expected_type None some_env)
+                      then_form
+                  with
+                  | Error _ as err -> err
+                  | Ok threaded ->
+                      let ir_bindings =
+                        bindings
+                        |> List.map (fun (binding : Destructure.local_binding) ->
+                               let pattern =
+                                 if has_capability binding.ty then
+                                   capability_pattern binding.ocaml_name
+                                     binding.ty
+                                 else Semantic_ir.PVar binding.ocaml_name
+                               in
+                               let expression =
+                                 if has_capability binding.ty then
+                                   capability_storage_expression binding.ty
+                                     binding.semantic_expr
+                                 else binding.semantic_expr
+                               in
+                               (located_pattern binding.identity pattern, expression))
+                      in
+                      let threaded_code =
+                        if ir_bindings = [] then threaded.semantic_expr
+                        else Semantic_ir.Let (ir_bindings, threaded.semantic_expr)
+                      in
+                      let expected_is_nullable =
+                        match Env.expected_type env with
+                        | Some (TNullable _ | TOcaml "option"
+                               | TOcaml_app ("option", [ _ ])) ->
+                            true
+                        | Some _ | None -> false
+                      in
+                      if not wrap_absent then
+                        let threaded_expr =
+                          Semantic_ir.Let
+                            ( [
+                                ( Semantic_ir.PVar payload_name,
+                                  option_expr.semantic_expr );
+                              ],
+                              threaded_code )
+                        in
+                        if not expected_is_nullable then
+                          Ok { threaded with semantic_expr = threaded_expr }
+                        else
+                          let result_ty, semantic_expr =
+                            match threaded.ty with
+                            | TNullable _ | TOcaml "option"
+                            | TOcaml_app ("option", [ _ ]) ->
+                                (threaded.ty, threaded_expr)
+                            | TNil -> (TNil, Semantic_ir.Constructor ("None", None))
+                            | ty ->
+                                ( TNullable ty,
+                                  Semantic_ir.Constructor
+                                    ("Some", Some threaded_expr) )
+                          in
+                          Ok (typed_ir result_ty semantic_expr)
+                      else
+                        let result_ty, some_code =
+                          match threaded.ty with
+                          | TNullable _ | TOcaml "option"
+                          | TOcaml_app ("option", [ _ ]) ->
+                              (threaded.ty, threaded_code)
+                          | TNil -> (TNil, Semantic_ir.Constructor ("None", None))
+                          | ty ->
+                              ( TNullable ty,
+                                Semantic_ir.Constructor ("Some", Some threaded_code) )
+                        in
+                        Ok
+                          (typed_ir result_ty
+                             (Semantic_ir.Match
+                                ( option_expr.semantic_expr,
+                                  [
+                                    ( Semantic_ir.PConstructor
+                                        ( "Some",
+                                          Some
+                                            (if has_capability payload_ty then
+                                               capability_pattern payload_name
+                                                 payload_ty
+                                             else
+                                               Semantic_ir.PVar payload_name) ),
+                                      some_code );
+                                    ( Semantic_ir.PConstructor ("None", None),
+                                      Semantic_ir.Constructor ("None", None) );
+                                  ] ))))
+            in
+            match option_expr.ty with
+            | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
+                compile_threaded
+                  (match option_expr.ty with
+                  | TOcaml_app ("option", [ _ ]) ->
+                      lg_metadata_type_for_ocaml_payload payload_ty
+                  | _ -> payload_ty)
+                  true
+            | TNil -> Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
+            | TOcaml "option" | TUnknown | TMeta _ | TVar _ ->
+                compile_threaded TUnknown true
+            | ty -> compile_threaded ty false)
   and compile_when_binding ~require_truthy scope env binding_form body_forms
       error_prefix =
     match
@@ -3135,10 +3273,40 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                      (adapt_branch_expression clause_env expected result)
                | _ -> Ok (pattern_code, guard, result)))
     in
-    match (compile_expr scope env target_form, parse_pairs [] clauses) with
-    | (Error _ as err), _ -> err
-    | _, (Error _ as err) -> err
-    | Ok target, Ok pairs -> (
+    let target_expected_from_pattern = function
+      | FList [ FSymbol "Some"; FString _ ] -> Some (TNullable TString)
+      | FList [ FSymbol "Some"; FInt _ ] -> Some (TNullable TInt)
+      | FList [ FSymbol "Some"; FBool _ ] -> Some (TNullable TBool)
+      | FList [ FSymbol "Some"; FKeyword _ ] -> Some (TNullable TKeyword)
+      | FString _ -> Some TString
+      | FInt _ -> Some TInt
+      | FBool _ -> Some TBool
+      | FKeyword _ -> Some TKeyword
+      | _ -> None
+    in
+    let target_expected pairs =
+      pairs
+      |> List.filter_map (fun (pattern, _) ->
+             target_expected_from_pattern pattern)
+      |> function
+      | [] -> None
+      | first :: rest ->
+          List.fold_left
+            (fun merged ty ->
+              Option.bind merged (fun merged ->
+                  merge_branch_types merged ty))
+            (Some first) rest
+    in
+    match parse_pairs [] clauses with
+    | Error _ as err -> err
+    | Ok pairs -> (
+    match
+      compile_expr scope
+        (Env.with_expected_type (target_expected pairs) env)
+        target_form
+    with
+    | Error _ as err -> err
+    | Ok target -> (
         let target_expr =
           match target.ty with
           | TVector _ ->
@@ -3202,7 +3370,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   (adapt_clauses [] clauses)
             | Some _ | None ->
                 Error.error
-                  "conditional branches have incompatible types; define a closed sum type containing every branch type"))
+                  "conditional branches have incompatible types; define a closed sum type containing every branch type")))
   and compile_match scope env target_form clauses =
     compile_match_with_result compile_expr scope env target_form clauses
   and compile_body scope env empty_error forms =
@@ -4829,6 +4997,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     compile_if;
     compile_if_let;
     compile_if_some;
+    compile_some_thread;
     compile_when_let;
     compile_when_some;
     compile_let_some;

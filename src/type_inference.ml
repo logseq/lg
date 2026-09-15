@@ -22,6 +22,11 @@ let static_seqable_element_type ty =
       Some element_ty
   | value_ty -> Types.seqable_constraint_element value_ty
 
+let expected_seqable_element_type ty =
+  match Types.seqable_constraint_element ty with
+  | Some _ as element -> element
+  | None -> static_seqable_element_type ty
+
 let static_sequential_element_type ty =
   match Types.constraint_value_type ty with
   | TList element_ty | TVector element_ty | TSeq element_ty ->
@@ -1042,6 +1047,30 @@ let rec inferred_form_type params = function
       refine_type
         (inferred_form_type branch_params then_form)
         (inferred_form_type params else_form)
+  | FList
+      [
+        FSymbol "__lg_some-thread";
+        FVector [ FSymbol binding; option_form ];
+        then_form;
+      ] ->
+      let option_ty = inferred_form_type params option_form in
+      let payload_ty =
+        match option_ty with
+        | TNullable payload | TOcaml_app ("option", [ payload ]) -> payload
+        | TNil | TUnknown | TMeta _ | TVar _ -> TUnknown
+        | ty -> ty
+      in
+      let branch_params =
+        (binding, payload_ty) :: string_remove_assoc binding params
+      in
+      let threaded_ty = inferred_form_type branch_params then_form in
+      (match option_ty with
+      | TNullable _ | TOcaml_app ("option", [ _ ]) | TNil | TUnknown | TMeta _
+      | TVar _ -> (
+          match threaded_ty with
+          | TNullable _ | TOcaml_app ("option", [ _ ]) | TNil -> threaded_ty
+          | ty -> TNullable ty)
+      | _ -> threaded_ty)
   | FList ((FSymbol "__lg_get" | FSymbol "__lg_find") :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
@@ -1596,7 +1625,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     else direct_ty
   in
   let specialize_accumulating_hof_parameter_types name parameter_types =
-    if not (can_accumulate_overloaded_function_parameter name) then
+    if has_source_name name "group-by" then
+      match parameter_types with
+      | _key_fn :: collection_ty :: rest -> (
+          match static_seqable_element_type collection_ty with
+          | Some element_ty ->
+              TFn ([ element_ty ], Type_solver.fresh ())
+              :: collection_ty :: rest
+          | None -> parameter_types)
+      | _ -> parameter_types
+    else if not (can_accumulate_overloaded_function_parameter name) then
       parameter_types
     else
       match parameter_types with
@@ -1945,6 +1983,39 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_nth"; collection; index ] ->
         Result.bind (infer_sequence_form expected_ty params collection)
           (fun params -> infer_expected TInt params index)
+    | FList [ FSymbol map_name; fn; collection ]
+      when has_source_name map_name "__lg_map" || has_source_name map_name "map"
+      -> (
+        match expected_seqable_element_type expected_ty with
+        | Some return_ty
+          when not
+                 (match return_ty with
+                 | TUnknown | TMeta _ | TVar _ -> true
+                 | _ -> false)
+               && not (Types.is_dynamic return_ty) ->
+            let inferred_element_ty = inferred_unary_function_param params fn in
+            let inferred_element_ty =
+              match inferred_element_ty with
+              | TUnknown | TMeta _ | TVar _ ->
+                  inferred_literal_collection_item params collection
+              | ty -> ty
+            in
+            let element_ty =
+              match inferred_element_ty with
+              | TUnknown | TMeta _ | TVar _ ->
+                  fresh_type_variable "unary_map_item"
+              | ty -> ty
+            in
+            let element_ty =
+              match expected_unary_function_param params return_ty fn with
+              | Some expected_param_ty ->
+                  refine_type element_ty expected_param_ty
+              | None -> element_ty
+            in
+            Result.bind
+              (infer_expected (TFn ([ element_ty ], return_ty)) params fn)
+              (fun params -> infer_sequence_form element_ty params collection)
+        | Some _ | None -> infer_form params (FList [ FSymbol map_name; fn; collection ]))
     | FList [ FSymbol "__lg_into"; target; source ] -> (
         match into_source_element_type expected_ty with
         | Some element when not (Types.is_dynamic element) ->
@@ -2057,6 +2128,38 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     inferred)
               infer_body
         | _ -> infer_all params body_forms)
+    | FList
+        [
+          FSymbol "__lg_some-thread";
+          FVector [ FSymbol binding; option_form ];
+          then_form;
+        ] -> (
+        let inferred_option_ty =
+          inferred_binding_form_type params option_form
+        in
+        let initial_payload_ty =
+          match inferred_option_ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+          | _ -> fresh_type_variable "option"
+        in
+        let shadowed = string_assoc_opt binding params in
+        let branch_params =
+          (binding, initial_payload_ty) :: string_remove_assoc binding params
+        in
+        match infer_expected expected_ty branch_params then_form with
+        | Error _ as error -> error
+        | Ok branch_params ->
+            let payload_ty =
+              string_assoc_opt binding branch_params
+              |> Option.value ~default:initial_payload_ty
+            in
+            let params = string_remove_assoc binding branch_params in
+            let params =
+              match shadowed with
+              | None -> params
+              | Some ty -> (binding, ty) :: params
+            in
+            infer_expected (TNullable payload_ty) params option_form)
     | FList [ FSymbol "if"; condition; then_form; else_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
             match literal_truthiness condition with
@@ -2393,6 +2496,28 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword field_ty params
     | FList [ FSymbol "__lg_get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol name; key_fn; collection ]
+      when has_source_name name "group-by"
+           && Option.is_some (Types.dynamic_map_types expected_ty) -> (
+        let key_ty, value_ty =
+          Types.dynamic_map_types expected_ty |> Option.get
+        in
+        match value_ty with
+        | TVector element_ty ->
+            let collection_element_ty =
+              match key_fn with
+              | FKeyword keyword ->
+                  refine_type element_ty
+                    (TRecord [ make_field keyword key_ty ])
+              | _ -> element_ty
+            in
+            Result.bind
+              (infer_sequence_form collection_element_ty params collection)
+              (fun params ->
+                match key_fn with
+                | FKeyword _ -> Ok params
+                | _ -> infer_expected (TFn ([ element_ty ], key_ty)) params key_fn)
+        | _ -> infer_form params (FList [ FSymbol name; key_fn; collection ]))
     | FList [ FSymbol "__lg_find"; target; key ] ->
         Result.bind (infer_form params target) (fun params ->
             infer_form params key)
@@ -3099,6 +3224,45 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 | Error _ -> TUnknown))
         | Ok _ | Error _ -> TUnknown)
     | _ -> TUnknown
+  and expected_unary_function_param params return_ty = function
+    | FList (FSymbol "fn" :: (FVector _ as params_form) :: body_forms) -> (
+        match (Destructure.parse_param_specs params_form, List.rev body_forms) with
+        | Ok [ (spec : Destructure.param_spec) ], result :: reversed_prefix ->
+            let source_ty =
+              Option.value spec.explicit_ty ~default:TUnknown
+              |> resolve_named_record
+            in
+            let destructured =
+              if spec.destructured then
+                Destructure.pattern_type_hints spec.pattern source_ty
+                @ (Destructure.pattern_names spec.pattern
+                  |> List.map (fun name -> (name, TUnknown)))
+              else []
+            in
+            let local_bindings = (spec.source_name, source_ty) :: destructured in
+            let local_names = List.map fst local_bindings in
+            let function_params =
+              local_bindings
+              @ List.filter
+                  (fun (name, _) -> not (string_mem name local_names))
+                  params
+            in
+            let inferred =
+              Result.bind
+                (infer_all function_params (List.rev reversed_prefix))
+                (fun params -> infer_expected return_ty params result)
+            in
+            (match inferred with
+            | Error _ -> None
+            | Ok inferred when spec.destructured ->
+                Destructure.infer_pattern_type spec.pattern (fun name ->
+                    string_assoc_opt name inferred
+                    |> Option.value ~default:TUnknown)
+                |> Result.to_option
+            | Ok inferred ->
+                string_assoc_opt spec.source_name inferred)
+        | (Ok _ | Error _), _ -> None)
+    | _ -> None
   and inferred_function_parameter_types params = function
     | FSymbol name -> (
         let function_ty =
@@ -4573,6 +4737,51 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             Result.bind infer_option (fun params -> infer_form params else_form)
         )
+    | FList
+        [
+          FSymbol "__lg_some-thread";
+          FVector [ FSymbol binding; option_form ];
+          then_form;
+        ] -> (
+        let inferred_option_ty =
+          inferred_binding_form_type params option_form
+        in
+        let initial_payload_ty =
+          match inferred_option_ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+          | _ -> fresh_type_variable "option"
+        in
+        let shadowed = string_assoc_opt binding params in
+        let branch_params =
+          (binding, initial_payload_ty) :: string_remove_assoc binding params
+        in
+        match infer_form branch_params then_form with
+        | Error _ as error -> error
+        | Ok branch_params ->
+            let payload_ty =
+              string_assoc_opt binding branch_params
+              |> Option.value ~default:initial_payload_ty
+            in
+            let params = string_remove_assoc binding branch_params in
+            let params =
+              match shadowed with
+              | None -> params
+              | Some ty -> (binding, ty) :: params
+            in
+            let input_is_nullable =
+              match inferred_option_ty with
+              | TNullable _ | TOcaml_app ("option", [ _ ]) | TNil | TUnknown
+              | TMeta _ | TVar _ ->
+                  true
+              | _ -> false
+            in
+            let expected_option_ty =
+              match (input_is_nullable, payload_ty) with
+              | true, TUnknown -> TNullable TUnknown
+              | true, payload_ty -> TNullable payload_ty
+              | false, payload_ty -> payload_ty
+            in
+            infer_expected expected_option_ty params option_form)
     | FList
         (FSymbol ("__lg_when-some" | "__lg_when-let")
         :: FVector [ FSymbol binding; option_form ]

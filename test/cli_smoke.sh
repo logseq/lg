@@ -373,7 +373,7 @@ printf '%s\n' '(def bad (record User.user (age "old")))' > "$record_use"
   send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$record_use\",\"languageId\":\"lg\",\"version\":1,\"text\":\"(def bad (record User.user (age \\\"old\\\")))\\n\"}}}"
   send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
   send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
-} | "$cli" --lsp > "$related_lsp_output"
+} | LG_LSP_EAGER_DIAGNOSTICS=1 "$cli" --lsp > "$related_lsp_output"
 
 if ! grep -Fq "\"uri\":\"file://$record_use\",\"diagnostics\":[{\"range\"" "$related_lsp_output"; then
   echo "expected cross-file record diagnostics from LSP" >&2

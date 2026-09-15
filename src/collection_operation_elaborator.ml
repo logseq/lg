@@ -232,6 +232,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     in
     match candidates with [ ty ] -> Some ty | _ -> None
   in
+  let expected_record_type env keyword =
+    match Env.expected_type env with
+    | Some expected
+      when not
+             (Types.equal expected TUnknown
+             || match expected with TVar _ -> true | _ -> false) ->
+        Some (TRecord [ make_map_field keyword expected ])
+    | Some _ | None -> None
+  in
   let contextual_field_type env field_ty =
     let field_ty = clj_function_type field_ty in
     match (field_ty, Env.expected_type env) with
@@ -1404,7 +1413,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | FList
                 [ FSymbol ("first" | "second" | "last"); _collection ] ->
                 Env.with_expected_type (inferred_record_type env keyword) env
-            | _ -> Env.with_expected_type None env
+            | _ -> Env.with_expected_type (expected_record_type env keyword) env
           in
           match compile_expr scope target_env target_form with
           | Error _ as err -> err
@@ -1633,6 +1642,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   let field_ty =
                     Option.value (inferred_field_type env keyword)
                       ~default:(Types.dynamic_constraint TUnknown)
+                    |> contextual_field_type env
                   in
                   if Types.is_dynamic field_ty then
                     Ok (dynamic_lookup field_ty target)

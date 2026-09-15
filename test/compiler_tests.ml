@@ -1775,6 +1775,50 @@ let test_record_literals_disambiguate_subset_shapes () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_typed_record_literals_disambiguate_repeated_field_labels () =
+  let source =
+    compile_chunks_with_stdlib Lg.Target.Native
+      [
+        ( "app/api.cljc",
+          {|
+(ns app.api)
+
+(defrecord api-config
+  [base-url graph-id graph-name token])
+|} );
+        ( "app/settings.cljc",
+          {|
+(ns app.settings)
+
+(defrecord settings-projection [base-url token])
+|} );
+        ( "app/api_test.cljc",
+          {|
+(ns app.api-test
+  (:require [app.api :as api]))
+
+(def config
+  (record api/api-config
+    (base-url "https://api.example")
+    (graph-id "graph-1")
+    (graph-name None)
+    (token "token")))
+
+(println (:base-url config))
+|} );
+      ]
+  in
+  if
+    not
+      (string_contains_substring source
+         "fun (__lg_record_value :")
+    || not (string_contains_substring source "app_api_api_config")
+    || not (string_contains_substring source "-> __lg_record_value")
+  then failwith "typed record literals must carry the expected record type";
+  assert_ocaml_runs
+    "typed_record_literals_disambiguate_repeated_field_labels"
+    "https://api.example\n" source
+
 let test_structural_row_projection_does_not_duplicate_argument_expression () =
   let source =
     {|
@@ -13406,6 +13450,15 @@ let test_threading_and_option_binding_forms_compile () =
   (some-> value (+ 1) str))
 (defn maybe-thread-last [^:option<int> value]
   (some->> value (str "value=")))
+(type-record task-status (uuid :string) (ident :option<string>))
+(type-variant task-reference (RefIdent :string) (RefUuid :string))
+(defn status-reference [status]
+  (if-some [ident (:ident status)] (RefIdent ident) (RefUuid (:uuid status))))
+(defn next-status-reference [^:task-status status]
+  (match (some-> status :ident)
+    (Some "todo") (Some (RefIdent "doing"))
+    (Some "doing") (Some (RefIdent "done"))
+    _ (Some (RefIdent "todo"))))
 (def some-threaded
   (if-some [value (maybe-thread (Some 41))] value "missing"))
 (def some-missing
@@ -13430,12 +13483,13 @@ let test_threading_and_option_binding_forms_compile () =
   (str (option-score (Some 41)) ":" (option-score None) ":"
        threaded ":" threaded-last ":" combined ":" missing ":"
        (deref observed) ":" some-threaded ":" some-missing ":"
-       destructured-option ":" (maybe-thread-last (Some 41))))
+       destructured-option ":" (maybe-thread-last (Some 41)) ":"
+       (some? (next-status-reference (record task-status (uuid "u") (ident nil))))))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "threading_and_option_binding_forms_compile"
-    "42:0:42:value=41:5:9:7:42:missing:5:value=41\n" ocaml_source;
+    "42:0:42:value=41:5:9:7:42:missing:5:value=41:true\n" ocaml_source;
   compile_with_stdlib_result Lg.Target.Native "test/bad_if_let_binding.cljc"
     {|(def bad (if-let [x] x 0))|}
   |> expect_error_contains "if-let requires exactly two binding forms";
@@ -13447,6 +13501,30 @@ let test_threading_and_option_binding_forms_compile () =
   |> expect_error_contains "is not callable";
   Lg.Compiler.compile_string {|(def bad (let-some [x (Some 1) y] x 0))|}
   |> expect_error "let-some bindings require name/option pairs"
+
+let test_some_thread_preserves_optional_record_field_rows () =
+  let source =
+    {|
+(ns option-row-repro)
+
+(type-record first-status (ident :option<string>))
+(type-record second-status (ident :option<string>))
+(type-record first-block (status :option<first-status>))
+(type-record second-block (status :option<second-status>))
+
+(defn next-status [block]
+  (match (some-> (:status block) :ident)
+    (Some "todo") "doing"
+    _ "todo"))
+
+(println (next-status (record first-block
+                       (status (Some (record first-status (ident (Some "todo"))))))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "some_thread_preserves_optional_record_field_rows"
+    "doing\n" ocaml_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_combined_host_package_import_compiles () =
   let source =
@@ -17639,6 +17717,24 @@ let test_some_preserves_filtered_tuple_elements () =
 |} in
   let compiled = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "some_preserves_filtered_tuple_elements" "true\n" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_destructuring_infers_tuple_entries_without_parameter_hints () =
+  let source = {|
+(type-variant value (Text :string) (Missing))
+(defn present-entries [entries]
+  (vec (keep (fn [[key value]]
+               (match value
+                 (Text text) (Some (tuple key text))
+                 Missing nil))
+             entries)))
+(assert (= (present-entries [(tuple "title" (Text "Task")) (tuple "icon" Missing)])
+           [(tuple "title" "Task")]))
+|}
+  in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "map_destructuring_infers_tuple_entries_without_parameter_hints" ""
+    compiled;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_some_preserves_host_tuple_elements () =
@@ -30599,6 +30695,172 @@ let test_group_by_map_entry_destructuring_preserves_named_record_keys () =
   ignore
     (compile_with_stdlib Lg.Target.Melange
        "test/group_by_named_record_key.cljc" source)
+
+let test_group_by_preserves_full_bucket_elements_when_key_uses_row_subset () =
+  let source =
+    {|
+(type-record candidate (label :string) (value :string))
+(defn duplicated-labels [candidates]
+  (let [by-label (group-by (fn [candidate] (:label candidate)) candidates)]
+    (into #{}
+          (keep (fn [[label values]]
+                  (when (> (count (set (map :value values))) 1)
+                    label))
+                by-label))))
+(println
+  (contains?
+    (duplicated-labels [(record candidate (label "Roadmap") (value "page-uuid-1"))
+                        (record candidate (label "Roadmap") (value "page-uuid-2"))])
+    "Roadmap"))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/group_by_preserves_bucket_rows.cljc" source
+  in
+  if string_contains_substring native_source "(__lg_keyword_function_item : candidate) -> None" then
+    failwith "group-by bucket values lost their source row fields";
+  assert_ocaml_runs
+    "group_by_preserves_full_bucket_elements_when_key_uses_row_subset"
+    "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/group_by_preserves_bucket_rows.cljc" source)
+
+let test_group_by_preserves_full_concat_elements_with_shorthand_key () =
+  let source =
+    {|
+(ns group-by-concat-shorthand-test
+  (:require [ocaml.String :as bytes]))
+
+(type-record candidate (label :string) (value :string))
+(type-record summary (uuid :string) (title :string))
+(type-record block (title :string) (references :list<summary>) (tags :list<summary>))
+(type-record context (pages :list<candidate>) (tags :list<candidate>))
+(def empty-labels #{})
+
+(defn duplicated-labels [candidates]
+  (let [by-label (group-by #(bytes/lowercase-ascii (:label %)) candidates)]
+    (into empty-labels
+          (keep (fn [[label values]]
+                  (when (> (count (set (map :value values))) 1)
+                    label))
+                by-label))))
+(defn summary-candidates [summaries]
+  (mapv #(record candidate (label (:title %)) (value (:uuid %))) summaries))
+(defn display-duplicated [context block]
+  (duplicated-labels
+    (concat (:pages context) (:tags context)
+            (summary-candidates (concat (:references block) (:tags block))))))
+
+(println
+  (contains?
+    (display-duplicated
+      (record context (pages (list)) (tags (list)))
+      (record block
+        (title "See [[page-uuid-1]] or [[page-uuid-2]]")
+        (references (list (record summary (uuid "page-uuid-1") (title "Roadmap"))
+                          (record summary (uuid "page-uuid-2") (title "roadmap"))))
+        (tags (list))))
+    "roadmap"))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/group_by_concat_shorthand.cljc" source
+  in
+  if
+    string_contains_substring native_source
+      "(__lg_keyword_function_item : candidate) -> None"
+    || string_contains_substring native_source
+         "(__lg_keyword_function_item : t"
+  then failwith "group-by bucket values lost fields through concat";
+  assert_ocaml_runs
+    "group_by_preserves_full_concat_elements_with_shorthand_key"
+    "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/group_by_concat_shorthand.cljc" source)
+
+let test_into_tuple_map_preserves_full_values_when_key_uses_row_subset () =
+  let model_source =
+    {|
+(ns app.model)
+
+(type-record entity-summary (uuid :string) (title :string))
+(type-record status (uuid :string) (title :string))
+(type-record block
+  (uuid :string) (title :string) (page-id :string) (parent-id :option<string>)
+  (order :option<string>) (created-at :int) (updated-at :int) (sync-status :string)
+  (tags :list<entity-summary>) (references :list<entity-summary>) (breadcrumbs :list<entity-summary>)
+  (status :option<status>) (is-asset :bool) (asset-type :option<string>)
+  (asset-size :option<int>) (asset-checksum :option<string>) (local-path :option<string>)
+  (journal :option<tuple<string;int>>))
+
+(defn local-block [uuid title page-id parent-id now]
+  (record block (uuid uuid) (title title) (page-id page-id) (parent-id parent-id)
+    (order nil) (created-at now) (updated-at now) (sync-status "pending")
+    (tags (list)) (references (list)) (breadcrumbs (list)) (status nil)
+    (is-asset false) (asset-type nil) (asset-size nil) (asset-checksum nil)
+    (local-path nil) (journal nil)))
+|}
+  in
+  let rpc_source =
+    {|
+(ns app.rpc
+  (:require [app.model :as model]))
+
+(defn merge-live-metadata [optimistic live]
+  (assoc optimistic
+    :title (:title live)
+    :updated-at (:updated-at live)
+    :sync-status (:sync-status live)))
+
+(defn overlay [cached editing? live-items]
+  (if editing?
+    (if-some [items cached]
+      (let [index (into {} (map (fn [block]
+                                   (let [entry (tuple (:uuid block) block)]
+                                     entry))
+                                 live-items))]
+    (mapv (fn [block]
+            (if-some [live (get index (:uuid block))]
+              (merge-live-metadata block live)
+              block))
+          items))
+      (vec live-items))
+    (vec live-items)))
+|}
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, model_output =
+      Lg.Compiler.compile_chunk_with_filename ~target ~filename:"app/model.cljc"
+        stdlib.state model_source
+      |> expect_ok
+    in
+    let cached_state = Lg.Compiler.cacheable_state state in
+    let serialized = Marshal.to_string cached_state [] in
+    let restored_state : Lg.Compiler.state = Marshal.from_string serialized 0 in
+    let restored_state =
+      Lg.Compiler.restore_ocaml_environment ~target ~packages:[] restored_state
+        [ stdlib.ocaml_source; model_output ]
+      |> expect_ok
+    in
+    let _state, rpc_output =
+      Lg.Compiler.compile_chunk_with_filename ~target ~filename:"app/rpc.cljc"
+        restored_state rpc_source
+      |> expect_ok
+    in
+    String.concat "\n" [ stdlib.ocaml_source; model_output; rpc_output ]
+  in
+  let native_source = compile Lg.Target.Native in
+  if
+    string_contains_substring native_source
+      "(__lg_keyword_function_item : block) -> None"
+  then failwith "into map values lost their source row fields";
+  ignore native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_filterv_contextualizes_generic_seqable_items () =
   let source =
@@ -47564,9 +47826,9 @@ let test_language_service_type_definition_and_references_use_identity () =
   let referenced_text =
     List.map (span_text type_language_service_source) references
   in
-  if referenced_text <> [ "user"; "user" ] then
+  if referenced_text <> [ "user"; "user"; "user" ] then
     failwith
-      ("expected record type declaration/usage references, got: "
+      ("expected record type declaration/constructor/annotation references, got: "
       ^ String.concat "," referenced_text)
 
 let test_language_service_type_rename_edits_plain_type_spans () =
@@ -47579,8 +47841,8 @@ let test_language_service_type_rename_edits_plain_type_spans () =
   with
   | Error err -> failwith ("expected type rename, got: " ^ err.message)
   | Ok edits ->
-      if List.length edits <> 2 then
-        failwith "expected type declaration and annotation edits";
+      if List.length edits <> 3 then
+        failwith "expected type declaration, constructor, and annotation edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
           if span_text type_language_service_source edit.range <> "user" then
@@ -51508,6 +51770,8 @@ let tests =
       test_independent_incremental_modules_reject_dynamic_record_erasure );
     ( "record literals disambiguate subset shapes",
       test_record_literals_disambiguate_subset_shapes );
+    ( "typed record literals disambiguate repeated field labels",
+      test_typed_record_literals_disambiguate_repeated_field_labels );
     ( "structural row projection does not duplicate argument expression",
       test_structural_row_projection_does_not_duplicate_argument_expression );
     ( "same named record argument is not projected",
@@ -52472,6 +52736,8 @@ let tests =
       test_nullable_refinement_preserves_the_existing_boundary_identity );
     ( "syntax ergonomics: threading and option binding forms compile",
       test_threading_and_option_binding_forms_compile );
+    ( "some thread preserves optional record field rows",
+      test_some_thread_preserves_optional_record_field_rows );
     ( "syntax ergonomics: combined host package import compiles",
       test_combined_host_package_import_compiles );
     ( "syntax ergonomics: namespace host package import is saved",
@@ -52822,6 +53088,8 @@ let tests =
       test_multi_arity_export_preserves_inferred_optional_parameter );
     ( "contains uses collection form type", test_contains_uses_collection_form_type );
     ( "some preserves filtered tuple elements", test_some_preserves_filtered_tuple_elements );
+    ( "map destructuring infers tuple entries without parameter hints",
+      test_map_destructuring_infers_tuple_entries_without_parameter_hints );
     ( "some preserves host tuple elements", test_some_preserves_host_tuple_elements );
     ( "contains propagates protocol set element to parameter",
       test_contains_propagates_protocol_set_element_to_parameter );
@@ -53291,6 +53559,12 @@ let tests =
       test_group_by_unpacks_generic_seqable_items );
     ( "group-by map entry destructuring preserves named record keys",
       test_group_by_map_entry_destructuring_preserves_named_record_keys );
+    ( "group-by preserves full bucket elements when key uses row subset",
+      test_group_by_preserves_full_bucket_elements_when_key_uses_row_subset );
+    ( "group-by preserves full concat elements with shorthand key",
+      test_group_by_preserves_full_concat_elements_with_shorthand_key );
+    ( "into tuple map preserves full values when key uses row subset",
+      test_into_tuple_map_preserves_full_values_when_key_uses_row_subset );
     ( "filterv contextualizes generic seqable items",
       test_filterv_contextualizes_generic_seqable_items );
     ( "filterv filters static vectors directly",

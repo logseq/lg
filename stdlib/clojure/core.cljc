@@ -1896,7 +1896,7 @@
 (defmacro some-> [expr & forms]
   (let [result (gensym)
         steps (map (fn [form]
-                     `(if (nil? ~result) nil (-> ~result ~form)))
+                     `(__lg_some-thread [~result ~result] (-> ~result ~form)))
                    forms)]
     `(let [~result ~expr
            ~@(mapcat (fn [step] [result step]) (butlast steps))]
@@ -1907,7 +1907,7 @@
 (defmacro some->> [expr & forms]
   (let [result (gensym)
         steps (map (fn [form]
-                     `(if (nil? ~result) nil (->> ~result ~form)))
+                     `(__lg_some-thread [~result ~result] (->> ~result ~form)))
                    forms)]
     `(let [~result ~expr
            ~@(mapcat (fn [step] [result step]) (butlast steps))]
