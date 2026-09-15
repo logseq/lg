@@ -47,7 +47,28 @@ let rec expression = function
       Constructor (name, Option.map expression payload)
   | Tuple values -> Tuple (List.map expression values)
   | Ident name -> Ident name
-  | List values -> List (List.map expression values)
+  | List values ->
+      let rec stable = function
+        | Semantic_ir.Located (_, _, value) | Typed (_, value) | GadtScope value -> stable value
+        | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> true
+        | PolyTag (_, value) | Constructor (_, value) -> Option.fold ~none:true ~some:stable value
+        | Tuple values | List values | Array values -> List.for_all stable values
+        | Fun _ | Labelled_fun _ -> true
+        | _ -> false in
+      let rec binding_pattern name = function
+        | Semantic_ir.Located (_, _, value) | GadtScope value -> binding_pattern name value
+        | Typed (ty, _) -> pattern (Semantic_ir.PTyped (Semantic_ir.PVar name, ty))
+        | _ -> Ocaml_ir.PVar name in
+      let bindings, values =
+        List.mapi (fun index value ->
+          if stable value then None, expression value
+          else
+            let name = "__lg_list_value'" ^ string_of_int index in
+            Some (binding_pattern name value, expression value), Ocaml_ir.Ident name) values
+        |> List.split in
+      (match List.filter_map Fun.id bindings with
+      | [] -> List values
+      | bindings -> Let (bindings, List values))
   | Array values -> Array (List.map expression values)
   | Apply (fn, args) -> (
       match Semantic_ir.scoped_application fn args with
@@ -61,6 +82,9 @@ let rec expression = function
   | If (condition, then_expr, else_expr) ->
       If (expression condition, expression then_expr, expression else_expr)
   | Fun (patterns, body) -> Fun (List.map pattern patterns, expression body)
+  | Labelled_fun (patterns, body) ->
+      Labelled_fun (List.map (fun (label, value) -> label, pattern value) patterns,
+                    expression body)
   | Sequence values -> Sequence (List.map expression values)
   | Let (bindings, body) -> (
       match Semantic_ir.scoped_let bindings body with

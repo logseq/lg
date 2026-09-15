@@ -3,9 +3,11 @@ val refine_type : Types.ty -> Types.ty -> Types.ty
 val materialize_dynamic_unknown : Types.ty -> Types.ty
 
 val inferred_form_type :
+  ?lookup_binding:(string -> Types.ty) ->
   (string * Types.ty) list -> Ast.form -> Types.ty
 
 val returned_vector_type :
+  ?lookup_binding:(string -> Types.ty) ->
   (string * Types.ty) list -> Ast.form -> Types.ty option
 
 val inferred_call_return_type :

@@ -172,7 +172,11 @@ let same_type_path left right =
     String.equal (canonical left) (canonical right))
 
 type parameter_label = Positional | Labelled of string | Optional of string
-type parameter = { label : parameter_label; ty : Types.ty }
+type parameter = {
+  label : parameter_label;
+  ty : Types.ty;
+  callback_labels : Asttypes.arg_label list option;
+}
 type value_signature = { parameters : parameter list; return_type : Types.ty }
 
 type constructor_signature = {
@@ -316,6 +320,30 @@ and transparent_manifest_alias name =
             Some ty
         | Ok _ | Error _ -> None)
 
+let callback_parameter_type compiler_type =
+  let open Lg_compiler_support.Ocaml_value in
+  let rec arrows labels parameters = function
+    | Arrow (label, argument, result) ->
+        let label = match label with
+          | Unlabelled -> Asttypes.Nolabel
+          | Labelled name -> Asttypes.Labelled name
+          | Optional name -> Asttypes.Optional name in
+        arrows (label :: labels) (of_compiler_type argument :: parameters) result
+    | result ->
+        let labels = List.rev labels in
+        if List.exists (( <> ) Asttypes.Nolabel) labels then
+          Some (TFn (List.rev parameters, of_compiler_type result), labels)
+        else None in
+  match compiler_type with
+  | Constructor ("option", [ inner ]) -> (
+      match arrows [] [] inner with
+      | Some (ty, labels) -> TNullable ty, Some labels
+      | None -> of_compiler_type compiler_type, None)
+  | _ -> (
+      match arrows [] [] compiler_type with
+      | Some (ty, labels) -> ty, Some labels
+      | None -> of_compiler_type compiler_type, None)
+
 let rec signature_of_compiler_type =
   let open Lg_compiler_support.Ocaml_value in
   function
@@ -327,10 +355,11 @@ let rec signature_of_compiler_type =
         | Labelled name -> Labelled name
         | Optional name -> Optional name
       in
+      let ty, callback_labels = callback_parameter_type argument in
       {
         signature with
         parameters =
-          { label; ty = of_compiler_type argument } :: signature.parameters;
+          { label; ty; callback_labels } :: signature.parameters;
       }
   | compiler_type ->
       { parameters = []; return_type = of_compiler_type compiler_type }
@@ -456,7 +485,7 @@ let parse_argument_forms forms =
   in
   parse [] forms
 
-let expected_argument_types signature arguments =
+let applied_parameters signature arguments =
   let named_labels = List.filter_map fst arguments in
   let remaining =
     List.filter
@@ -470,7 +499,6 @@ let expected_argument_types signature arguments =
     signature.parameters
     |> List.find_opt (fun parameter ->
            parameter_label_name parameter.label = Some label)
-    |> Option.map supplied_argument_type
   in
   let rec consume_positional prefix = function
     | [] -> None
@@ -478,8 +506,8 @@ let expected_argument_types signature arguments =
         consume_positional prefix parameters
     | ({ label = Labelled _; _ } as parameter) :: parameters ->
         consume_positional (parameter :: prefix) parameters
-    | { label = Positional; ty } :: parameters ->
-        Some (ty, List.rev_append prefix parameters)
+    | ({ label = Positional; _ } as parameter) :: parameters ->
+        Some (parameter, List.rev_append prefix parameters)
   in
   let rec collect collected remaining = function
     | [] -> Some (List.rev collected)
@@ -491,6 +519,10 @@ let expected_argument_types signature arguments =
             collect (ty :: collected) remaining rest)
   in
   collect [] remaining arguments
+
+let expected_argument_types signature arguments =
+  applied_parameters signature arguments
+  |> Option.map (List.map supplied_argument_type)
 
 let result_after_application signature arguments =
   let argument_labels = List.map fst arguments in
@@ -544,7 +576,7 @@ let result_after_application signature arguments =
                       consume prefix parameters
                   | ({ label = Labelled _; _ } as parameter) :: parameters ->
                       consume (parameter :: prefix) parameters
-                  | { label = Positional; ty } :: parameters ->
+                  | { label = Positional; ty; _ } :: parameters ->
                       consume_positionals
                         ((ty, actual_ty) :: consumed)
                         (List.rev_append prefix parameters)

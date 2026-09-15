@@ -40,6 +40,7 @@ type t =
   | Labelled_apply of t * (string option * t) list
   | If of t * t * t
   | Fun of pattern list * t
+  | Labelled_fun of (Asttypes.arg_label * pattern) list * t
   | Sequence of t list
   | Let of (pattern * t) list * t
   | EvaluateOnce of string * t * t
@@ -207,7 +208,7 @@ let rec type_annotations expression =
     | Apply (fn, args) | Uncurried_apply (fn, args) -> fn :: args
     | Labelled_apply (fn, args) -> fn :: List.map snd args
     | If (condition, then_expr, else_expr) -> [ condition; then_expr; else_expr ]
-    | Fun (_, body) -> [ body ]
+    | Fun (_, body) | Labelled_fun (_, body) -> [ body ]
     | Let (bindings, body) | LetRecGroup (bindings, body) ->
         List.map snd bindings @ [ body ]
     | EvaluateOnce (_, value, body) -> [ value; body; value ]
@@ -280,6 +281,7 @@ let rec rewrite fn expression =
             rewrite fn then_expr,
             rewrite fn else_expr )
     | Fun (patterns, body) -> Fun (patterns, rewrite fn body)
+    | Labelled_fun (patterns, body) -> Labelled_fun (patterns, rewrite fn body)
     | Sequence values -> Sequence (List.map (rewrite fn) values)
     | Let (bindings, body) ->
         Let
@@ -354,7 +356,7 @@ let rec exists_identifier predicate expression =
     | Labelled_apply (fn, args) -> fn :: List.map snd args
     | If (condition, then_expr, else_expr) ->
         [ condition; then_expr; else_expr ]
-    | Fun (_, body) -> [ body ]
+    | Fun (_, body) | Labelled_fun (_, body) -> [ body ]
     | Let (bindings, body) | LetRecGroup (bindings, body) ->
         List.map snd bindings @ [ body ]
     | EvaluateOnce (_, value, body) -> [ value; body; value ]

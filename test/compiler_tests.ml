@@ -12395,6 +12395,11 @@ let test_inferred_ocaml_calls_implicitly_apply_trailing_unit_after_optional_labe
     {|
 val entries : ?e:int -> ?a:string -> string -> unit -> string
 val transform : ?apply:(string -> string) -> ?limit:int -> string -> string
+val labelled : apply:(prefix:string -> string -> string) -> string -> string
+val optional_callback : apply:(?prefix:string -> string -> string) -> string -> string
+type operation = { operation_id : string; title : string }
+type marker = { operation_id : string }
+val collect : stage:(operation -> unit) -> pending:(unit -> operation list) -> int
 |};
   write_file ml
     {|
@@ -12406,6 +12411,15 @@ let entries ?e ?a base () =
 let transform ?(apply = Fun.id) ?(limit = 20) value =
   let value = apply value in
   String.sub value 0 (min limit (String.length value))
+let labelled ~apply value = apply ~prefix:"label:" value
+let optional_callback ~(apply : ?prefix:string -> string -> string) value =
+  apply value ^ ":" ^ apply ~prefix:"optional:" value
+type operation = { operation_id : string; title : string }
+type marker = { operation_id : string }
+let collect ~stage ~pending =
+  stage { operation_id = "a"; title = "first" };
+  stage { operation_id = "a"; title = "updated" };
+  List.length (pending ())
 |};
   Fun.protect
     ~finally:(fun () ->
@@ -12455,9 +12469,32 @@ let transform ?(apply = Fun.id) ?(limit = 20) value =
 (println (shortened 3 "hello"))
 (println (from-record (record transformer (run (fn [value] (str value "?")))) "hello"))
 (println (locally-converted (fn [value] (str value "?")) "hello"))
+(println (fixture/labelled :apply (fn [prefix value] (str prefix value)) "hello"))
+(println (fixture/optional_callback
+           :apply (fn [prefix value] (str (if-some [prefix prefix] prefix "none:") value))
+           "hello"))
+(def callback-builds (atom 0))
+(println (fixture/optional_callback
+           :apply (do (swap! callback-builds inc)
+                      (fn [prefix value] (str (if-some [prefix prefix] prefix "none:") value)))
+           "once"))
+(println @callback-builds)
+(def staged (atom []))
+(println (fixture/collect
+           :stage (fn [operation]
+                    (swap! staged
+                      (fn [operations]
+                        (into [operation]
+                          (remove #(= (:operation_id %) (:operation_id operation)) operations))))
+                    (Stdlib.ignore 0))
+           :pending (fn [] (apply list (reverse @staged)))))
 |}
       in
       let native_source = compile_string_with_stdlib source |> expect_ok in
+      compile_string_with_stdlib
+        {|(require [ocaml.Unit_tail_fixture :as fixture])
+          (fixture/labelled :apply (fn [prefix value] 42) "bad")|}
+      |> expect_error_contains "string";
       write_file generated_ml
         (String.concat "\n"
            [ native_stdlib_prelude (); strip_native_stdlib_prelude native_source ]);
@@ -12481,9 +12518,9 @@ let transform ?(apply = Fun.id) ?(limit = 20) value =
           failwith
             (Printf.sprintf "generated OCaml did not run, exit code %d" code));
       let actual = read_file output_path in
-      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\n" then
+      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n" then
         failwith
-          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\n" actual))
+          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n" actual))
 
 let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
   let source =
@@ -30847,6 +30884,25 @@ let test_incremental_record_identities_survive_include_directory_changes () =
   assert_ocaml_runs "incremental_record_identities_survive_include_directory_changes"
     "https://example.test\ngraph\n" native;
   ignore (compile Lg.Target.Melange)
+
+let test_vector_elements_evaluate_in_source_order () =
+  let source = {|
+(ns vector-order-test)
+(def events (atom []))
+(defn mark [value] (swap! events conj value) value)
+(def values [(mark 1) (mark 2) (mark 3)])
+(println (= [1 2 3] values))
+(println (= [1 2 3] @events))
+(try [(mark 4) (do (mark 5) (Stdlib.failwith "stop") 5) (mark 6)]
+     (catch _ []))
+(println (= [1 2 3 4 5] @events))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native
+    "test/vector_source_order.cljc" source in
+  assert_ocaml_runs "vector_elements_evaluate_in_source_order"
+    "true\ntrue\ntrue\n" native;
+  ignore (compile_with_stdlib Lg.Target.Melange
+    "test/vector_source_order.cljc" source)
 
 let test_optional_record_fields_preserve_parameter_identity () =
   let source = {|
@@ -53724,6 +53780,8 @@ let tests =
       test_group_by_infers_fields_read_through_keep_destructuring );
     ( "optional record fields preserve parameter identity",
       test_optional_record_fields_preserve_parameter_identity );
+    ( "vector elements evaluate in source order",
+      test_vector_elements_evaluate_in_source_order );
     ( "local name binding does not inherit core function type",
       test_local_name_binding_does_not_inherit_core_function_type );
     ( "filterv contextualizes generic seqable items",

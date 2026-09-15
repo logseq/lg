@@ -38,6 +38,7 @@ type t =
   | Labelled_apply of t * (string option * t) list
   | If of t * t * t
   | Fun of pattern list * t
+  | Labelled_fun of (Asttypes.arg_label * pattern) list * t
   | Sequence of t list
   | Let of (pattern * t) list * t
   | LetRec of string * pattern list * t * t list
@@ -138,6 +139,15 @@ let rec to_source = function
       let patterns = match patterns with [] -> [ PUnit ] | _ -> patterns in
       "(fun "
       ^ (patterns |> List.map pattern_to_source |> String.concat " ")
+      ^ " -> " ^ to_source body ^ ")"
+  | Labelled_fun (patterns, body) ->
+      let parameter (label, pattern) =
+        let prefix = match label with
+          | Asttypes.Nolabel -> ""
+          | Labelled name -> "~" ^ name ^ ":"
+          | Optional name -> "?" ^ name ^ ":" in
+        prefix ^ pattern_to_source pattern in
+      "(fun " ^ String.concat " " (List.map parameter patterns)
       ^ " -> " ^ to_source body ^ ")"
   | Sequence expressions -> (
       match expressions with
@@ -549,6 +559,15 @@ and to_parsetree ~context = function
                (Ast_helper.Exp.function_ ~loc
                   (List.map function_parameter patterns)
                   None (Pfunction_body body))))
+  | Labelled_fun (patterns, body) -> (
+      match to_parsetree ~context body with
+      | Error _ as err -> err
+      | Ok body ->
+          let parameters = List.map (fun (label, pattern) ->
+            { (function_parameter pattern) with
+              pparam_desc = Pparam_val (label, None, pattern_to_parsetree pattern) }) patterns in
+          Ok (add_pattern_node_ids (List.map snd patterns)
+            (Ast_helper.Exp.function_ ~loc parameters None (Pfunction_body body))))
   | Sequence expressions -> (
       let rec discardable = function
         | GadtScope expression | Located (_, _, expression) | Constraint (expression, _) ->
@@ -559,7 +578,7 @@ and to_parsetree ~context = function
         | PolyTag (_, Some value) | Constructor (_, Some value) -> discardable value
         | Tuple values | List values | Array values ->
             List.for_all discardable values
-        | Apply _ | Uncurried_apply _ | Labelled_apply _ | If _ | Fun _
+        | Apply _ | Uncurried_apply _ | Labelled_apply _ | If _ | Fun _ | Labelled_fun _
         | Sequence _ | Let _ | LetRec _ | LetRecIn _ | LetRecGroup _ | PackModule _ | UnpackModule _ | Match _
         | Match_guarded _ | Try _ | Infix _ | Prefix _ | Field _ | SetField _
         | Cons _

@@ -1215,7 +1215,7 @@ let rec ocaml_name = function
   | TBool -> "bool"
   | TUnit -> "unit"
   | TNil -> "'a option"
-  | TNullable inner -> ocaml_name inner ^ " option"
+  | TNullable inner -> ocaml_type_argument_name inner ^ " option"
   | TUnknown -> "'a"
   | TMeta _ -> "_"
   | TVar name -> "'" ^ name
@@ -1296,10 +1296,10 @@ let rec ocaml_name = function
         | _ -> ocaml_name ty
       in
       "(" ^ (args |> List.map tuple_item |> String.concat " * ") ^ ")"
-  | TArray inner -> ocaml_name inner ^ " array"
-  | TRef inner -> ocaml_name inner ^ " Lg_runtime.Runtime_reference.t"
-  | TList inner -> ocaml_name inner ^ " list"
-  | TVector inner -> ocaml_name inner ^ " Rrbvec.t"
+  | TArray inner -> ocaml_type_argument_name inner ^ " array"
+  | TRef inner -> ocaml_type_argument_name inner ^ " Lg_runtime.Runtime_reference.t"
+  | TList inner -> ocaml_type_argument_name inner ^ " list"
+  | TVector inner -> ocaml_type_argument_name inner ^ " Rrbvec.t"
   | TSet inner -> (
       match set_module_name inner with
       | Ok "Lg_runtime.Runtime_poly_set" ->
@@ -1318,7 +1318,7 @@ let rec ocaml_name = function
           | _ -> assert false)
       | Ok set_module -> set_module ^ ".t"
       | Error _ -> "unsupported_set<" ^ ocaml_name inner ^ ">")
-  | TSeq inner -> ocaml_name inner ^ " Seq.t"
+  | TSeq inner -> ocaml_type_argument_name inner ^ " Seq.t"
   | TFn ([], ret) -> "unit -> " ^ ocaml_name ret
   | TFn (args, ret) ->
       let argument_name = function
@@ -1906,7 +1906,7 @@ let rec idents_in_conversion names = function
   | Semantic_ir.If (condition, then_expr, else_expr) ->
       List.fold_left idents_in_conversion names
         [ condition; then_expr; else_expr ]
-  | Semantic_ir.Fun (_, body) -> idents_in_conversion names body
+  | Semantic_ir.Fun (_, body) | Semantic_ir.Labelled_fun (_, body) -> idents_in_conversion names body
   | Semantic_ir.Let (bindings, body)
   | Semantic_ir.LetRecGroup (bindings, body) ->
       List.fold_left
@@ -1988,7 +1988,7 @@ let rec dynamic_pinned_idents names = function
   | Semantic_ir.If (condition, then_expr, else_expr) ->
       List.fold_left dynamic_pinned_idents names
         [ condition; then_expr; else_expr ]
-  | Semantic_ir.Fun (_, body) -> dynamic_pinned_idents names body
+  | Semantic_ir.Fun (_, body) | Semantic_ir.Labelled_fun (_, body) -> dynamic_pinned_idents names body
   | Semantic_ir.Let (bindings, body)
   | Semantic_ir.LetRecGroup (bindings, body) ->
       List.fold_left
@@ -2070,6 +2070,8 @@ let fn_param_names expression =
         strip value
     | Semantic_ir.Fun (patterns, _) ->
         List.map pattern_name patterns
+    | Semantic_ir.Labelled_fun (patterns, _) ->
+        List.map (fun (_, pattern) -> pattern_name pattern) patterns
     | _ -> []
   in
   strip expression

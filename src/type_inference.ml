@@ -654,7 +654,7 @@ and numeric_result_type params ~integer_result args =
   else if List.exists (Types.equal TInt) types then integer_result
   else TUnknown
 
-let rec inferred_form_type params = function
+let rec inferred_form_type ?(lookup_binding = fun _ -> TUnknown) params = function
   | FInt _ -> TInt
   | FFloat value -> float_literal_type value
   | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
@@ -664,31 +664,31 @@ let rec inferred_form_type params = function
   | FSymbol "nil" -> TNil
   | FSymbol ("true" | "false") -> TBool
   | FList (FSymbol "tuple" :: items) ->
-      TTuple (List.map (inferred_form_type params) items)
+      TTuple (List.map (inferred_form_type ~lookup_binding params) items)
   | FList [ FSymbol "__lg_constantly"; result ] ->
-      Types.constant_function (inferred_form_type params result)
+      Types.constant_function (inferred_form_type ~lookup_binding params result)
   | FList (FSymbol "do" :: body_forms) -> (
       match List.rev body_forms with
-      | result :: _ -> inferred_form_type params result
+      | result :: _ -> inferred_form_type ~lookup_binding params result
       | [] -> TNil)
   | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
       match literal_truthiness condition with
-      | Some true -> inferred_form_type params then_form
-      | Some false -> inferred_form_type params else_form
+      | Some true -> inferred_form_type ~lookup_binding params then_form
+      | Some false -> inferred_form_type ~lookup_binding params else_form
       | None ->
           Expression_support.merge_branch_types
-            (inferred_form_type params then_form)
-            (inferred_form_type params else_form)
+            (inferred_form_type ~lookup_binding params then_form)
+            (inferred_form_type ~lookup_binding params else_form)
           |> Option.value ~default:TUnknown)
   | FList [ FSymbol "if"; _condition; then_form ] ->
       Expression_support.merge_branch_types
-        (inferred_form_type params then_form)
+        (inferred_form_type ~lookup_binding params then_form)
         TNil
       |> Option.value ~default:TUnknown
   | FList (FSymbol "match" :: _target :: clauses) ->
       let rec result_types = function
         | _pattern :: result :: rest ->
-            inferred_form_type params result :: result_types rest
+            inferred_form_type ~lookup_binding params result :: result_types rest
         | [] | [ _ ] -> []
       in
       result_types clauses
@@ -724,15 +724,15 @@ let rec inferred_form_type params = function
   | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FSymbol "nil" ] ->
       TRef (TNullable TUnknown)
   | FList [ FSymbol "__lg_add-watch"; reference; _key; _callback ] ->
-      inferred_form_type params reference
+      inferred_form_type ~lookup_binding params reference
   | FList [ FSymbol "__lg_remove-watch"; reference; _key ] ->
-      inferred_form_type params reference
+      inferred_form_type ~lookup_binding params reference
   | FList [ FSymbol "__lg_reset-meta!"; _reference; _metadata ] ->
       TOcaml "Lg_edn_backend.t"
   | FList (FSymbol "delay" :: body_forms) -> (
       match List.rev body_forms with
       | result :: _ ->
-          TOcaml_app ("Lazy.t", [ inferred_form_type params result ])
+          TOcaml_app ("Lazy.t", [ inferred_form_type ~lookup_binding params result ])
       | [] -> TOcaml_app ("Lazy.t", [ TUnknown ]))
   | FList
       [
@@ -750,7 +750,10 @@ let rec inferred_form_type params = function
       | Some (TRef value_ty) -> value_ty
       | Some (TOcaml_app ("Lazy.t", [ value_ty ])) -> value_ty
       | Some _ | None -> TUnknown)
-  | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
+  | FSymbol name -> (
+      match string_assoc_opt name params with
+      | Some ty -> ty
+      | None -> lookup_binding name)
   | FList [ FSymbol field_access; FSymbol receiver ]
     when String.starts_with ~prefix:".-" field_access ->
       let keyword =
@@ -807,12 +810,12 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_re-find"; _ ] ->
       TOcaml "Lg_edn_backend.t"
   | FList [ FSymbol "__lg_flatten"; collection ] ->
-      (match returned_vector_type params collection with
+      (match returned_vector_type ~lookup_binding params collection with
       | Some vector_ty -> vector_ty
-      | None -> inferred_form_type params collection)
+      | None -> inferred_form_type ~lookup_binding params collection)
       |> flatten_result_type
   | FList [ FSymbol "__lg_memoize"; function_form ] ->
-      inferred_form_type params function_form
+      inferred_form_type ~lookup_binding params function_form
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
       match string_assoc_opt fn params with
@@ -829,7 +832,7 @@ let rec inferred_form_type params = function
           | None -> TUnknown)
       | None -> TUnknown)
   | FList [ FSymbol "__lg_reduce"; _reducer; collection ] -> (
-      let collection_ty = inferred_form_type params collection in
+      let collection_ty = inferred_form_type ~lookup_binding params collection in
       let element_ty =
         match collection_ty with
         | TList element_ty | TVector element_ty | TSet element_ty
@@ -847,7 +850,7 @@ let rec inferred_form_type params = function
         _metadata;
       ] ->
       let homogeneous_type forms =
-        match List.map (inferred_form_type params) forms with
+        match List.map (inferred_form_type ~lookup_binding params) forms with
         | [] -> TUnknown
         | first :: rest
           when List.for_all (fun ty -> Types.equal first ty) rest ->
@@ -862,14 +865,14 @@ let rec inferred_form_type params = function
         value;
         _metadata;
       ] ->
-      inferred_form_type params value
+      inferred_form_type ~lookup_binding params value
   | FList
       (FSymbol ("__lg_str" | "__lg_print_str" | "__lg_pr_str") :: _) ->
       TString
   | FList [ FSymbol "Ok"; value ] ->
-      TOcaml_app ("result", [ inferred_form_type params value; TUnknown ])
+      TOcaml_app ("result", [ inferred_form_type ~lookup_binding params value; TUnknown ])
   | FList [ FSymbol "Error"; value ] ->
-      TOcaml_app ("result", [ TUnknown; inferred_form_type params value ])
+      TOcaml_app ("result", [ TUnknown; inferred_form_type ~lookup_binding params value ])
   | FList
       (FSymbol "__lg_apply"
       :: FSymbol operation :: _)
@@ -901,14 +904,14 @@ let rec inferred_form_type params = function
               | None -> TUnknown))
       | None -> TUnknown)
   | FList (FSymbol "__lg_list" :: values) -> (
-      match List.map (inferred_form_type params) values with
+      match List.map (inferred_form_type ~lookup_binding params) values with
       | [] -> TList TUnknown
       | first :: rest
         when List.for_all (fun ty -> Types.equal first ty) rest ->
           TList first
       | _ -> TList (Types.dynamic_constraint TUnknown))
   | FVector values -> (
-      let types = List.map (inferred_form_type params) values in
+      let types = List.map (inferred_form_type ~lookup_binding params) values in
       let non_nil = List.filter (fun ty -> not (Types.equal ty TNil)) types in
       match non_nil with
       | [] -> if types = [] then TVector TUnknown else TVector TNil
@@ -922,7 +925,7 @@ let rec inferred_form_type params = function
           else TVector first
       | _ -> TUnknown)
   | FList (FSymbol "__lg_hash-set" :: values) -> (
-      match List.map (inferred_form_type params) values with
+      match List.map (inferred_form_type ~lookup_binding params) values with
       | [] -> TSet TUnknown
       | first :: rest
         when List.for_all (fun ty -> Types.equal first ty) rest ->
@@ -963,7 +966,7 @@ let rec inferred_form_type params = function
         _key;
         default;
       ] ->
-      let default_ty = inferred_form_type params default in
+      let default_ty = inferred_form_type ~lookup_binding params default in
       (match
          string_assoc_opt target params
          |> Option.map Types.constraint_value_type
@@ -986,20 +989,20 @@ let rec inferred_form_type params = function
       | None -> TUnknown)
   | FList (FSymbol "__lg_conj" :: (FList [ FSymbol "__lg_get"; _; _ ] as target) :: values)
     ->
-      let value_tys = List.map (inferred_form_type params) values in
+      let value_tys = List.map (inferred_form_type ~lookup_binding params) values in
       let element_ty = List.fold_left refine_type TUnknown value_tys in
-      (match inferred_form_type params target with
+      (match inferred_form_type ~lookup_binding params target with
       | TList inner -> TList (refine_type inner element_ty)
       | TSeq inner -> TSeq (refine_type inner element_ty)
       | TSet inner -> TSet (refine_type inner element_ty)
       | TVector inner -> TVector (refine_type inner element_ty)
       | _ -> TVector element_ty)
   | FList (FSymbol "__lg_conj" :: target :: values) ->
-      let value_tys = List.map (inferred_form_type params) values in
+      let value_tys = List.map (inferred_form_type ~lookup_binding params) values in
       let refine_element element_ty =
         List.fold_left refine_type element_ty value_tys
       in
-      (match inferred_form_type params target with
+      (match inferred_form_type ~lookup_binding params target with
       | TList element_ty -> TList (refine_element element_ty)
       | TVector element_ty -> TVector (refine_element element_ty)
       | TSet element_ty -> TSet (refine_element element_ty)
@@ -1009,18 +1012,18 @@ let rec inferred_form_type params = function
       match List.rev arguments with
       | tail :: prefix ->
           let element_ty =
-            static_seqable_element_type (inferred_form_type params tail)
+            static_seqable_element_type (inferred_form_type ~lookup_binding params tail)
             |> Option.value ~default:TUnknown
           in
           let list_ty = TList (List.fold_left
-            (fun ty value -> refine_type ty (inferred_form_type params value))
+            (fun ty value -> refine_type ty (inferred_form_type ~lookup_binding params value))
             element_ty prefix) in
           if prefix = [] then TNullable list_ty else list_ty
       | [] -> TList TUnknown)
   | FList [ FSymbol "__lg_cons"; value; collection ] ->
-      let value_ty = inferred_form_type params value in
+      let value_ty = inferred_form_type ~lookup_binding params value in
       let element_ty =
-        match inferred_form_type params collection with
+        match inferred_form_type ~lookup_binding params collection with
         | TList inner | TVector inner | TSet inner | TSeq inner ->
             refine_type inner value_ty
         | collection_ty ->
@@ -1037,7 +1040,7 @@ let rec inferred_form_type params = function
         else_form;
       ] ->
       let payload_ty =
-        match inferred_form_type params option_form with
+        match inferred_form_type ~lookup_binding params option_form with
         | TNullable payload | TOcaml_app ("option", [ payload ]) -> payload
         | _ -> TUnknown
       in
@@ -1045,15 +1048,15 @@ let rec inferred_form_type params = function
         (binding, payload_ty) :: string_remove_assoc binding params
       in
       refine_type
-        (inferred_form_type branch_params then_form)
-        (inferred_form_type params else_form)
+        (inferred_form_type ~lookup_binding branch_params then_form)
+        (inferred_form_type ~lookup_binding params else_form)
   | FList
       [
         FSymbol "__lg_some-thread";
         FVector [ FSymbol binding; option_form ];
         then_form;
       ] ->
-      let option_ty = inferred_form_type params option_form in
+      let option_ty = inferred_form_type ~lookup_binding params option_form in
       let payload_ty =
         match option_ty with
         | TNullable payload | TOcaml_app ("option", [ payload ]) -> payload
@@ -1063,7 +1066,7 @@ let rec inferred_form_type params = function
       let branch_params =
         (binding, payload_ty) :: string_remove_assoc binding params
       in
-      let threaded_ty = inferred_form_type branch_params then_form in
+      let threaded_ty = inferred_form_type ~lookup_binding branch_params then_form in
       (match option_ty with
       | TNullable _ | TOcaml_app ("option", [ _ ]) | TNil | TUnknown | TMeta _
       | TVar _ -> (
@@ -1074,7 +1077,7 @@ let rec inferred_form_type params = function
   | FList ((FSymbol "__lg_get" | FSymbol "__lg_find") :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
-        let types = List.map (inferred_form_type params) forms in
+        let types = List.map (inferred_form_type ~lookup_binding params) forms in
         let non_nil = List.filter (fun ty -> not (Types.equal ty TNil)) types in
         match non_nil with
         | [] -> Some (if types = [] then TUnknown else TNil)
@@ -1099,7 +1102,7 @@ let rec inferred_form_type params = function
              (fun (key, value) ->
                match key with
                | FKeyword keyword ->
-                   make_map_field keyword (inferred_form_type params value)
+                   make_map_field keyword (inferred_form_type ~lookup_binding params value)
                | _ -> assert false)
              pairs)
       else
@@ -1113,9 +1116,9 @@ let rec inferred_form_type params = function
       | _ -> TUnknown)
   | _ -> TUnknown
 
-and returned_vector_type params = function
+and returned_vector_type ?(lookup_binding = fun _ -> TUnknown) params = function
   | FVector items ->
-      let item_tys = List.map (inferred_form_type params) items in
+      let item_tys = List.map (inferred_form_type ~lookup_binding params) items in
       let edn_scalar_element = function
         | TInt | TOcaml "int" | TBool | TNil -> true
         | TNullable inner | TOcaml_app ("option", [ inner ]) -> (
@@ -1135,31 +1138,31 @@ and returned_vector_type params = function
       Some (TVector element_ty)
   | FList [ FSymbol "__lg_subvec"; collection; _ ]
   | FList [ FSymbol "__lg_subvec"; collection; _; _ ] -> (
-      match returned_vector_type params collection with
+      match returned_vector_type ~lookup_binding params collection with
       | Some vector_ty -> Some vector_ty
       | None -> Some (TVector (Types.dynamic_constraint TUnknown)))
   | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
       match literal_truthiness condition with
-      | Some true -> returned_vector_type params then_form
-      | Some false -> returned_vector_type params else_form
+      | Some true -> returned_vector_type ~lookup_binding params then_form
+      | Some false -> returned_vector_type ~lookup_binding params else_form
       | None -> (
           match
-            ( returned_vector_type params then_form,
-              returned_vector_type params else_form )
+            ( returned_vector_type ~lookup_binding params then_form,
+              returned_vector_type ~lookup_binding params else_form )
           with
           | Some left, Some right -> Some (refine_type left right)
           | Some vector_ty, None | None, Some vector_ty -> Some vector_ty
           | None, None -> None))
   | FList (FSymbol "loop" :: _bindings :: body_forms) -> (
       match List.rev body_forms with
-      | result :: _ -> returned_vector_type params result
+      | result :: _ -> returned_vector_type ~lookup_binding params result
       | [] -> None)
   | FList (FSymbol ("let" | "let*" | "do") :: forms) -> (
       match List.rev forms with
-      | result :: _ -> returned_vector_type params result
+      | result :: _ -> returned_vector_type ~lookup_binding params result
       | [] -> None)
   | form -> (
-      match inferred_form_type params form with
+      match inferred_form_type ~lookup_binding params form with
       | TVector _ as vector_ty -> Some vector_ty
       | _ -> None)
 
@@ -1636,7 +1639,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       match form with
       | FList (FSymbol "record" :: FSymbol name :: _) ->
           resolve_named_record (TOcaml name)
-      | _ -> inferred_form_type params form
+      | _ -> inferred_form_type
+          ~lookup_binding:(fun name -> lookup_function_ty name |> Result.value ~default:TUnknown)
+          params form
     in
     if Type_solver.is_open direct_ty then
       inferred_call_return_type ~lookup_function_ty params form

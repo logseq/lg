@@ -132,6 +132,10 @@ Collection equality also stays static. Compatible sequential containers may be
 compared through their statically typed sequences; they must not be recursively
 boxed into universal values merely to reuse dynamic equality.
 
+Vector literal elements evaluate once in source order. Lowering sequences
+effectful element expressions before constructing the backing OCaml list;
+an exception stops evaluation before any later element runs.
+
 Polymorphic collection operations are not exposed as untyped first-class
 dynamic functions. A bare value such as `(def append conj)` or passing bare
 `assoc` as an updater is rejected when no concrete function type is available.
@@ -333,6 +337,14 @@ unlabelled arguments skip optional parameters, and explicitly supplied optional
 values use the parameter's payload type. Label tokens are not positional
 arguments. These constraints apply to ordinary functions, local functions,
 callbacks, and record fields without requiring redundant source type hints.
+
+A direct OCaml call can accept a positional LG function where a host callback
+has labelled parameters. The host signature supplies the labels and parameter
+order; optional callback parameters reach the LG function as `option` values.
+Elaboration evaluates the callback expression once, then emits a statically
+typed labelled lambda that invokes it. Both argument and result types are
+checked without dynamic boxing. This boundary adaptation does not introduce
+source-level labelled function syntax.
 
 ### Foreign declarations are typed
 

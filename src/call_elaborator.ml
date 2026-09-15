@@ -16273,7 +16273,7 @@ let create ~compile_expr =
                 | ({ label = Ocaml_signature.Labelled _; _ } as parameter)
                   :: parameters ->
                     consume_positional (parameter :: prefix) parameters
-                | { label = Ocaml_signature.Positional; ty } :: parameters ->
+                | { label = Ocaml_signature.Positional; ty; _ } :: parameters ->
                     Some (ty, List.rev_append prefix parameters)
               in
               let rec consume remaining = function
@@ -16294,6 +16294,7 @@ let create ~compile_expr =
                           Ocaml_signature.label =
                             Ocaml_signature.Positional;
                           ty = TUnit;
+                          _;
                         };
                       ] ->
                         true
@@ -16313,6 +16314,7 @@ let create ~compile_expr =
                       {
                         Ocaml_signature.label = Ocaml_signature.Positional;
                         ty = TUnit;
+                        _;
                       };
                   ] ) ->
                   [ (None, typed_ir TUnit Semantic_ir.Unit) ]
@@ -16368,6 +16370,28 @@ let create ~compile_expr =
                     match adapt_arguments expected_types with
                     | Error _ as err -> err
                     | Ok arguments ->
+                        let arguments =
+                          match Ocaml_signature.applied_parameters signature arguments with
+                          | None -> arguments
+                          | Some parameters ->
+                              List.map2
+                                (fun (parameter : Ocaml_signature.parameter) (label, argument) ->
+                                  match parameter.callback_labels with
+                                  | None -> label, argument
+                                  | Some labels ->
+                                      let callback = "__lg_host_callback" in
+                                      let names = List.mapi
+                                        (fun index _ -> "__lg_host_callback_arg_" ^ string_of_int index) labels in
+                                      let parameters = List.map2
+                                        (fun label name -> label, Semantic_ir.PVar name) labels names in
+                                      let body = Semantic_ir.Apply (Semantic_ir.Ident callback,
+                                        List.map (fun name -> Semantic_ir.Ident name) names) in
+                                      let expression = Semantic_ir.Let
+                                        ([Semantic_ir.PVar callback, argument.semantic_expr],
+                                         Semantic_ir.Labelled_fun (parameters, body)) in
+                                      label, { argument with semantic_expr = expression })
+                                parameters arguments
+                        in
                         Result.map
                           (fun return_ty ->
                             let expression = ocaml_apply function_name arguments in
