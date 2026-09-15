@@ -96,7 +96,12 @@ let argument_label = function
   | Labelled name -> Labelled name
   | Optional name -> Optional name
 
-let rec normalize type_expr =
+let rec normalize_with_path path type_expr =
+  let id = Types.get_id type_expr in
+  if List.mem id path then Opaque
+  else normalize_fresh (id :: path) type_expr
+and normalize_fresh path type_expr =
+  let normalize = normalize_with_path path in
   match Types.get_desc type_expr with
   | Tvariant row ->
       let fields = Types.row_fields row in
@@ -110,8 +115,9 @@ let rec normalize type_expr =
              | Reither (false, [payload], _) -> convert ((tag, Some (normalize payload)) :: tags) required rest
              | Reither _ -> Opaque) in
       convert [] [] fields
-  | _ -> normalize_nonvariant type_expr
-and normalize_nonvariant type_expr =
+  | _ -> normalize_nonvariant path type_expr
+and normalize_nonvariant path type_expr =
+  let normalize = normalize_with_path path in
   let type_expr = Btype.proxy type_expr in
   let id = Types.get_id type_expr in
   match (Types.Transient_expr.repr type_expr).desc with
@@ -123,6 +129,8 @@ and normalize_nonvariant type_expr =
       Constructor (Path.name path, List.map normalize arguments)
   | Tpoly (body, _) | Tlink body -> normalize body
   | _ -> Opaque
+
+let normalize type_expr = normalize_with_path [] type_expr
 
 let exception_message exn =
   Format.asprintf "%a" Location.report_exception exn |> String.trim

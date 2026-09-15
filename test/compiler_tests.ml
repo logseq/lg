@@ -49441,6 +49441,19 @@ let test_ocaml_type_metadata_preserves_variant_rows () =
       tags = ["Ready", None; "Value", Some Lg.Types.TInt]} -> ()
   | _ -> failwith "OCaml polymorphic variant metadata lost its static row"
 
+let test_ocaml_recursive_variant_metadata_terminates () =
+  let recursive = Btype.newgenvar () in
+  let row = Types.create_row
+    ~fields:["Leaf", Types.rf_present (Some Predef.type_int);
+             "Next", Types.rf_present (Some recursive)]
+    ~more:(Btype.newgenty Types.Tnil) ~closed:true ~fixed:None ~name:None in
+  Types.Transient_expr.set_desc (Types.Transient_expr.repr recursive)
+    (Types.Tvariant row);
+  match Lg_compiler_support.Ocaml_value.normalize recursive with
+  | Variant (["Leaf", Some (Constructor ("int", []));
+              "Next", Some Opaque], true, _) -> ()
+  | _ -> failwith "recursive host rows must retain nonrecursive payload metadata"
+
 let test_polymorphic_variants_infer_rows_from_patterns () =
   let source = {|(defn read-status [status]
   (match status (tag Ready) 0 (tag Value value) (+ value 1)))
@@ -51971,6 +51984,7 @@ let tests =
     ( "GADT constructors preserve result indices", test_gadt_constructors_preserve_result_indices );
     ( "polymorphic variants preserve static payloads", test_polymorphic_variants_preserve_static_payloads );
     ( "OCaml metadata preserves polymorphic variant rows", test_ocaml_type_metadata_preserves_variant_rows );
+    ( "OCaml recursive variant metadata terminates", test_ocaml_recursive_variant_metadata_terminates );
     ( "polymorphic variants infer rows from patterns", test_polymorphic_variants_infer_rows_from_patterns );
     ( "polymorphic variants support generic and open rows", test_polymorphic_variants_support_generic_and_open_rows );
     ( "polymorphic variant collection payloads infer capabilities", test_polymorphic_variant_collection_payloads_infer_capabilities );
