@@ -2611,7 +2611,35 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | Error _ as err -> err
           | Ok params -> loop params rest)
     in
-    loop params forms
+    Result.bind (infer_record_constraints_all params forms) (fun params -> loop params forms)
+  and infer_record_constraints params = function
+    | (FList (FSymbol "record" :: FSymbol _ :: _) as form) -> infer_form params form
+    | FList
+        (FSymbol ("fn" | "match" | "if" | "try" | "__lg_if-some" | "__lg_if-let"
+                 | "__lg_logical-and" | "__lg_logical-or") :: _) -> Ok params
+    | FList (FSymbol ("let" | "let*" | "loop") :: FVector bindings :: body) ->
+        let rec bindings_constraints params hidden = function
+          | pattern :: value :: rest ->
+              Result.bind (infer_record_constraints params value) (fun params ->
+                  let names = Destructure.pattern_names pattern in
+                  let shadowed = List.filter (fun (name, _) -> List.mem name names) params in
+                  bindings_constraints
+                    (List.filter (fun (name, _) -> not (List.mem name names)) params)
+                    (shadowed @ hidden) rest)
+          | _ ->
+              Result.map (fun inferred -> hidden @ inferred)
+                (infer_record_constraints_all params body)
+        in
+        bindings_constraints params [] bindings
+    | FList forms | FVector forms -> infer_record_constraints_all params forms
+    | FMap entries ->
+        infer_record_constraints_all params
+          (List.concat_map (fun (key, value) -> [key; value]) entries)
+    | _ -> Ok params
+  and infer_record_constraints_all params forms =
+    List.fold_left
+      (fun result form -> Result.bind result (fun params -> infer_record_constraints params form))
+      (Ok params) forms
   and infer_expected_all expected_ty params forms =
     let rec loop params = function
       | [] -> Ok params
@@ -7246,4 +7274,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       match (Type_solver.generalize (TTuple types)).body with
       | TTuple generalized -> List.combine names generalized
       | _ -> assert false)
-    (stabilize [] (constrain_maybe_reduced_callbacks params body_forms))
+    (Result.bind
+       (infer_record_constraints_all
+          (constrain_maybe_reduced_callbacks params body_forms) body_forms)
+       (stabilize []))

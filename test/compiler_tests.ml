@@ -39841,6 +39841,32 @@ let test_reduce_infers_nested_tuple_collection_accumulator () =
   assert_ocaml_runs "reduce_infers_nested_tuple_collection_accumulator" "" native;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_boolean_record_guard_preserves_type_in_optional_result () =
+  let source = {|
+(type-record source-row (uuid :string) (page-uuid :string) (is-page :bool))
+(type-record target-row (uuid :string) (is-page :bool) (page :option<string>) (breadcrumbs :vector<string>))
+(defn convert-rows [rows]
+  (mapv (fn [row]
+          (let [page (if (:is-page row) nil (Some (:page-uuid row)))
+                breadcrumbs (if (:is-page row) [] [(:uuid row)])]
+            (record target-row (uuid (:uuid row)) (is-page (:is-page row))
+                    (page page) (breadcrumbs breadcrumbs)))) rows))
+(let [row (record source-row (uuid "a") (page-uuid "p") (is-page false))]
+  (assert (= (:page (nth (convert-rows [row]) 0)) (Some "p"))))
+(let [row (record source-row (uuid "p") (page-uuid "p") (is-page true))
+      result (nth (convert-rows [row]) 0)]
+  (assert (:is-page result))
+  (assert (nil? (:page result)))
+  (assert (= (:breadcrumbs result) [])))
+(defn shadowed-guard [row]
+  (let [row (record source-row (uuid "a") (page-uuid "p") (is-page false))]
+    (if (:is-page row) 1 0)))
+(assert (= (shadowed-guard "unrelated outer parameter") 0))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "boolean_record_guard_preserves_type_in_optional_result" "" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_conj_requires_source_stdlib_state () =
   let source =
     {|
@@ -53660,6 +53686,8 @@ let tests =
       test_reduce_infers_fixed_tuple_accumulator_from_destructuring );
     ( "reduce infers nested tuple collection accumulator",
       test_reduce_infers_nested_tuple_collection_accumulator );
+    ( "boolean record guard preserves type in optional result",
+      test_boolean_record_guard_preserves_type_in_optional_result );
     ( "conj requires source stdlib state",
       test_conj_requires_source_stdlib_state );
     ( "conj uses a statically typed first-class wrapper",
