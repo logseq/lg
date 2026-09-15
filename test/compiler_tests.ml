@@ -39818,6 +39818,29 @@ let test_reduce_infers_fixed_tuple_accumulator_from_destructuring () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_reduce_infers_nested_tuple_collection_accumulator () =
+  let source = {|
+(type-record search-row (uuid :string) (score :float))
+(defn unique-rows [rows]
+  (let [[_ results]
+        (reduce (fn [[seen results] [result _]]
+                  (if (contains? seen (:uuid result)) (tuple seen results)
+                      (tuple (conj seen (:uuid result)) (conj results result))))
+                (tuple #{} []) rows)]
+    results))
+(let [row (record search-row (uuid "a") (score 1.0))]
+  (assert (= (unique-rows [(tuple row 1.0) (tuple row 2.0)]) [row]))
+  (assert (= (unique-rows []) [])))
+(let [first-row (record search-row (uuid "a") (score 1.0))
+      duplicate (record search-row (uuid "a") (score 3.0))
+      other (record search-row (uuid "b") (score 2.0))]
+  (assert (= (unique-rows [(tuple first-row 1) (tuple duplicate 3) (tuple other 2)])
+             [first-row other])))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "reduce_infers_nested_tuple_collection_accumulator" "" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_conj_requires_source_stdlib_state () =
   let source =
     {|
@@ -53635,6 +53658,8 @@ let tests =
       test_reduce_rejects_heterogeneous_vector_accumulator_slots );
     ( "reduce infers fixed tuple accumulator from destructuring",
       test_reduce_infers_fixed_tuple_accumulator_from_destructuring );
+    ( "reduce infers nested tuple collection accumulator",
+      test_reduce_infers_nested_tuple_collection_accumulator );
     ( "conj requires source stdlib state",
       test_conj_requires_source_stdlib_state );
     ( "conj uses a statically typed first-class wrapper",

@@ -853,7 +853,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
       let lookup_function_ty name =
         Result.map resolve_named_record (lookup_function_ty name)
       in
-      match
+      let infer_parameters parameters =
         Type_inference.infer_params ~materialize_open_equality
           ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
           ~lookup_function_ty
@@ -862,8 +862,9 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
           ~lookup_successful_call_refinement
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
-          inference_params body_forms
-      with
+          parameters body_forms
+      in
+      match infer_parameters inference_params with
       | Error _ as err -> err
       | Ok inferred -> (
           let env =
@@ -983,8 +984,20 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                 (fun (name, ty) -> (name, infer_parameter_type name ty))
               inferred
           in
+          let resolved_records =
+            List.exists2
+              (fun (_, before) (_, after) ->
+                Type_solver.is_open before && not (Type_solver.is_open after))
+              inferred resolved_inferred
+          in
           let inferred =
             reconcile_shared_parameter_variables inferred resolved_inferred
+          in
+          let ( let* ) = Result.bind in
+          let* inferred =
+            if refine_open_overrides && resolved_records
+            then infer_parameters inferred
+            else Ok inferred
           in
           let lookup_inferred name =
             inferred |> List.assoc_opt name |> Option.value ~default:TUnknown

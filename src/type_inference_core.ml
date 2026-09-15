@@ -429,6 +429,10 @@ and refine_nonmatching_type existing inferred =
   | TVector existing, TVector inferred ->
       TVector (refine_type existing inferred)
   | TSet existing, TSet inferred -> TSet (refine_type existing inferred)
+  | TTuple existing, TTuple inferred
+    when List.length existing = List.length inferred
+         && not (List.exists Type_solver.is_open inferred) ->
+      TTuple (List.map2 refine_type existing inferred)
   | TFn ([ predicate_arg ], TBool), TSet element
   | TSet element, TFn ([ predicate_arg ], TBool) ->
       TSet (refine_type element predicate_arg)
