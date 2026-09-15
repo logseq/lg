@@ -6614,6 +6614,41 @@ let test_record_set_fields_combine_seqable_and_membership_constraints () =
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 ;;
 
+let test_seqable_record_elements_adapt_nested_maps () =
+  let definitions = {|
+(defn total [^:map<keyword;int> attrs] (reduce + 0 (vals attrs)))
+(defn sums [rels]
+  (mapv (fn [rel] (total (:attrs rel))) rels))
+|} in
+  let source = definitions ^ {|
+(println (sums [{:attrs {:a 1 :b 2}} {:attrs {:a 4 :b 5}}]))
+(def calls (atom 0))
+(defn rows [] (swap! calls inc) [{:attrs {:a 6 :b 7}}])
+(println (sums (rows)))
+(println @calls)
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "seqable_record_elements_adapt_nested_maps" "[3 9]\n[13]\n1\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target
+      (definitions ^ {|(sums [{:attrs {:a "bad" :b "values"}}])|}) with
+    | Error _ -> ()
+    | Ok _ -> failwith "seqable record adaptation accepted incompatible map values")
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
+let test_seqable_tuple_elements_preserve_capability_payloads () =
+  let source = {|
+(defn rendered [pairs]
+  (mapv (fn [^:tuple<int;string> pair]
+          (let [[left right] pair] (str left ":" right))) pairs))
+(println (rendered [(tuple 1 "one") (tuple 2 "two")]))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "seqable_tuple_elements_preserve_capability_payloads"
+    "[\"1:one\" \"2:two\"]\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_seqable_inferred_record_rows_accept_wider_nominal_elements () =
   let definitions = {|
 (ns record-seqable-width-test)
@@ -12267,6 +12302,7 @@ let transform ?(apply = Fun.id) ?(limit = 20) value =
           failwith
             (Printf.sprintf
                "could not compile OCaml unit-tail fixture, exit code %d" code));
+      Lg.Ocaml_signature.set_melange_target false;
       Lg.Ocaml_signature.add_include_dirs [ dir ];
       let source =
         {|
@@ -18782,6 +18818,7 @@ let object_value () : Public.t = `Assoc ["type", `Leaf "abc"]
 |};
       if Sys.command (Printf.sprintf "cd %s && ocamlc -c recursive_alias_fixture__Inner.ml && ocamlc -c recursive_alias_fixture.ml" (Filename.quote dir)) <> 0 then
         failwith "recursive alias fixture did not compile";
+      Lg.Ocaml_signature.set_melange_target false;
       Lg.Ocaml_signature.add_include_dirs [dir];
       let imported name =
         Lg.Ocaml_signature.of_compiler_type
@@ -25119,6 +25156,7 @@ let make name age : row = { name; age }
           failwith
             (Printf.sprintf "could not compile OCaml mli fixture, exit code %d"
                code));
+      Lg.Ocaml_signature.set_melange_target false;
       Lg.Ocaml_signature.add_include_dirs [ dir ];
       let source =
         {|
@@ -51588,6 +51626,10 @@ let tests =
       test_loop_set_membership_preserves_inferred_elements );
     ( "record set fields combine seqable and membership constraints",
       test_record_set_fields_combine_seqable_and_membership_constraints );
+    ( "seqable tuple elements preserve capability payloads",
+      test_seqable_tuple_elements_preserve_capability_payloads );
+    ( "seqable record elements adapt nested maps",
+      test_seqable_record_elements_adapt_nested_maps );
     ( "seqable inferred record rows accept wider nominal elements",
       test_seqable_inferred_record_rows_accept_wider_nominal_elements );
     ( "loop record accumulators preserve nested result types",

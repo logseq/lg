@@ -2127,8 +2127,8 @@ let rec constrained_storage_type expected actual =
 let rec pack_constrained_value ?row_type_name env expected argument =
   pack_constrained_value_with_plan ?row_type_name env expected argument
 
-and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
-    argument =
+and pack_constrained_value_with_plan ?row_type_name ?sequence_plan
+    ?planned_element_mapper env expected argument =
   let expected = Types.deduplicate_protocol_constraints expected in
   let requires_binding =
     match
@@ -2161,8 +2161,8 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
           Semantic_ir.annotate argument.ty (Semantic_ir.Ident argument_name);
         }
       in
-      pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
-        bound_argument
+      pack_constrained_value_with_plan ?row_type_name ?sequence_plan
+        ?planned_element_mapper env expected bound_argument
       |> Result.map (fun packed ->
              let occurrences = ref 0 in
              let packed =
@@ -2984,6 +2984,9 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
             | _ -> false
           in
           let element_mapper =
+            match planned_element_mapper with
+            | Some mapper -> Ok mapper
+            | None ->
             match (actual_element, row_type_name, expected_element) with
             | Some actual_element, _, _
               when
@@ -6879,16 +6882,30 @@ let rec emit_argument_adaptation env adaptation argument =
   | Adaptation.Capability_witness witness ->
       pack_constrained_value env witness.expected argument
   | Adaptation.Sequence_witness witness ->
-      pack_constrained_value_with_plan ?row_type_name:witness.row_type_name
-        ~sequence_plan:witness env
-        (TConstraint
-           (Seqable_constraint
-              {
-                requirement = witness.requirement;
-                element = witness.expected_element;
-                storage = witness.storage_ty;
-              }))
-        argument
+      let pack ?planned_element_mapper () =
+        pack_constrained_value_with_plan ?row_type_name:witness.row_type_name
+          ~sequence_plan:witness ?planned_element_mapper env
+          (TConstraint
+             (Seqable_constraint
+                { requirement = witness.requirement;
+                  element = witness.expected_element; storage = witness.storage_ty }))
+          argument
+      in
+      (match witness.element_adaptation with
+       | None -> pack ()
+       | Some (actual_element, adaptation) ->
+           let name = "__lg_seqable_adapted_item" in
+           let item =
+             typed_ir actual_element (Semantic_ir.Sequence [ Semantic_ir.Ident name ])
+           in
+           Result.bind (emit_argument_adaptation env adaptation item)
+             (fun mapped ->
+               let mapper =
+                 if is_identity_conversion name mapped then None
+                 else Some (Semantic_ir.Fun
+                   ([ typed_dynamic_item_pattern env name actual_element ], mapped))
+               in
+               pack ~planned_element_mapper:mapper ()))
 
 let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
     ?(allow_optional_unwrap = false) ~expected argument =

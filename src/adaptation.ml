@@ -9,14 +9,6 @@ type protocol_witness = {
 
 type numeric_conversion = Int_to_float
 
-type sequence_witness = {
-  requirement : seqable_requirement;
-  expected_element : ty;
-  storage_ty : ty;
-  source_ty : ty;
-  row_type_name : string option;
-}
-
 type sequence_representation_source =
   | List_source
   | Vector_source
@@ -62,6 +54,15 @@ type t =
   | Map_representation of map_representation
   | Record_to_map of record_to_map
   | Capability_witness of capability_witness
+
+and sequence_witness = {
+  requirement : seqable_requirement;
+  expected_element : ty;
+  storage_ty : ty;
+  source_ty : ty;
+  row_type_name : string option;
+  element_adaptation : (ty * t) option;
+}
 
 and callback = {
   expected_params : ty list;
@@ -316,25 +317,26 @@ let sequence_element_type = function
         (fun (_, element, _) -> element)
         (Types.seqable_constraint_info actual)
 
-let rec sequence_element_compatible ~sequence_satisfies expected actual =
+let rec sequence_element_compatible ~sequence_satisfies ~element_adapts expected
+    actual =
   match expected with
   | TNamed_record record when not record.nominal ->
-      sequence_element_compatible ~sequence_satisfies
-        (TRecord record.fields) actual
+      element_adapts expected actual
+  | TRecord _ -> element_adapts expected actual
   | TConstraint
       (Seqable_constraint { requirement; element = expected_element; _ }) ->
-      sequence_source_compatible ~sequence_satisfies requirement
+      sequence_source_compatible ~sequence_satisfies ~element_adapts requirement
         expected_element actual
   | TConstraint (Protocol_constraint { value; _ })
     when Option.is_none (Types.capability_constraint_value actual) ->
-      sequence_element_compatible ~sequence_satisfies value actual
+      sequence_element_compatible ~sequence_satisfies ~element_adapts value actual
   | _ ->
       Type_solver.is_open expected
       || Type_solver.is_open actual
       || Types.assignable ~policy:Types.Host_boundary ~expected ~actual
 
-and sequence_source_compatible ~sequence_satisfies requirement expected_element
-    actual =
+and sequence_source_compatible ~sequence_satisfies ~element_adapts requirement
+    expected_element actual =
   let rec compatible actual =
     if Types.is_dynamic actual || Type_solver.is_open actual then true
     else
@@ -344,8 +346,8 @@ and sequence_source_compatible ~sequence_satisfies requirement expected_element
       | actual -> (
           match sequence_element_type actual with
           | Some actual_element ->
-              sequence_element_compatible ~sequence_satisfies expected_element
-                actual_element
+              sequence_element_compatible ~sequence_satisfies ~element_adapts
+                expected_element actual_element
           | None -> sequence_satisfies requirement actual)
   in
   compatible actual
@@ -842,19 +844,39 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                     storage = storage_ty;
                   }),
                 _ ) ->
+                let plan_element =
+                  plan ?row_type_name ~row_type_name_for ~protocol_satisfies
+                    ~sequence_satisfies
+                in
                 if
-                  sequence_source_compatible ~sequence_satisfies requirement
-                    expected_element actual
+                  sequence_source_compatible ~sequence_satisfies
+                    ~element_adapts:(fun expected actual ->
+                      Result.is_ok (plan_element expected actual))
+                    requirement expected_element actual
                 then
-                  Ok
-                    (Sequence_witness
-                       {
-                         requirement;
-                         expected_element;
-                         storage_ty;
-                         source_ty = actual;
-                         row_type_name;
-                       })
+                  let rec element_plan = function
+                    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+                        element_plan inner
+                    | source ->
+                        match sequence_element_type source with
+                        | None -> Ok None
+                        | Some actual_element
+                          when Option.is_some (Types.record_fields actual_element)
+                               && (match expected_element with
+                                   | TRecord _ -> true
+                                   | TNamed_record record -> not record.nominal
+                                   | _ -> false) ->
+                            Result.map
+                              (fun adaptation -> Some (actual_element, adaptation))
+                              (plan_element expected_element actual_element)
+                        | Some _ -> Ok None
+                  in
+                  Result.map
+                    (fun element_adaptation ->
+                      Sequence_witness
+                        { requirement; expected_element; storage_ty;
+                          source_ty = actual; row_type_name; element_adaptation })
+                    (element_plan actual)
                 else (
                   match
                     nested_non_seqable_element ~sequence_satisfies

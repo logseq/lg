@@ -7,14 +7,6 @@ type protocol_witness = {
 
 type numeric_conversion = Int_to_float
 
-type sequence_witness = {
-  requirement : Semantic_type.seqable_requirement;
-  expected_element : Semantic_type.ty;
-  storage_ty : Semantic_type.ty;
-  source_ty : Semantic_type.ty;
-  row_type_name : string option;
-}
-
 type sequence_representation_source =
   | List_source
   | Vector_source
@@ -60,6 +52,15 @@ type t =
   | Map_representation of map_representation
   | Record_to_map of record_to_map
   | Capability_witness of capability_witness
+
+and sequence_witness = {
+  requirement : Semantic_type.seqable_requirement;
+  expected_element : Semantic_type.ty;
+  storage_ty : Semantic_type.ty;
+  source_ty : Semantic_type.ty;
+  row_type_name : string option;
+  element_adaptation : (Semantic_type.ty * t) option;
+}
 
 and callback = {
   expected_params : Semantic_type.ty list;
