@@ -20666,7 +20666,8 @@ let create ~compile_expr =
                                    && Option.is_some
                                         (Types.record_fields arg.ty) ->
                               plan_and_emit_argument env ~expected:expected_map arg
-                            | _, TPoly_variant _ ->
+                            | _, TPoly_variant _
+                              when (match arg.ty with TPoly_variant _ -> true | _ -> false) ->
                                 plan_and_emit_argument env ~expected:expected_ty arg
                             | _, TTuple _
                               when (match arg.ty with TTuple _ -> true | _ -> false)

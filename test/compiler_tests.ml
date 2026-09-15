@@ -49118,10 +49118,21 @@ let test_polymorphic_variant_collection_payloads_infer_capabilities () =
 (defn nested-count [node]
   (match node (tag Box inner) (match inner (tag Items items) (count items))))
 (println (nested-count (tag Box (tag Items (list 1 2 3)))))
+(defn optional-value [f value]
+  (match value (tag Null) nil _ (Some (f value))))
+(defn lookup-entry [fields key]
+  (some (fn [entry]
+          (match entry (tuple name value) (when (= name key) value))) fields))
+(defn required-entry [fields key]
+  (match (lookup-entry fields key) (Some value) value _ (Stdlib.failwith "missing")))
+(defn text-value [value] (match value (tag String text) text _ "other"))
+(defn optional-field [fields key]
+  (optional-value text-value (required-entry fields key)))
+(println (pr-str (optional-field (list (tuple "title" (tag String "kept"))) "title")))
 |} in
   let native = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "variant_collection_payload_capabilities"
-    "42\n\"answer\"\nnil\n7\nnil\n3\n" native;
+    "42\n\"answer\"\nnil\n7\nnil\n3\n\"kept\"\n" native;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   List.iter (fun target ->
