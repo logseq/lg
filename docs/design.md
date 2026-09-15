@@ -443,6 +443,14 @@ Fixed, scientific, and significant-digit formatting share one digits/point
 representation. Width and precision on strings count UTF-16 units while
 preserving LG's byte-string representation.
 
+A literal format string can constrain unresolved numeric arguments: `d`, `o`,
+and `x` conversions require integers, while `e`, `f`, and `g` require floats.
+Inference and rendering share the format parser, including positional indices
+and previous-argument reuse. Dynamic format strings do not provide this
+evidence; conflicting conversion requirements do not choose an arbitrary type.
+Already concrete arguments retain their existing runtime validation, and
+declared polymorphic signatures remain rigid.
+
 `print`, `println`, `pr`, `prn`, `newline`, and `flush` return `nil`.
 Output primitives may return OCaml unit internally; source functions must keep
 the Clojure return contract. String-producing variants return strings, including

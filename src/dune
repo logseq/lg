@@ -1,3 +1,5 @@
+(copy_files ../runtime/runtime_format_spec.ml)
+
 (library
  (name lg)
  (public_name lg)

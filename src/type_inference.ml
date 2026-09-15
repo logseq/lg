@@ -6592,6 +6592,35 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         with
         | Error _ as error -> error
         | Ok params -> infer_all params [ reducer; init ])
+    | FList (FSymbol "__lg_format" :: format :: args) ->
+        let requirements = Array.make (List.length args) [] in
+        (match format with
+        | FString source ->
+            (try
+               Runtime_format_spec.iter source ~text:(fun _ -> ())
+                 ~conversion:(fun spec ->
+                   let expected = match Char.lowercase_ascii spec.code with
+                     | 'd' | 'o' | 'x' -> Some TInt
+                     | 'e' | 'f' | 'g' -> Some TFloat
+                     | _ -> None
+                   in
+                   match spec.argument, expected with
+                   | Some index, Some ty when index < Array.length requirements ->
+                       requirements.(index) <- ty :: requirements.(index)
+                   | _ -> ())
+             with Invalid_argument _ -> Array.fill requirements 0 (Array.length requirements) [])
+        | _ -> ());
+        Result.bind (infer_expected TString params format) (fun params ->
+          List.fold_left
+            (fun result (index, argument) ->
+              Result.bind result (fun params ->
+                let actual = inferred_form_or_call_type ~lookup_function_ty params argument in
+                match requirements.(index) with
+                | expected :: rest
+                  when Type_solver.is_open actual && List.for_all (Types.equal expected) rest ->
+                    infer_expected expected params argument
+                | _ -> infer_form params argument))
+            (Ok params) (List.mapi (fun index argument -> index, argument) args))
     | FList (FSymbol ("__lg_str" | "__lg_print_str") :: args) ->
         List.fold_left
           (fun result arg ->

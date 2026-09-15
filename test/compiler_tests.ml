@@ -1934,6 +1934,36 @@ let test_formatted_output_is_typed_and_captured () =
   assert_ocaml_runs "formatted_output_is_typed_and_captured" "true\n" output;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_format_infers_numeric_arguments_from_conversions () =
+  let source = {|
+(defn decimal-id [index] (format "%012d" index))
+(defn hexadecimal-id [index] (format "%012x" index))
+(defn selected [left right] (format "%2$04d %1$02x %<d %%" left right))
+(defn precision [value] (format "%.2f" value))
+(println (decimal-id 7))
+(println (hexadecimal-id 31))
+(println (selected 10 7))
+(println (precision 2.5))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "format_infers_numeric_arguments_from_conversions"
+    "000000000007\n00000000001f\n0007 0a 10 %\n2.50\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun source ->
+    List.iter (fun target ->
+      match compile_string_with_stdlib ~target source with
+      | Error _ -> ()
+      | Ok _ -> failwith "format inferred an invalid polymorphic numeric argument")
+      [Lg.Target.Native; Lg.Target.Melange])
+    [{|
+(signature decimal-any [a] :fn<a;string>)
+(defn decimal-any [value] (format "%d" value))
+|}; {|
+(defn incompatible [value] (format "%1$d %1$f" value))
+|}; {|
+(defn unknown-format [fmt value] (format fmt value))
+|}]
+
 let test_time_preserves_value_and_captures_output () =
   let source = {|
 (def calls (volatile! 0))
@@ -51172,6 +51202,7 @@ let tests =
     ( "flush delivers buffered output", test_flush_delivers_buffered_output );
     ( "print family returns nil", test_print_family_returns_nil );
     ( "formatted output is typed and captured", test_formatted_output_is_typed_and_captured );
+    ( "format infers numeric arguments from conversions", test_format_infers_numeric_arguments_from_conversions );
     ( "time preserves value and captures output",
       test_time_preserves_value_and_captures_output );
     ( "core api supports nested calls, maps, and vectors",
