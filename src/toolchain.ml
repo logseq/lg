@@ -1215,6 +1215,15 @@ let target_include_dirs target include_dirs =
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =
+  let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+  let timed label f =
+    let started_at = if report_timings then Unix.gettimeofday () else 0.0 in
+    let result = f () in
+    if report_timings then
+      Printf.eprintf "lg: %s: %.3fs\n%!" label
+        (Unix.gettimeofday () -. started_at);
+    result
+  in
   Ocaml_signature.set_melange_target (target = Target.Melange);
   let packages =
     match target with
@@ -1224,13 +1233,24 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
         "re" :: "lg.rrbvec" :: "lg.runtime" :: "lg.edn-backend.native"
         :: packages
   in
-  match Ocaml_package.include_dirs packages with
+  let packages =
+    List.fold_left
+      (fun packages package ->
+        if List.mem package packages then packages else packages @ [ package ])
+      [] packages
+  in
+  if report_timings then
+    Printf.eprintf "lg: restore OCaml packages (%d): %s\n%!"
+      (List.length packages)
+      (String.concat ", " packages);
+  match timed "resolve OCaml package include dirs" (fun () ->
+            Ocaml_package.include_dirs packages)
+  with
   | Error _ as error -> error
   | Ok include_dirs ->
       let include_dirs = target_include_dirs target include_dirs in
-      Ocaml_signature.add_include_dirs include_dirs;
-      if Option.is_some state.ocaml_env then Ok state
-      else
+      timed "initialize OCaml signature include dirs" (fun () ->
+          Ocaml_signature.add_include_dirs include_dirs);
       let rec restore compiler_env index = function
         | [] -> Ok { state with ocaml_env = compiler_env }
         | source :: rest -> (
@@ -1247,7 +1267,7 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
                 ("failed to restore cached OCaml environment: "
                ^ Ocaml_typechecker.exception_message exn))
       in
-      restore None 0 sources
+      timed "retype cached OCaml prefix" (fun () -> restore None 0 sources)
 
 let required_packages_from_ast ~target ast =
   let rec loop packages = function

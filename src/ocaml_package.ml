@@ -72,6 +72,16 @@ let rec dune_files_under directory =
            else if name = "dune" then [ path ]
            else [])
 
+let dune_files_cache = Hashtbl.create 4
+
+let cached_dune_files_under root =
+  match Hashtbl.find_opt dune_files_cache root with
+  | Some files -> files
+  | None ->
+      let files = dune_files_under root in
+      Hashtbl.replace dune_files_cache root files;
+      files
+
 let line_value form line =
   let prefix = "(" ^ form ^ " " in
   let line = String.trim line in
@@ -91,58 +101,110 @@ let line_value form line =
     if value = "" then None else Some value
   else None
 
+let package_library_build_dir_index_cache = Hashtbl.create 4
+
+let package_library_build_dir_index root =
+  match Hashtbl.find_opt package_library_build_dir_index_cache root with
+  | Some index -> index
+  | None ->
+      let build_root = Filename.concat root "_build/default" in
+      let archive_dirs_for_dune_file dune_file =
+        let source_directory = Filename.dirname dune_file in
+        let relative_directory =
+          let prefix = root ^ Filename.dir_sep in
+          if String.starts_with ~prefix source_directory then
+            String.sub source_directory (String.length prefix)
+              (String.length source_directory - String.length prefix)
+          else source_directory
+        in
+        let build_directory = Filename.concat build_root relative_directory in
+        let lines =
+          try read_file dune_file |> String.split_on_char '\n'
+          with Sys_error _ -> []
+        in
+        let rec loop current_name entries = function
+          | [] -> entries
+          | line :: rest ->
+              let current_name =
+                match line_value "name" line with
+                | Some name -> Some name
+                | None -> current_name
+              in
+              let entries =
+                match line_value "public_name" line with
+                | Some public_name ->
+                    let library_name =
+                      Option.value current_name
+                        ~default:
+                          (public_name
+                          |> String.map (function '-' -> '_' | c -> c))
+                    in
+                    let object_dir =
+                      Filename.concat build_directory
+                        ("." ^ library_name ^ ".objs")
+                    in
+                    [ Filename.concat object_dir "byte";
+                      Filename.concat object_dir "public_cmi" ]
+                    |> List.filter contains_compiled_interface
+                    |> fun dirs ->
+                    if dirs = [] then entries
+                    else (public_name, dirs) :: entries
+                | None -> entries
+              in
+              loop current_name entries rest
+        in
+        loop None [] lines
+      in
+      let index =
+        cached_dune_files_under root
+        |> List.concat_map archive_dirs_for_dune_file
+      in
+      Hashtbl.replace package_library_build_dir_index_cache root index;
+      index
+
 let package_library_build_dirs root package =
-  let build_root = Filename.concat root "_build/default" in
-  let archive_dirs_for_dune_file dune_file =
-    let source_directory = Filename.dirname dune_file in
-    let relative_directory =
-      let prefix = root ^ Filename.dir_sep in
-      if String.starts_with ~prefix source_directory then
-        String.sub source_directory (String.length prefix)
-          (String.length source_directory - String.length prefix)
-      else source_directory
-    in
-    let build_directory = Filename.concat build_root relative_directory in
-    let lines =
-      try read_file dune_file |> String.split_on_char '\n' with Sys_error _ -> []
-    in
-    let rec loop current_name dirs = function
-      | [] -> dirs
-      | line :: rest ->
-          let current_name =
-            match line_value "name" line with
-            | Some name -> Some name
-            | None -> current_name
-          in
-          let dirs =
-            match line_value "public_name" line with
-            | Some public_name when public_name = package ->
-                let library_name =
-                  Option.value current_name
-                    ~default:
-                      (public_name |> String.map (function '-' -> '_' | c -> c))
-                in
-                let object_dir =
-                  Filename.concat build_directory
-                    ("." ^ library_name ^ ".objs")
-                in
-                [ Filename.concat object_dir "byte";
-                  Filename.concat object_dir "public_cmi" ]
-                |> List.filter contains_compiled_interface
-                |> List.rev_append dirs
-            | Some _ | None -> dirs
-          in
-          loop current_name dirs rest
-    in
-    loop None [] lines
-  in
-  dune_files_under root |> List.concat_map archive_dirs_for_dune_file
+  package_library_build_dir_index root
+  |> List.filter_map (fun (public_name, dirs) ->
+         if public_name = package then Some dirs else None)
+  |> List.concat
   |> List.sort_uniq String.compare
 
 let local_dune_package_directories package =
   match find_project_root (Sys.getcwd ()) with
   | None -> []
   | Some root -> package_library_build_dirs root package
+
+let cached_local_dune_package_directories package =
+  match find_project_root (Sys.getcwd ()) with
+  | None -> []
+  | Some root -> (
+      match Hashtbl.find_opt package_library_build_dir_index_cache root with
+      | None -> []
+      | Some index ->
+          index
+          |> List.filter_map (fun (public_name, dirs) ->
+                 if public_name = package then Some dirs else None)
+          |> List.concat
+          |> List.sort_uniq String.compare)
+
+let skip_local_project_scan package =
+  List.mem package
+    [
+      "alcotest";
+      "alcotest.engine";
+      "alcotest.stdlib_ext";
+      "ctypes-foreign";
+      "js_of_ocaml";
+      "lg.edn-backend.native";
+      "lg.rrbvec";
+      "lg.runtime";
+      "melange";
+      "melange-edn-native";
+      "re";
+      "str";
+      "unix";
+      "yojson";
+    ]
 
 let direct_ocamlpath_directories package =
   let separator = if Sys.win32 then ';' else ':' in
@@ -176,6 +238,14 @@ let query package =
   if not (valid_name package) then
     Error.error ("invalid OCaml package name " ^ package)
   else
+    let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+    let started_at = if report_timings then Unix.gettimeofday () else 0.0 in
+    let finish result =
+      if report_timings then
+        Printf.eprintf "lg: OCaml package %s include dirs: %.3fs\n%!" package
+          (Unix.gettimeofday () -. started_at);
+      result
+    in
     let cache_key =
       package ^ "\000"
       ^ (Sys.getenv_opt "OCAMLPATH" |> Option.value ~default:"")
@@ -184,40 +254,50 @@ let query package =
       ^ "\000" ^ Sys.getcwd ()
     in
     match Hashtbl.find_opt query_cache cache_key with
-    | Some result -> result
+    | Some result -> finish result
     | None ->
         let direct_dirs =
           direct_ocamlpath_directories package
-          @ local_dune_package_directories package
+          @ if skip_local_project_scan package then []
+            else local_dune_package_directories package
         in
-        let argv = [| "ocamlfind"; "query"; "-r"; "-format"; "%d"; package |] in
-        let stdout, stdin, stderr =
-          Unix.open_process_args_full "ocamlfind" argv (Unix.environment ())
+        let direct_dirs =
+          match direct_dirs with
+          | _ :: _ -> direct_dirs
+          | [] when skip_local_project_scan package ->
+              cached_local_dune_package_directories package
+          | [] -> []
         in
-        let directories =
-          read_lines stdout |> List.concat_map expand_include_directory
-          |> List.sort_uniq String.compare
-        in
-        let _diagnostic = read_lines stderr in
         let result =
-          match Unix.close_process_full (stdout, stdin, stderr) with
-          | WEXITED 0 ->
-              let directories =
-                match direct_dirs with
-                | _ :: _ -> direct_dirs
-                | [] -> directories
+          match direct_dirs with
+          | _ :: _ as directories -> Ok (unique_directories directories)
+          | [] ->
+              let argv =
+                [| "ocamlfind"; "query"; "-r"; "-format"; "%d"; package |]
               in
-              Ok (unique_directories directories)
-          | WEXITED _ | WSIGNALED _ | WSTOPPED _ -> (
-              match direct_dirs with
-              | _ :: _ as directories -> Ok directories
-              | [] ->
+              let stdout, stdin, stderr =
+                Unix.open_process_args_full "ocamlfind" argv (Unix.environment ())
+              in
+              let directories =
+                read_lines stdout |> List.concat_map expand_include_directory
+                |> List.sort_uniq String.compare
+              in
+              let _diagnostic = read_lines stderr in
+              (match Unix.close_process_full (stdout, stdin, stderr) with
+              | WEXITED 0 -> Ok (unique_directories directories)
+              | WEXITED _ | WSIGNALED _ | WSTOPPED _ ->
                   Error.error ("OCaml package " ^ package ^ " was not found"))
         in
         Hashtbl.replace query_cache cache_key result;
-        result
+        finish result
 
 let include_dirs packages =
+  (if
+     List.exists (fun package -> not (skip_local_project_scan package)) packages
+   then
+    match find_project_root (Sys.getcwd ()) with
+    | None -> ()
+    | Some root -> ignore (package_library_build_dir_index root));
   let rec loop directories = function
     | [] -> Ok (unique_directories directories)
     | package :: rest -> (
