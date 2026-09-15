@@ -32,6 +32,11 @@ let static_sequential_element_type ty =
       Some element_ty
   | _ -> None
 
+let into_source_element_type ty =
+  match Types.dynamic_map_types (Types.constraint_value_type ty) with
+  | Some (key, value) -> Some (TTuple [ key; value ])
+  | None -> static_seqable_element_type ty
+
 let nested_seqable_map_entry_type ty =
   Option.bind (Types.seqable_constraint_info ty)
     (fun (_, entry_ty, _) -> Types.seqable_constraint_element entry_ty)
@@ -1941,12 +1946,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (infer_sequence_form expected_ty params collection)
           (fun params -> infer_expected TInt params index)
     | FList [ FSymbol "__lg_into"; target; source ] -> (
-        match expected_ty with
-        | TVector element | TList element | TSet element
-          when not (Types.is_dynamic element) ->
+        match into_source_element_type expected_ty with
+        | Some element when not (Types.is_dynamic element) ->
             Result.bind (infer_expected expected_ty params target)
               (fun params -> infer_sequence_form element params source)
-        | _ -> infer_all params [target; source])
+        | _ -> infer_form params (FList [ FSymbol "__lg_into"; target; source ]))
     | FList
         (FSymbol "__lg_conj"
         :: (FList [ FSymbol "__lg_get"; _; _ ] as target)
@@ -7156,6 +7160,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     (fun (name, _) -> not (string_mem name local_names))
                     inferred)
               (infer_local [] local_params))
+    | FList [ FSymbol "__lg_into"; target; source ] ->
+        Result.bind (infer_form params target) (fun params ->
+            let element_ty =
+              inferred_binding_form_type params target
+              |> into_source_element_type
+              |> Option.value ~default:TUnknown
+            in
+            infer_sequence_form element_ty params source)
     | FList
         [
           FSymbol "__lg_into";

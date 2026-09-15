@@ -6688,6 +6688,35 @@ let test_seqable_tuple_elements_preserve_capability_payloads () =
     "[\"1:one\" \"2:two\"]\n" native;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_into_infers_source_collection_parameters () =
+  let definitions = {|
+(defn prepend [values] (into [1] values))
+(defn add-entries [entries] (into {"a" 1} entries))
+(defn add-members [members] (into #{1} members))
+(defn collect [^:seq<int> values] (vec values))
+(defn nested [values] (collect (into [1] values)))
+|} in
+  let source = definitions ^ {|
+(println (= [1 2 3] (prepend [2 3])))
+(println (= [1 2 3] (prepend (list 2 3))))
+(println (= [1] (prepend [])))
+(println (= {"a" 1 "b" 2} (add-entries [(tuple "b" 2)])))
+(println (= #{1 2 3} (add-members [2 3])))
+(println (= [1 2 3] (nested [2 3])))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "into_infers_source_collection_parameters"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    List.iter (fun suffix ->
+      match compile_string_with_stdlib ~target (definitions ^ suffix) with
+      | Error _ -> ()
+      | Ok _ -> failwith "into accepted an incompatible source")
+      [ "(prepend 2)"; "(prepend [\"wrong\"])";
+        "(add-entries [(tuple \"b\" \"wrong\")])" ])
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
 let test_mapped_record_results_ignore_unrelated_field_types () =
   let source = {|
 (ns mapped-record-results)
@@ -51692,6 +51721,8 @@ let tests =
       test_seqable_tuple_elements_preserve_capability_payloads );
     ( "seqable record elements adapt nested maps",
       test_seqable_record_elements_adapt_nested_maps );
+    ( "into infers source collection parameters",
+      test_into_infers_source_collection_parameters );
     ( "mapped record results ignore unrelated field types",
       test_mapped_record_results_ignore_unrelated_field_types );
     ( "seqable inferred record rows accept wider nominal elements",
