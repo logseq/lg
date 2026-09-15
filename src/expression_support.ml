@@ -3,6 +3,39 @@ open Lowered
 module Env = Compiler_environment
 module String_map = Map.Make (String)
 
+(* Recursive host aliases can reach a callback at different unfolding depths. *)
+let equivalent_host_types left right =
+  let rec equivalent seen left right =
+    if Types.equal left right then true
+    else if List.exists (fun (a, b) -> Types.equal a left && Types.equal b right) seen then true
+    else
+      let seen = (left, right) :: seen in
+      let expand name other flipped =
+        match Ocaml_signature.transparent_manifest_alias name with
+        | Some manifest when not (Types.equal manifest (TOcaml name)) ->
+            if flipped then equivalent seen other manifest else equivalent seen manifest other
+        | _ -> false
+      in
+      match left, right with
+      | TOcaml name, other -> expand name other false
+      | other, TOcaml name -> expand name other true
+      | TPoly_variant a, TPoly_variant b when a.bound = b.bound ->
+          List.length a.tags = List.length b.tags
+          && List.for_all (fun (tag, payload) ->
+            match payload, List.assoc_opt tag b.tags with
+            | None, Some None -> true
+            | Some left, Some (Some right) -> equivalent seen left right
+            | _ -> false) a.tags
+      | TList a, TList b | TVector a, TVector b | TArray a, TArray b
+      | TNullable a, TNullable b | TSeq a, TSeq b -> equivalent seen a b
+      | TTuple a, TTuple b ->
+          List.length a = List.length b && List.for_all2 (equivalent seen) a b
+      | TOcaml_app (a, xs), TOcaml_app (b, ys) when a = b ->
+          List.length xs = List.length ys && List.for_all2 (equivalent seen) xs ys
+      | _ -> false
+  in
+  equivalent [] left right
+
 (* Unfold host recursive rows only along the finite constructed value. *)
 let rec contextual_variant_type expected actual =
   match (expected, actual) with

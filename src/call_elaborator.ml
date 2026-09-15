@@ -18741,6 +18741,11 @@ let create ~compile_expr =
                         Type_solver.apply substitutions template
                       in
                       match (resolved_template, actual) with
+                      | template, actual
+                        when not (Type_solver.is_open template)
+                             && not (Type_solver.is_open actual)
+                             && Expression_support.equivalent_host_types template actual ->
+                          Ok substitutions
                       | TFn (template_params, template_return),
                         TFn (actual_params, actual_return)
                         when List.length template_params

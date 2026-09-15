@@ -24981,6 +24981,79 @@ let make name age : row = { name; age }
         failwith
           (Printf.sprintf "expected %S, got %S" "Ada:42\nGrace:43\n" actual))
 
+let test_optional_field_from_indexed_record_preserves_type () =
+  let dir = Filename.temp_dir "lg-keep-alias-" "" in
+  let fixture = {|
+type t = [ `String of string | `List of t list | `Null ]
+let input : t = `List [`String "purple"; `Null]
+|} in
+  let path = Filename.concat dir "keep_alias_fixture.ml" in
+  write_file path fixture;
+  Fun.protect
+    ~finally:(fun () ->
+      Array.iter (fun file -> Sys.remove (Filename.concat dir file)) (Sys.readdir dir);
+      Unix.rmdir dir)
+    (fun () ->
+  if Sys.command (Printf.sprintf "ocamlc -c %s" (Filename.quote path)) <> 0 then
+    failwith "could not compile recursive alias fixture";
+  Lg.Ocaml_signature.add_include_dirs [dir];
+  let model = {|
+(ns app.style-model)
+(type-record optional-style (title :string) (color :option<string>))
+(type-record required-style (title :string) (color :string))
+|} in
+  let source = {|
+(ns app.styles (:require [app.style-model :as model]
+                         [ocaml.Keep_alias_fixture :as fixture]
+                         [ocaml.Rrbvec :as rrbvec]))
+(defn parse-style [^:Keep_alias_fixture.t input]
+  (let [text (match input (tag String value) value _ "")
+        title "Waiting"
+        color (Some text)]
+    (when (and (not= title "") (not= text ""))
+      (record model/optional-style (title title) (color color)))))
+(defn values [^:Keep_alias_fixture.t input]
+  (match input (tag List values) values _ (list)))
+(defn styles []
+  (rrbvec/to-list (vec (keep parse-style (values fixture/input)))))
+|} in
+  let consumer = {|
+(ns app.consumer (:require [app.styles :as styles]))
+(defn check []
+  (let [items (vec (styles/styles))
+        item (nth items 0)
+        expected (Some "purple")
+        actual (:color item)]
+    (println (count items))
+    (if (= expected actual)
+      (println "ok")
+      (println (str "expected " (pr-str expected) ", got " (pr-str actual))))))
+(check)
+|} in
+  let state, model =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native
+      (stdlib_state Lg.Target.Native) model |> expect_ok
+  in
+  let state, provider =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native state source |> expect_ok
+  in
+  let _, consumer =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native state consumer |> expect_ok
+  in
+  let native = "module Keep_alias_fixture = struct\n" ^ fixture ^ "\nend\n"
+    ^ model ^ "\n" ^ provider ^ "\n" ^ consumer in
+  assert_ocaml_runs "optional_field_from_indexed_record" "1\nok\n" native;
+  let incompatible = {|
+(ns app.incompatible (:require [app.styles :as styles]
+                              [ocaml.Keep_alias_fixture :as fixture]))
+(defn wrong [^:variant<String:int;List:list<Keep_alias_fixture.t>;Null> input]
+  (Some input))
+(keep wrong (styles/values fixture/input))
+|} in
+  match Lg.Compiler.compile_chunk ~target:Lg.Target.Native state incompatible with
+  | Error _ -> ()
+  | Ok _ -> failwith "recursive aliases must not accept incompatible tag payloads")
+
 let test_external_record_alias_survives_incremental_namespaces () =
   let provider =
     {|
@@ -52891,6 +52964,8 @@ let tests =
       test_external_record_exposes_static_fields_without_redefinition );
     ( "mli record exposes static fields without external record",
       test_mli_record_exposes_static_fields_without_external_record );
+    ( "optional field from indexed record preserves type",
+      test_optional_field_from_indexed_record_preserves_type );
     ( "external record alias survives incremental namespaces",
       test_external_record_alias_survives_incremental_namespaces );
     ( "parameterized external record alias survives function signature",
