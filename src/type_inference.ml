@@ -4096,7 +4096,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       Type_solver.is_open (inferred_form_type params target)
     in
     let zero_arity_constructor = Expression_support.is_constructor_name in
-    let infer_variant_clause params expected_ty bindings result =
+    let rec refine_bound_pattern pattern ty bindings =
+      match pattern, ty with
+      | FSymbol name, _ -> Option.value (string_assoc_opt name bindings) ~default:ty
+      | FList (FSymbol "tuple" :: patterns), TTuple types
+        when List.length patterns = List.length types ->
+          TTuple (List.map2 (fun pattern ty -> refine_bound_pattern pattern ty bindings) patterns types)
+      | _ -> ty
+    in
+    let infer_variant_clause params pattern expected_ty bindings result =
       Result.bind (infer_expected expected_ty params target) (fun params ->
           let local_names = List.map fst bindings in
           let shadowed =
@@ -4120,6 +4128,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   Type_solver.empty bindings
               in
               let expected_ty = Type_solver.apply substitutions expected_ty in
+              let expected_ty = refine_bound_pattern pattern expected_ty
+                (List.filter (fun (name, _) -> string_mem name local_names) inferred) in
               let params =
                 shadowed
                 @ List.filter
@@ -4268,7 +4278,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 in
                 match variant with
                 | Some (expected_ty, bindings) ->
-                    infer_variant_clause params expected_ty bindings result
+                    infer_variant_clause params pattern expected_ty bindings result
                 | None ->
                     Result.bind (infer_form params target) (fun params ->
                         infer_form params result))

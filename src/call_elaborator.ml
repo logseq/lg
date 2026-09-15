@@ -909,7 +909,8 @@ let rec protocol_constraint_witness protocol_id ty =
 
 let rec has_capability_constraint ty =
   (match ty with
-   | TOcaml_app ("result", arguments) -> List.exists has_capability_constraint arguments
+   | TTuple arguments | TOcaml_app ("result", arguments) ->
+       List.exists has_capability_constraint arguments
    | _ -> false)
   ||
   Types.is_dynamic ty
@@ -2185,6 +2186,24 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                  ([ (Semantic_ir.PVar argument_name, bound_expression) ], packed))
   else
   match (expected, argument.ty) with
+  | TTuple expected_items, TTuple actual_items
+    when List.length expected_items = List.length actual_items
+         && List.exists has_capability_constraint expected_items ->
+      let names = List.mapi (fun index _ -> "__lg_tuple_constrained_" ^ string_of_int index) actual_items in
+      let rec pack items = function
+        | [], [], [] -> Ok (List.rev items)
+        | expected :: expected_rest, actual :: actual_rest, name :: names ->
+            Result.bind
+              (pack_constrained_value env expected (typed_ir actual (Semantic_ir.Ident name)))
+              (fun item -> pack (item :: items) (expected_rest, actual_rest, names))
+        | _ -> assert false
+      in
+      Result.map
+        (fun items -> Semantic_ir.Match
+          (argument.semantic_expr,
+           [Semantic_ir.PTuple (List.map2 constrained_identifier_pattern names actual_items),
+            Semantic_ir.Tuple items]))
+        (pack [] (expected_items, actual_items, names))
   | TOcaml_app ("result", [ expected_ok; expected_error ]),
     TOcaml_app ("result", [ actual_ok; actual_error ])
     when has_capability_constraint expected_ok || has_capability_constraint expected_error ->

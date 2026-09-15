@@ -65,6 +65,13 @@ let deduplicate_protocol_constraints ty =
   in
   deduplicate [] ty
 
+let rec tuple_gains_capability existing inferred =
+  match existing, inferred with
+  | (TUnknown | TMeta _ | TVar _), TConstraint _ -> true
+  | TTuple existing, TTuple inferred when List.length existing = List.length inferred ->
+      List.exists2 tuple_gains_capability existing inferred
+  | _ -> false
+
 let rec refine_type existing inferred =
   match (existing, inferred) with
   | TPoly_variant left, TPoly_variant right ->
@@ -433,6 +440,11 @@ and refine_nonmatching_type existing inferred =
     when List.length existing = List.length inferred
          && not (List.exists Type_solver.is_open inferred) ->
       TTuple (List.map2 refine_type existing inferred)
+  | TTuple existing, TTuple inferred
+    when List.length existing = List.length inferred ->
+      TTuple (List.map2 (fun existing inferred ->
+        if tuple_gains_capability existing inferred then refine_type existing inferred
+        else existing) existing inferred)
   | TFn ([ predicate_arg ], TBool), TSet element
   | TSet element, TFn ([ predicate_arg ], TBool) ->
       TSet (refine_type element predicate_arg)

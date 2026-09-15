@@ -13196,6 +13196,21 @@ let test_ocaml_float_and_char_literals_compile () =
   assert_ocaml_runs "ocaml_float_and_char_literals_compile" "3.75:A\n"
     ocaml_source
 
+let test_match_tuple_preserves_printable_payloads () =
+  let source = {|
+(defn render-pairs [pairs]
+  (mapv (fn [pair] (match pair (tuple left right) (str left ": " right))) pairs))
+(assert (= (render-pairs [(tuple "checksum" "abc")]) ["checksum: abc"]))
+(assert (= (render-pairs [(tuple "count" 42)]) ["count: 42"]))
+(assert (= (render-pairs [(tuple false 1.5)]) ["false: 1.5"]))
+(defn render-nested [value]
+  (match value (tuple label (tuple left right)) (str label ":" left "/" right)))
+(assert (= (render-nested (tuple "v" (tuple 7 true))) "v:7/true"))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "match_tuple_preserves_printable_payloads" "" native;
+  compile_with_stdlib Lg.Target.Melange "test/tuple_printable.cljc" source |> ignore
+
 let test_character_literals_preserve_reader_delimiters () =
   let source = {|(println (String.make 1 \,))
 (println (String.make 1 \())
@@ -51831,6 +51846,8 @@ let tests =
       test_ocaml_float_and_char_literals_compile );
     ( "character literals preserve reader delimiters",
       test_character_literals_preserve_reader_delimiters );
+    ( "match tuple preserves printable payloads",
+      test_match_tuple_preserves_printable_payloads );
     ( "double converts ints and preserves floats",
       test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",
