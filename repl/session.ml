@@ -77,16 +77,27 @@ let prepare_toplevel () =
 let execute structure =
   let output = Buffer.create 256 in
   let formatter = Format.formatter_of_buffer output in
-  let succeeded =
-    Toploop.execute_phrase false formatter (Parsetree.Ptop_def structure)
-  in
-  Format.pp_print_flush formatter ();
-  if succeeded then Ok ()
-  else
-    let message = Buffer.contents output in
-    infrastructure_error
-      (if String.equal message "" then "OCaml toplevel evaluation failed"
-       else message)
+  match Toploop.execute_phrase false formatter (Parsetree.Ptop_def structure) with
+  | exception exn ->
+      Format.pp_print_flush formatter ();
+      let message = Buffer.contents output in
+      infrastructure_error
+        (String.concat ": "
+           (List.filter
+              (fun part -> not (String.equal part ""))
+              [
+                "OCaml toplevel evaluation failed";
+                Printexc.to_string exn;
+                message;
+              ]))
+  | succeeded ->
+      Format.pp_print_flush formatter ();
+      if succeeded then Ok ()
+      else
+        let message = Buffer.contents output in
+        infrastructure_error
+          (if String.equal message "" then "OCaml toplevel evaluation failed"
+           else message)
 
 let valid_module_name name =
   let valid_initial = function 'A' .. 'Z' -> true | _ -> false in
@@ -139,6 +150,12 @@ let rec has_path_component component path =
 let is_native_toplevel_directory path =
   not (has_path_component "melange" path)
 
+let add_toplevel_directory path =
+  try Topdirs.dir_directory path
+  with exn ->
+    Printf.eprintf "lg-repl: skipping OCaml toplevel load path %s: %s\n%!" path
+      (Printexc.to_string exn)
+
 let configure_toplevel_load_path ~state_path ~packages =
   let state_directory = Filename.dirname state_path in
   let package_directories =
@@ -162,7 +179,7 @@ let configure_toplevel_load_path ~state_path ~packages =
   |> List.filter (fun path ->
          is_native_toplevel_directory path
          && Sys.file_exists path && Sys.is_directory path)
-  |> List.sort_uniq String.compare |> List.iter Topdirs.dir_directory
+  |> List.sort_uniq String.compare |> List.iter add_toplevel_directory
 
 let create_from_state ~include_directories ~state_path ~bootstrap_module =
   match Lg.Compiler_artifact.read ~kind:"saved-state" ~path:state_path with
@@ -186,7 +203,7 @@ let create_from_state ~include_directories ~state_path ~bootstrap_module =
                 include_directories
                 |> List.filter (fun path ->
                        Sys.file_exists path && Sys.is_directory path)
-                |> List.iter Topdirs.dir_directory;
+                |> List.iter add_toplevel_directory;
                 Result.map
                   (fun () ->
                     {

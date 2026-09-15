@@ -2186,7 +2186,7 @@ let order_workspace_from_state ?(target = Target.default) ?reader_target
       order initial_state [] (group_sources sources))
 
 let analyze_workspace_with_errors_from_state ?(target = Target.default)
-    initial_state sources =
+    ?(check_incremental_ocaml = true) initial_state sources =
   let validate_ocaml state =
     match Lowering.structure_of_located_items state.located_items with
     | Error _ as err -> err
@@ -2214,16 +2214,20 @@ let analyze_workspace_with_errors_from_state ?(target = Target.default)
                     ((filename, parsed) :: deferred)
                     ((filename, error) :: errors)
                     rest
-              | Ok (next_state, _typed) -> (
-                  match validate_ocaml next_state with
-                  | Ok () ->
-                      compile next_state (filename :: compiled)
-                        (List.rev_append deferred rest)
-                  | Error error ->
-                      try_pending
-                        ((filename, parsed) :: deferred)
-                        ((filename, error) :: errors)
-                        rest))
+              | Ok (next_state, _typed) ->
+                  if not check_incremental_ocaml then
+                    compile next_state (filename :: compiled)
+                      (List.rev_append deferred rest)
+                  else
+                    match validate_ocaml next_state with
+                    | Ok () ->
+                        compile next_state (filename :: compiled)
+                          (List.rev_append deferred rest)
+                    | Error error ->
+                        try_pending
+                          ((filename, parsed) :: deferred)
+                          ((filename, error) :: errors)
+                          rest)
         in
         try_pending [] [] pending
   in

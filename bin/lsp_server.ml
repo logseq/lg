@@ -21,6 +21,16 @@ let supports_dynamic_watched_files = ref false
 let base_state = ref Lg.Compiler.empty_state
 let explicit_state_path = ref false
 let configured_state_path = ref None
+let state_cache = Hashtbl.create 8
+
+type state_rule = {
+  state_path : string;
+  source_roots : string list;
+  source_files : string list;
+  order : int;
+}
+
+let state_rules = ref []
 
 let path_of_file_uri uri =
   if String.starts_with ~prefix:"file://" uri then
@@ -125,14 +135,16 @@ let rec state_references_in_text text offset references =
 let state_references_in_dune path =
   try state_references_in_text (read_file path) 0 [] with Sys_error _ -> []
 
+let state_path_of_reference root (library, state_file) =
+  Filename.concat root
+    (Filename.concat "_build/install/default/lib"
+       (Filename.concat (replace_char '.' '/' library) state_file))
+
 let project_state_candidates root =
   let dune_candidates =
     dune_files root
     |> List.concat_map state_references_in_dune
-    |> List.map (fun (library, state_file) ->
-           Filename.concat root
-             (Filename.concat "_build/install/default/lib"
-                (Filename.concat (replace_char '.' '/' library) state_file)))
+    |> List.map (state_path_of_reference root)
   in
   let fallback_candidates =
     [
@@ -148,11 +160,112 @@ let project_state_candidates root =
 let workspace_state_path root_uri =
   path_of_file_uri root_uri |> project_state_candidates |> List.find_opt Sys.file_exists
 
-let split_colon_list text =
-  String.split_on_char ':' text |> List.filter (fun item -> item <> "")
+let path_is_under ~root path =
+  String.equal path root
+  ||
+  let prefix = if String.ends_with ~suffix:"/" root then root else root ^ "/" in
+  String.starts_with ~prefix path
 
 let absolute_path_from directory path =
   if Filename.is_relative path then Filename.concat directory path else path
+
+let split_words text =
+  let buffer = Buffer.create 16 in
+  let words = ref [] in
+  let flush () =
+    if Buffer.length buffer > 0 then (
+      words := Buffer.contents buffer :: !words;
+      Buffer.clear buffer)
+  in
+  String.iter
+    (function
+      | '(' | ')' | '"' | '\n' | '\r' | '\t' | ' ' -> flush ()
+      | char -> Buffer.add_char buffer char)
+    text;
+  flush ();
+  List.rev !words
+
+let rule_blocks text =
+  let prefix = "(rule" in
+  let rec find offset blocks =
+    match String.index_from_opt text offset '(' with
+    | None -> List.rev blocks
+    | Some start
+      when start + String.length prefix <= String.length text
+           && String.sub text start (String.length prefix) = prefix ->
+        let rec scan index depth in_string escaped =
+          if index >= String.length text then String.length text
+          else
+            let char = text.[index] in
+            if in_string then
+              scan (index + 1) depth
+                (not ((not escaped) && char = '"'))
+                ((not escaped) && char = '\\')
+            else
+              match char with
+              | '"' -> scan (index + 1) depth true false
+              | '(' -> scan (index + 1) (depth + 1) false false
+              | ')' ->
+                  if depth = 1 then index + 1
+                  else scan (index + 1) (depth - 1) false false
+              | _ -> scan (index + 1) depth false false
+        in
+        let stop = scan start 0 false false in
+        find stop (String.sub text start (stop - start) :: blocks)
+    | Some start -> find (start + 1) blocks
+  in
+  find 0 []
+
+let source_roots_in_rule dune_dir words =
+  let rec loop roots = function
+    | "source_tree" :: path :: rest ->
+        loop (absolute_path_from dune_dir path :: roots) rest
+    | _ :: rest -> loop roots rest
+    | [] -> List.rev roots
+  in
+  loop [] words
+
+let source_files_in_rule dune_dir words =
+  words
+  |> List.filter (fun word ->
+         (Filename.check_suffix word ".cljc" || Filename.check_suffix word ".lgi")
+         && not (String.starts_with ~prefix:"%{" word))
+  |> List.map (absolute_path_from dune_dir)
+
+let discover_state_rules root =
+  let rules =
+    dune_files root
+    |> List.mapi (fun dune_index dune_path ->
+           let dune_dir = Filename.dirname dune_path in
+           try
+             read_file dune_path |> rule_blocks
+             |> List.mapi (fun rule_index block ->
+                    let words = split_words block in
+                    let source_roots = source_roots_in_rule dune_dir words in
+                    let source_files = source_files_in_rule dune_dir words in
+                    state_references_in_text block 0 []
+                    |> List.filter_map (fun reference ->
+                           let state_path = state_path_of_reference root reference in
+                           if
+                             Sys.file_exists state_path
+                             && (source_roots <> [] || source_files <> [])
+                           then
+                             Some
+                               {
+                                 state_path;
+                                 source_roots;
+                                 source_files;
+                                 order = (dune_index * 1000) + rule_index;
+                               }
+                           else None))
+             |> List.concat
+           with Sys_error _ -> [])
+    |> List.concat
+  in
+  state_rules := rules
+
+let split_colon_list text =
+  String.split_on_char ':' text |> List.filter (fun item -> item <> "")
 
 let configure_workspace_include_path root =
   let candidates =
@@ -198,12 +311,61 @@ let configure_base_state = function
       match load_saved_state path with
       | Ok state ->
           configured_state_path := Some path;
+          Hashtbl.replace state_cache path state;
           base_state := state
       | Error message ->
           prerr_endline ("lg-lsp: unable to load compiler state " ^ path ^ ": " ^ message))
 
+let matching_state_rule path =
+  !state_rules
+  |> List.filter_map (fun rule ->
+         let exact =
+           if List.exists (String.equal path) rule.source_files then
+             Some max_int
+           else None
+         in
+         let root_score =
+           rule.source_roots
+           |> List.filter (fun root -> path_is_under ~root path)
+           |> List.map String.length
+           |> List.sort (fun left right -> compare right left)
+           |> List.find_opt (fun _ -> true)
+         in
+         match (exact, root_score) with
+         | None, None -> None
+         | Some score, None | None, Some score -> Some (score, rule)
+         | Some exact_score, Some root_score ->
+             Some (max exact_score root_score, rule))
+  |> List.sort (fun (left_score, left) (right_score, right) ->
+         match compare right_score left_score with
+         | 0 -> compare left.order right.order
+         | order -> order)
+  |> List.find_opt (fun _ -> true)
+  |> Option.map snd
+
+let state_for_uri uri =
+  if !explicit_state_path then !base_state
+  else
+    let path = path_of_file_uri uri in
+    match matching_state_rule path with
+    | None -> !base_state
+    | Some rule -> (
+        match Hashtbl.find_opt state_cache rule.state_path with
+        | Some state -> state
+        | None -> (
+            match load_saved_state rule.state_path with
+            | Ok state ->
+                Hashtbl.replace state_cache rule.state_path state;
+                state
+            | Error message ->
+                prerr_endline
+                  ("lg-lsp: unable to load compiler state " ^ rule.state_path
+                 ^ ": " ^ message);
+                !base_state))
+
 let analyze_document uri text =
-  let analysis = Lg.Language_service.analyze_from_state ~filename:uri !base_state text in
+  let state = state_for_uri uri in
+  let analysis = Lg.Language_service.analyze_from_state ~filename:uri state text in
   {
     text;
     analysis;
@@ -284,14 +446,17 @@ let rebuild_workspace ?changed_uri () =
         sources;
       affected
 
-let refresh_workspace_document index uri =
+let refresh_workspace_document ?text_override index uri =
   match Hashtbl.find_opt workspace_sources uri with
   | None -> Hashtbl.remove workspace_documents uri
   | Some disk_text ->
       let text =
-        Hashtbl.find_opt documents uri
-        |> Option.map (fun document -> document.text)
-        |> Option.value ~default:disk_text
+        match text_override with
+        | Some text -> text
+        | None ->
+            Hashtbl.find_opt documents uri
+            |> Option.map (fun document -> document.text)
+            |> Option.value ~default:disk_text
       in
       let analysis =
         match Lg.Language_service.workspace_analysis index uri with
@@ -309,6 +474,28 @@ let refresh_workspace_document index uri =
       let document = { text; analysis; recovered_analysis } in
       Hashtbl.replace workspace_documents uri document;
       if Hashtbl.mem documents uri then Hashtbl.replace documents uri document
+
+let update_current_workspace_document uri source =
+  match !workspace_index with
+  | None -> rebuild_workspace ~changed_uri:uri ()
+  | Some index -> (
+      match
+        Lg.Language_service.update_workspace_current_file_from_state
+          (state_for_uri uri) index ~filename:uri ~source
+      with
+      | Error _ -> rebuild_workspace ~changed_uri:uri ()
+      | Ok (index, affected) ->
+          workspace_index := Some index;
+          let affected =
+            if List.mem uri affected then affected else uri :: affected
+          in
+          List.iter
+            (fun affected_uri ->
+              if affected_uri = uri then
+                refresh_workspace_document ~text_override:source index affected_uri
+              else refresh_workspace_document index affected_uri)
+            affected;
+          affected)
 
 let remove_workspace_source uri =
   Hashtbl.remove workspace_sources uri;
@@ -330,23 +517,43 @@ let remove_workspace_source uri =
             affected;
           affected)
 
+let reset_unanalyzed_workspace_index () =
+  let sources =
+    Hashtbl.fold
+      (fun uri source sources -> (uri, source) :: sources)
+      workspace_sources []
+  in
+  workspace_index := Some (Lg.Language_service.create_unanalyzed_workspace_index sources)
+
 let update_watched_workspace_file uri change_type =
-  if change_type = 3 then remove_workspace_source uri
+  let previously_analyzed =
+    Hashtbl.fold (fun uri _ uris -> uri :: uris) workspace_documents []
+  in
+  Hashtbl.clear workspace_documents;
+  if change_type = 3 then (
+    Hashtbl.remove workspace_sources uri;
+    reset_unanalyzed_workspace_index ();
+    uri :: previously_analyzed)
   else
     let path = path_of_file_uri uri in
     if lg_source_file path && Sys.file_exists path then (
       Hashtbl.replace workspace_sources uri (read_file path);
-      rebuild_workspace ~changed_uri:uri ())
+      reset_unanalyzed_workspace_index ();
+      uri :: previously_analyzed)
     else []
 
 let index_workspace root_uri =
   Hashtbl.clear workspace_sources;
-  workspace_index := None;
-  path_of_file_uri root_uri |> lg_files
-  |> List.iter (fun path ->
-         let uri = "file://" ^ path in
-         Hashtbl.replace workspace_sources uri (read_file path));
-  ignore (rebuild_workspace ())
+  let sources =
+    path_of_file_uri root_uri |> lg_files
+    |> List.map (fun path ->
+           let uri = "file://" ^ path in
+           let source = read_file path in
+           Hashtbl.replace workspace_sources uri source;
+           (uri, source))
+  in
+  workspace_index := Some (Lg.Language_service.create_unanalyzed_workspace_index sources);
+  if Sys.getenv_opt "LG_LSP_EAGER_INDEX" = Some "1" then ignore (rebuild_workspace ())
 
 let find_document uri =
   if Hashtbl.mem workspace_sources uri then
@@ -354,6 +561,16 @@ let find_document uri =
     | Some _ as document -> document
     | None -> Hashtbl.find_opt documents uri
   else Hashtbl.find_opt documents uri
+
+let ensure_document uri =
+  match find_document uri with
+  | Some _ as document -> document
+  | None -> (
+      match Hashtbl.find_opt workspace_sources uri with
+      | None -> None
+      | Some source ->
+          ignore (update_current_workspace_document uri source);
+          find_document uri)
 
 let all_documents () =
   let combined = Hashtbl.copy workspace_documents in
@@ -593,7 +810,7 @@ let publish_diagnostics uri diagnostics =
               ("diagnostics", `List diagnostics) ] ) ])
 
 let publish_current_diagnostics uri =
-  match find_document uri with
+  match ensure_document uri with
   | None -> publish_diagnostics uri []
   | Some document -> publish_diagnostics uri (diagnostics document)
 
@@ -879,6 +1096,38 @@ let semantic_documents uri document =
     Hashtbl.add local uri document;
     local
 
+let symbol_at_offset document offset =
+  match semantic_analysis document with
+  | Some analysis -> (
+      match Lg.Language_service.symbol_span_at analysis offset with
+      | None -> None
+      | Some span ->
+          Some
+            (String.sub document.text span.start_offset
+               (span.end_offset - span.start_offset)))
+  | None -> None
+
+let lexical_references symbol text =
+  match Lg.Lexer.tokenize text with
+  | Error _ -> []
+  | Ok tokens ->
+      let symbols =
+        match String.rindex_opt symbol '/' with
+        | None -> [ symbol ]
+        | Some separator ->
+            [
+              symbol;
+              String.sub symbol (separator + 1)
+                (String.length symbol - separator - 1);
+            ]
+      in
+      tokens
+      |> List.filter_map (fun (token : Lg.Ast.token) ->
+             match token.desc with
+             | Symbol candidate when List.exists (String.equal candidate) symbols ->
+                 Some token.span
+             | _ -> None)
+
 let references_result uri document offset =
   match semantic_analysis document with
   | None -> `List []
@@ -886,6 +1135,7 @@ let references_result uri document offset =
       match Lg.Language_service.semantic_key_at analysis ~offset with
       | None -> `List []
       | Some key ->
+          let target_symbol = symbol_at_offset document offset in
           Hashtbl.fold
             (fun uri document locations ->
               match semantic_analysis document with
@@ -895,7 +1145,21 @@ let references_result uri document offset =
                   |> List.map (location_json uri document.text)
                   |> List.rev_append locations)
             (semantic_documents uri document) []
-          |> List.rev |> fun locations -> `List locations)
+          |> fun semantic_locations ->
+	          (if not (Hashtbl.mem workspace_sources uri) then semantic_locations
+	           else
+	             Hashtbl.fold
+	               (fun reference_uri source locations ->
+	                 if Hashtbl.mem workspace_documents reference_uri then locations
+	                 else
+	                   match target_symbol with
+	                   | None -> locations
+	                   | Some symbol ->
+	                       lexical_references symbol source
+	                       |> List.map (location_json reference_uri source)
+	                       |> List.rev_append locations)
+	               workspace_sources semantic_locations)
+	          |> List.rev |> fun locations -> `List locations)
 
 let highlights_result document offset =
   match semantic_analysis document with
@@ -984,6 +1248,54 @@ let document_symbols_result document =
       |> List.map (document_symbol_json document.text)
       |> fun symbols -> `List symbols
 
+let lexical_symbol_kind = function
+  | "module" | "module-alias" | "module-apply" | "module-functor" -> Some 2
+  | "def" | "defonce" -> Some 13
+  | "defn" | "defn-" -> Some 12
+  | "type-alias" | "type-record" | "type-variant" -> Some 5
+  | "defprotocol" | "module-signature" -> Some 11
+  | _ -> None
+
+let rec lexical_workspace_symbols_of_form uri text query
+    (form : Lg.Ast.located_form) =
+  match form.children with
+  | { form = FSymbol head; _ } :: { form = FSymbol name; span; _ } :: rest ->
+      let children =
+        match head with
+        | "module" | "module-functor" ->
+            List.concat_map (lexical_workspace_symbols_of_form uri text query) rest
+        | _ -> []
+      in
+      let current =
+        match lexical_symbol_kind head with
+        | Some kind when find_substring (String.lowercase_ascii name) query <> None
+          ->
+            [
+              `Assoc
+                [
+                  ("name", `String name);
+                  ("kind", `Int kind);
+                  ("location", location_json uri text span);
+                ];
+            ]
+        | Some _ | None -> []
+      in
+      current @ children
+  | _ -> []
+
+let lexical_workspace_symbols uri text query =
+  match Lg.Lexer.tokenize text with
+  | Error _ -> []
+  | Ok tokens -> (
+      match
+        Lg.Parser.parse_located ~eof_offset:(String.length text) tokens
+      with
+      | Error _ -> []
+      | Ok forms ->
+          List.concat_map
+            (lexical_workspace_symbols_of_form uri text query)
+            forms)
+
 let rec matching_workspace_symbols uri text query
     (symbol : Lg.Language_service.document_symbol) =
   let children =
@@ -1009,6 +1321,12 @@ let workspace_symbols_result query =
                (matching_workspace_symbols uri document.text query)
           |> List.rev_append symbols)
     (all_documents ()) []
+  |> fun semantic_symbols ->
+  Hashtbl.fold
+    (fun uri source symbols ->
+      if Hashtbl.mem workspace_documents uri then symbols
+      else lexical_workspace_symbols uri source query |> List.rev_append symbols)
+    workspace_sources semantic_symbols
   |> List.rev |> fun symbols -> `List symbols
 
 let semantic_token_type = function
@@ -1088,18 +1406,29 @@ let handle_notification method_ params =
       let document = params |> member "textDocument" in
       let uri = document |> member "uri" |> to_string in
       let text = document |> member "text" |> to_string in
-      let document = analyze_document uri text in
-      Hashtbl.replace documents uri document;
-      rebuild_and_publish uri
+      if Hashtbl.mem workspace_sources uri then (
+        update_current_workspace_document uri text
+        |> List.iter publish_current_diagnostics)
+      else (
+        let document = analyze_document uri text in
+        Hashtbl.replace documents uri document;
+        publish_current_diagnostics uri)
   | "textDocument/didChange" ->
       let uri = document_uri params in
       let changes = params |> member "contentChanges" |> to_list in
       (match changes with
       | change :: _ ->
           let text = change |> member "text" |> to_string in
-          let document = analyze_document uri text in
-          Hashtbl.replace documents uri document;
-          rebuild_and_publish uri
+          if Hashtbl.mem workspace_sources uri then (
+            let affected = update_current_workspace_document uri text in
+            let affected =
+              if List.mem uri affected then affected else uri :: affected
+            in
+            List.iter publish_current_diagnostics affected)
+          else (
+            let document = analyze_document uri text in
+            Hashtbl.replace documents uri document;
+            publish_current_diagnostics uri)
       | [] -> ())
   | "textDocument/didSave" ->
       let uri = document_uri params in
@@ -1153,6 +1482,7 @@ let rec loop shutdown_requested =
           | `String root_uri ->
               let root = path_of_file_uri root_uri in
               configure_workspace_include_path root;
+              discover_state_rules root;
               if !explicit_state_path then
                 configure_base_state !configured_state_path
               else configure_base_state (workspace_state_path root_uri);
@@ -1169,7 +1499,7 @@ let rec loop shutdown_requested =
       | Some ("textDocument/signatureHelp" as method_), (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match find_document uri with
+            match ensure_document uri with
             | None -> `Null
             | Some document ->
                 let offset = document_position params document in
@@ -1188,7 +1518,7 @@ let rec loop shutdown_requested =
       | Some "textDocument/formatting", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match find_document uri with
+            match ensure_document uri with
             | None -> `List []
             | Some document -> formatting_result document
           in
@@ -1197,7 +1527,7 @@ let rec loop shutdown_requested =
       | Some "textDocument/codeAction", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match find_document uri with
+            match ensure_document uri with
             | None -> `List []
             | Some document -> code_actions_result uri document
           in
@@ -1209,7 +1539,7 @@ let rec loop shutdown_requested =
       | Some ("textDocument/rename" as method_), (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match find_document uri with
+            match ensure_document uri with
             | None -> `Null
             | Some document ->
                 let offset = document_position params document in
@@ -1230,7 +1560,7 @@ let rec loop shutdown_requested =
       | Some "textDocument/documentSymbol", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match find_document uri with
+            match ensure_document uri with
             | None -> `List []
             | Some document -> document_symbols_result document
           in
@@ -1243,7 +1573,7 @@ let rec loop shutdown_requested =
       | Some "textDocument/semanticTokens/full", (`Int _ | `String _) ->
           let uri = document_uri params in
           let result =
-            match find_document uri with
+            match ensure_document uri with
             | None -> `Assoc [ ("data", `List []) ]
             | Some document -> semantic_tokens_result document
           in

@@ -145,8 +145,8 @@ let analyze_workspace_with_errors_from_state ?(target = Target.default) state
   analyze_workspace_with_errors_using
     (fun sources ->
       Compiler_session.run (fun () ->
-          Toolchain.analyze_workspace_with_errors_from_state ~target state
-            sources))
+          Toolchain.analyze_workspace_with_errors_from_state ~target
+            ~check_incremental_ocaml:false state sources))
     sources
 
 let analyze_workspace sources =
@@ -1971,6 +1971,21 @@ let add_type_annotation_references add source references =
       ":" ^ String.sub source 2 (String.length source - 2)
     else source
   in
+  let references =
+    let name =
+      if String.starts_with ~prefix:":" keyword then
+        String.sub keyword 1 (String.length keyword - 1)
+      else keyword
+    in
+    match String.index_opt name '.' with
+    | Some separator ->
+        add Module_symbol (String.sub name 0 separator) references
+    | None -> (
+        match String.index_opt name '/' with
+        | Some separator ->
+            add Module_symbol (String.sub name 0 separator) references
+        | None -> references)
+  in
   match Type_annotation.of_keyword keyword with
   | Error _ -> references
   | Ok ty -> add_type_references add ty references
@@ -2098,6 +2113,11 @@ let add_symbol_references bound name references =
 let rec pattern_references bound references = function
   | Ast.FSymbol name when String.starts_with ~prefix:"^:" name ->
       add_symbol_references bound name references
+  | FKeyword annotation ->
+      let add kind name references =
+        Workspace_symbol_set.add (workspace_symbol kind name) references
+      in
+      add_type_annotation_references add annotation references
   | FVector forms | FList forms ->
       List.fold_left (pattern_references bound) references forms
   | _ -> references
@@ -2322,11 +2342,58 @@ let dependency_closure dependencies filename =
   in
   visit (String_set.singleton filename) String_set.empty
 
+let topological_workspace_order dependencies filenames =
+  let members = filenames in
+  let rec visit filename (visiting, visited, ordered) =
+    if String_set.mem filename visited then (visiting, visited, ordered)
+    else if String_set.mem filename visiting then
+      (visiting, String_set.add filename visited, filename :: ordered)
+    else
+      let direct =
+        String_map.find_opt filename dependencies
+        |> Option.value ~default:String_set.empty
+        |> String_set.inter members
+      in
+      let visiting = String_set.add filename visiting in
+      let visiting, visited, ordered =
+        String_set.fold
+          (fun dependency state -> visit dependency state)
+          direct (visiting, visited, ordered)
+      in
+      ( String_set.remove filename visiting,
+        String_set.add filename visited,
+        filename :: ordered )
+  in
+  let _, _, ordered =
+    String_set.fold
+      (fun filename state -> visit filename state)
+      filenames
+      (String_set.empty, String_set.empty, [])
+  in
+  List.rev ordered
+
+let source_stem filename =
+  [ ".lgi"; ".clj"; ".cljc"; ".cljs" ]
+  |> List.find_map (fun extension ->
+         if Filename.check_suffix filename extension then
+           Some (Filename.chop_suffix filename extension)
+         else None)
+  |> Option.value ~default:filename
+
+let source_unit_group sources filename =
+  let stem = source_stem filename in
+  String_map.to_seq sources
+  |> Seq.map fst
+  |> Seq.filter (fun candidate -> source_stem candidate = stem)
+  |> String_set.of_seq
+
 let analyze_component_from_state ?(target = Target.default) state sources filenames =
+  let dependencies =
+    workspace_dependencies sources |> Result.value ~default:String_map.empty
+  in
   let component_sources =
-    String_set.to_seq filenames
-    |> Seq.map (fun filename -> (filename, String_map.find filename sources))
-    |> List.of_seq
+    topological_workspace_order dependencies filenames
+    |> List.map (fun filename -> (filename, String_map.find filename sources))
   in
   analyze_workspace_with_errors_from_state ~target state component_sources
   |> Result.map (fun (analyses, errors) ->
@@ -2407,6 +2474,14 @@ let create_workspace_index_from_state ?(target = Target.default) state source_li
 
 let create_workspace_index source_list =
   create_workspace_index_from_state Toolchain.empty_state source_list
+
+let create_unanalyzed_workspace_index source_list =
+  let sources =
+    List.fold_left
+      (fun sources (filename, source) -> String_map.add filename source sources)
+      String_map.empty source_list
+  in
+  { sources; analyses = String_map.empty; errors = String_map.empty; components = [] }
 
 let workspace_analysis index filename =
   String_map.find_opt filename index.analyses
@@ -2502,6 +2577,70 @@ let update_workspace_index_from_state ?(target = Target.default) state index ~fi
 
 let update_workspace_index index ~filename ~source =
   update_workspace_index_from_state Toolchain.empty_state index ~filename ~source
+
+let update_workspace_current_file_from_state ?(target = Target.default) state index
+    ~filename ~source =
+  match String_map.find_opt filename index.sources with
+  | Some previous
+    when previous = source
+         && (String_map.mem filename index.analyses
+            || String_map.mem filename index.errors) ->
+      Ok (index, [])
+  | _ ->
+      let sources = String_map.add filename source index.sources in
+      let dependencies =
+        workspace_dependencies sources |> Result.value ~default:String_map.empty
+      in
+      let unit_group = source_unit_group sources filename in
+      let closure =
+        String_set.fold
+          (fun filename closure ->
+            String_set.union closure (dependency_closure dependencies filename))
+          unit_group unit_group
+      in
+      let analyses = String_map.remove filename index.analyses in
+      let errors = String_map.remove filename index.errors in
+      let update_with_error error =
+        Ok
+          ( {
+              index with
+              sources;
+              analyses;
+              errors = String_map.add filename error errors;
+            },
+            [ filename ] )
+      in
+      match analyze_component_from_state ~target state sources closure with
+      | Ok (closure_analyses, closure_errors) -> (
+          match String_map.find_opt filename closure_analyses with
+          | Some analysis ->
+              Ok
+                ( {
+                    index with
+                    sources;
+                    analyses = String_map.add filename analysis analyses;
+                    errors;
+                  },
+                  [ filename ] )
+          | None -> (
+              match String_map.find_opt filename closure_errors with
+              | Some error -> update_with_error error
+              | None -> Ok ({ index with sources; analyses; errors }, [ filename ])))
+      | Error _ -> (
+          match
+            analyze_from_state ~target ~filename state
+              (String_map.find filename sources)
+          with
+          | Ok analysis ->
+              Ok
+                ( {
+                    index with
+                    sources;
+                    analyses = String_map.add filename analysis analyses;
+                    errors;
+                  },
+                  [ filename ] )
+          | Error error -> update_with_error error)
 
 let remove_workspace_file_from_state ?(target = Target.default) state index ~filename =
   if not (String_map.mem filename index.sources) then Ok (index, [])
