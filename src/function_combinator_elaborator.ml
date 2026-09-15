@@ -453,7 +453,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             @ List.init (fixed_count - given) (fun _ -> inner)
         in
         let return_ty =
-          instantiate_apply_return arity.fixed_params inference_actuals
+          instantiate_apply_return (arity.fixed_params @ [ rest_ty ])
+            (inference_actuals @ [ inner ])
             arity.return_ty
         in
         let rec prepare_fixed prepared expected arguments =

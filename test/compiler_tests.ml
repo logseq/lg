@@ -6688,6 +6688,27 @@ let test_seqable_tuple_elements_preserve_capability_payloads () =
     "[\"1:one\" \"2:two\"]\n" native;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_mapped_record_results_ignore_unrelated_field_types () =
+  let source = {|
+(ns mapped-record-results)
+(type-record unrelated-block (uuid :string) (order :option<string>))
+(type-record source-block (uuid :string))
+(type-record move (uuid :string) (parent :string) (order :string))
+(defn moves [^:list<source-block> roots parent]
+  (Some (apply list
+    (map (fn [root value]
+           (record move (uuid (:uuid root)) (parent parent) (order value)))
+         roots ["a1"]))))
+(defn ordered? [roots]
+  (if-some [batch (moves roots "page")]
+    (pos? (compare (:order (nth batch 0)) "a0")) false))
+(println (ordered? (list (record source-block (uuid "id")))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "mapped_record_results_ignore_unrelated_field_types"
+    "true\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_seqable_inferred_record_rows_accept_wider_nominal_elements () =
   let definitions = {|
 (ns record-seqable-width-test)
@@ -51671,6 +51692,8 @@ let tests =
       test_seqable_tuple_elements_preserve_capability_payloads );
     ( "seqable record elements adapt nested maps",
       test_seqable_record_elements_adapt_nested_maps );
+    ( "mapped record results ignore unrelated field types",
+      test_mapped_record_results_ignore_unrelated_field_types );
     ( "seqable inferred record rows accept wider nominal elements",
       test_seqable_inferred_record_rows_accept_wider_nominal_elements );
     ( "loop record accumulators preserve nested result types",
