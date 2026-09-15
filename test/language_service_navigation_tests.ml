@@ -284,7 +284,40 @@ let test_quick_completion_resolves_qualified_alias_members () =
            String.equal item.label "string-of-int"
            && String.equal item.detail "int -> string")
          completions)
-  then fail "quick stdlib completion should include string-of-int"
+  then fail "quick stdlib completion should include string-of-int";
+  if
+    not
+      (List.exists
+         (fun (item : Lg.Language_service.completion_item) ->
+           String.equal item.label "result" && String.equal item.detail "type")
+         completions)
+  then fail "quick stdlib completion should include type names"
+
+let test_quick_completion_resolves_qualified_constructors () =
+  let source =
+    {|
+(ns nav.quick-constructor
+  (:require [ocaml.Stdlib :as stdlib]))
+
+(def rendered (stdlib/))
+|}
+  in
+  let completions =
+    Lg.Language_service.source_quick_completions ~state:(stdlib_state ())
+      ~source
+      ~offset:(expect_substring_index source "stdlib/" + String.length "stdlib/")
+  in
+  List.iter
+    (fun expected ->
+      if
+        not
+          (List.exists
+             (fun (item : Lg.Language_service.completion_item) ->
+               String.equal item.label expected
+               && String.equal item.detail "constructor")
+             completions)
+      then fail ("quick alias completion should include " ^ expected))
+    [ "Ok"; "Error" ]
 
 let () =
   test_require_aliases_resolve_ocaml_module_navigation ();
@@ -292,4 +325,5 @@ let () =
   test_core_functions_resolve_from_duniverse_lg_stdlib ();
   test_quick_definition_resolves_without_semantic_analysis ();
   test_quick_hover_resolves_without_semantic_analysis ();
-  test_quick_completion_resolves_qualified_alias_members ()
+  test_quick_completion_resolves_qualified_alias_members ();
+  test_quick_completion_resolves_qualified_constructors ()

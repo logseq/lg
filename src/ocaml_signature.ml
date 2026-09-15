@@ -21,6 +21,43 @@ let project_build_root () =
   | Some root -> Filename.concat root "_build/default"
   | None -> cwd
 
+let contains_compiled_interface directory =
+  Sys.file_exists directory && Sys.is_directory directory
+  && Sys.readdir directory
+     |> Array.exists (String.ends_with ~suffix:".cmi")
+
+let project_compiled_interface_dirs () =
+  let root = project_build_root () in
+  let rec scan directories directory =
+    if not (Sys.file_exists directory && Sys.is_directory directory) then directories
+    else
+      let basename = Filename.basename directory in
+      if
+        List.mem basename [ ".git"; ".ppx"; "_doc"; "melange" ]
+        || String.ends_with ~suffix:".eobjs" basename
+      then directories
+      else
+        let entries =
+          try Sys.readdir directory |> Array.to_list with Sys_error _ -> []
+        in
+        let directories =
+          if
+            List.mem basename [ "byte"; "public_cmi" ]
+            && contains_compiled_interface directory
+          then directory :: directories
+          else directories
+        in
+        entries
+        |> List.fold_left
+             (fun directories entry ->
+               let child = Filename.concat directory entry in
+               if Sys.file_exists child && Sys.is_directory child then
+                 scan directories child
+               else directories)
+             directories
+  in
+  scan [] root |> List.sort_uniq String.compare
+
 let project_include_dirs () =
   let root = project_build_root () in
   existing_dirs
@@ -35,6 +72,7 @@ let project_include_dirs () =
       Filename.concat root "vendor/rrbvec";
       Filename.concat root "vendor/rrbvec/.rrbvec.objs/byte";
     ]
+  @ project_compiled_interface_dirs ()
 
 let base_include_dirs =
   lazy

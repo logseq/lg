@@ -363,30 +363,45 @@ checkout.  Outside it, the installed `lg --lsp' command is used."
             (push path paths)))))
     (delete-dups (nreverse paths))))
 
+(defun lg--compiled-interface-directory-p (directory)
+  "Return non-nil when DIRECTORY contains OCaml compiled interfaces."
+  (and (file-directory-p directory)
+       (cl-some (lambda (file) (string-suffix-p ".cmi" file))
+                (directory-files directory nil nil t))))
+
+(defun lg--project-interface-directories (root)
+  "Return project build directories that contain OCaml compiled interfaces."
+  (let ((build-root (expand-file-name "_build/default" root))
+        (results nil))
+    (cl-labels
+        ((scan (directory)
+           (let ((basename
+                  (file-name-nondirectory (directory-file-name directory))))
+             (unless (or (member basename '(".git" ".ppx" "_doc" "melange"))
+                         (string-suffix-p ".eobjs" basename))
+               (when (and (member basename '("byte" "public_cmi"))
+                          (lg--compiled-interface-directory-p directory))
+                 (push directory results))
+               (condition-case nil
+                   (dolist (child (directory-files directory t nil t))
+                     (let ((child-name
+                            (file-name-nondirectory
+                             (directory-file-name child))))
+                       (when (and (file-directory-p child)
+                                  (not (member child-name '("." ".."))))
+                         (scan child))))
+                 (file-error nil))))))
+      (when (file-directory-p build-root)
+        (scan build-root)))
+    (delete-dups (sort results #'string<))))
+
 (defun lg-project-include-path (&optional root)
   "Return the project OCaml include path for lg tooling below ROOT."
-  (let* ((root (file-name-as-directory (or root (lg--project-root))))
-         (path (or (cl-some (lambda (relative)
-                              (let ((path (expand-file-name relative root)))
-                                (when (file-readable-p path) path)))
-                            '("_build/default/core/lg_native_include_path"
-                              "core/lg_native_include_path"))
-                   nil)))
-    (when path
-      (let* ((build-directory (expand-file-name "_build/default/core" root))
-             (base-directory (if (file-directory-p build-directory)
-                                 build-directory
-                               (file-name-directory path))))
-        (mapconcat (lambda (entry)
-                     (if (file-name-absolute-p entry)
-                         entry
-                       (expand-file-name entry base-directory)))
-                   (split-string
-                    (with-temp-buffer
-                      (insert-file-contents path)
-                      (string-trim (buffer-string)))
-                    ":" t)
-                   ":")))))
+  (let ((directories
+         (lg--project-interface-directories
+          (file-name-as-directory (or root (lg--project-root))))))
+    (when directories
+      (mapconcat #'identity directories ":"))))
 
 (defun lg--repository-eval-artifacts (root)
   "Return repository eval artifacts below ROOT."

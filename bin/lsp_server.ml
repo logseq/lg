@@ -264,32 +264,51 @@ let discover_state_rules root =
   in
   state_rules := rules
 
-let split_colon_list text =
-  String.split_on_char ':' text |> List.filter (fun item -> item <> "")
+let directory_contains_compiled_interface directory =
+  Sys.file_exists directory && Sys.is_directory directory
+  && (try
+        Sys.readdir directory
+        |> Array.exists (String.ends_with ~suffix:".cmi")
+      with Sys_error _ -> false)
+
+let workspace_compiled_interface_dirs root =
+  let build_root = Filename.concat root "_build/default" in
+  let rec scan directories directory =
+    if not (Sys.file_exists directory && Sys.is_directory directory) then directories
+    else
+      let basename = Filename.basename directory in
+      if
+        List.mem basename [ ".git"; ".ppx"; "_doc"; "melange" ]
+        || String.ends_with ~suffix:".eobjs" basename
+      then directories
+      else
+        let directories =
+          if
+            List.mem basename [ "byte"; "public_cmi" ]
+            && directory_contains_compiled_interface directory
+          then
+            directory :: directories
+          else directories
+        in
+        sorted_readdir directory
+        |> List.fold_left
+             (fun directories entry ->
+               let child = Filename.concat directory entry in
+               if Sys.file_exists child && Sys.is_directory child then
+                 scan directories child
+               else directories)
+             directories
+  in
+  scan [] build_root |> List.sort_uniq String.compare
 
 let configure_workspace_include_path root =
-  let candidates =
-    [ "_build/default/core/lg_native_include_path"; "core/lg_native_include_path" ]
-    |> List.map (Filename.concat root)
+  let include_path =
+    workspace_compiled_interface_dirs root |> String.concat ":"
   in
-  match List.find_opt Sys.file_exists candidates with
-  | None -> ()
-  | Some path ->
-      let build_directory = Filename.concat root "_build/default/core" in
-      let directory =
-        if Sys.file_exists build_directory && Sys.is_directory build_directory then
-          build_directory
-        else Filename.dirname path
-      in
-      let include_path =
-        read_file path |> String.trim |> split_colon_list
-        |> List.map (absolute_path_from directory)
-        |> String.concat ":"
-      in
-      if include_path <> "" then (
-        Unix.putenv "LG_OCAML_INCLUDE_PATH_AUTHORITATIVE" "1";
-        Unix.putenv "LG_OCAML_INCLUDE_PATH" include_path;
-        Unix.putenv "OCAMLPATH" include_path)
+  if include_path <> "" then (
+    Unix.putenv "LG_OCAML_INCLUDE_PATH_AUTHORITATIVE" "1";
+    Unix.putenv "LG_OCAML_INCLUDE_PATH" include_path;
+    Unix.putenv "OCAMLPATH" include_path)
 
 let load_saved_state path =
   match Lg.Compiler_artifact.read ~kind:"saved-state" ~path with

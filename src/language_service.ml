@@ -1925,6 +1925,126 @@ let source_name_of_ocaml_member name =
   in
   String.map (function '_' -> '-' | char -> char) name
 
+let source_signature_name_before line marker =
+  let marker_length = String.length marker in
+  let line_length = String.length line in
+  let rec find index =
+    if marker_length = 0 || index + marker_length > line_length then None
+    else if
+      String.sub line index marker_length |> String.equal marker
+    then Some index
+    else find (index + 1)
+  in
+  match find 0 with
+  | None -> None
+  | Some index ->
+      let name = String.sub line 0 index |> String.trim in
+      if String.equal name "" then None else Some name
+
+let module_signature_completions prefix line =
+  let line = String.trim line in
+  let prefixed kind detail =
+    let kind_length = String.length kind in
+    if not (String.starts_with ~prefix:kind line) then None
+    else
+      let rest =
+        String.sub line kind_length (String.length line - kind_length)
+        |> String.trim
+      in
+      rest
+      |> source_signature_name_before " "
+      |> Option.map (fun label -> ({ label; detail } : completion_item))
+  in
+  let value_completion () =
+    let val_prefix = "val " in
+    if String.starts_with ~prefix:val_prefix line then
+      match String.index_opt line ':' with
+      | Some separator ->
+          let ocaml_name =
+            String.sub line (String.length val_prefix)
+              (separator - String.length val_prefix)
+            |> String.trim
+          in
+          let label = source_name_of_ocaml_member ocaml_name in
+          let detail =
+            String.sub line (separator + 1)
+              (String.length line - separator - 1)
+            |> String.trim
+          in
+          Some ({ label; detail } : completion_item)
+      | None -> None
+    else None
+  in
+  let type_completion () =
+    let type_prefix = "type " in
+    if String.starts_with ~prefix:type_prefix line then
+      let rest =
+        String.sub line (String.length type_prefix)
+          (String.length line - String.length type_prefix)
+        |> String.trim
+      in
+      let declaration =
+        match String.index_opt rest '=' with
+        | Some index -> String.sub rest 0 index
+        | None -> rest
+        |> String.trim
+      in
+      let parts =
+        declaration |> String.split_on_char ' '
+        |> List.filter (fun part -> not (String.equal part ""))
+      in
+      match List.rev parts with
+      | label :: _ -> Some ({ label; detail = "type" } : completion_item)
+      | [] -> None
+    else None
+  in
+  let constructor_completions () =
+    let marker_completions marker =
+      let marker_length = String.length marker in
+      let line_length = String.length line in
+      let rec loop offset completions =
+        if offset + marker_length > line_length then completions
+        else if
+          String.sub line offset marker_length |> String.equal marker
+        then
+          let rest =
+            String.sub line (offset + marker_length)
+              (line_length - offset - marker_length)
+            |> String.trim
+          in
+          let label_end =
+            match String.index_opt rest ' ' with
+            | Some index -> index
+            | None -> String.length rest
+          in
+          let completions =
+            if label_end = 0 then completions
+            else
+              let label = String.sub rest 0 label_end in
+              match label.[0] with
+              | 'A' .. 'Z'
+                when String.starts_with ~prefix label ->
+                  ({ label; detail = "constructor" } : completion_item)
+                  :: completions
+              | _ -> completions
+          in
+          loop (offset + marker_length) completions
+        else loop (offset + 1) completions
+      in
+      loop 0 []
+    in
+    marker_completions "| " @ marker_completions "= "
+  in
+  let singleton (item : completion_item option) =
+    match item with
+    | Some item when String.starts_with ~prefix item.label -> [ item ]
+    | Some _ | None -> []
+  in
+  singleton (value_completion ())
+  @ constructor_completions ()
+  @ singleton (type_completion ())
+  @ singleton (prefixed "module " "module")
+
 let module_value_completions env module_path prefix =
   match Env.find_module_by_name (longident_of_dotted_name module_path) env with
   | _, declaration -> (
@@ -1933,28 +2053,7 @@ let module_value_completions env module_path prefix =
             Format.asprintf "%a" Printtyp.modtype declaration.md_type)
       in
       printed |> String.split_on_char '\n'
-      |> List.filter_map (fun line ->
-             let line = String.trim line in
-             let val_prefix = "val " in
-             if String.starts_with ~prefix:val_prefix line then
-               match String.index_opt line ':' with
-               | Some separator ->
-                   let ocaml_name =
-                     String.sub line (String.length val_prefix)
-                       (separator - String.length val_prefix)
-                     |> String.trim
-                   in
-                   let label = source_name_of_ocaml_member ocaml_name in
-                   if String.starts_with ~prefix label then
-                     let detail =
-                       String.sub line (separator + 1)
-                         (String.length line - separator - 1)
-                       |> String.trim
-                     in
-                     Some ({ label; detail } : completion_item)
-                   else None
-               | None -> None
-             else None)
+      |> List.concat_map (module_signature_completions prefix)
       |> List.sort_uniq (fun (left : completion_item) right ->
              String.compare left.label right.label))
   | exception Not_found -> []

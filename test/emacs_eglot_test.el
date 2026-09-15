@@ -286,6 +286,28 @@
                            (list "custom-lg-lsp" "--state" state))))
         (delete-directory directory t))))
 
+(ert-deftest lg-mode-discovers-project-interface-directories ()
+  (let ((directory (make-temp-file "lg-include-project-" t)))
+    (unwind-protect
+        (let ((app-dir
+               (expand-file-name "_build/default/app/.app.objs/byte" directory))
+              (dependency-dir
+               (expand-file-name "_build/default/deps/.deps.objs/byte" directory))
+              (test-dir
+               (expand-file-name "_build/default/test/.test.eobjs/byte" directory)))
+          (make-directory app-dir t)
+          (make-directory dependency-dir t)
+          (make-directory test-dir t)
+          (with-temp-file (expand-file-name "app.cmi" app-dir))
+          (with-temp-file (expand-file-name "deps.cmi" dependency-dir))
+          (with-temp-file (expand-file-name "test.cmi" test-dir))
+          (should (equal (lg-project-include-path directory)
+                         (mapconcat #'identity
+                                    (sort (list app-dir dependency-dir)
+                                          #'string<)
+                                    ":"))))
+      (delete-directory directory t))))
+
 (ert-deftest lg-mode-native-compilation-is-disabled ()
   (when (fboundp 'native-compile)
     (should-not (native-compile
