@@ -30848,6 +30848,27 @@ let test_incremental_record_identities_survive_include_directory_changes () =
     "https://example.test\ngraph\n" native;
   ignore (compile Lg.Target.Melange)
 
+let test_optional_record_fields_preserve_parameter_identity () =
+  let source = {|
+(ns optional-record-fields-test (:require [ocaml.String :as bytes]))
+(type-record status (uuid :string) (title :string))
+(type-record page (uuid :string) (name :string))
+(defn same-status? [left right]
+  (= (when-some [status left] (:uuid status))
+     (when-some [status right] (:uuid status))))
+(defn status-ref [status] (bytes/lowercase-ascii (:uuid status)))
+(def first-status (record status (uuid "s") (title "Todo")))
+(println (same-status? (Some first-status) (Some first-status)))
+(println (same-status? (Some first-status) nil))
+(println (same-status? nil nil))
+|} in
+  let native = compile_with_stdlib Lg.Target.Native
+    "test/optional_record_fields.cljc" source in
+  assert_ocaml_runs "optional_record_fields_preserve_parameter_identity"
+    "true\nfalse\ntrue\n" native;
+  ignore (compile_with_stdlib Lg.Target.Melange
+    "test/optional_record_fields.cljc" source)
+
 let test_group_by_infers_fields_read_through_keep_destructuring () =
   let source = {|
 (ns grouped-fields-test (:require [ocaml.String :as bytes]))
@@ -53701,6 +53722,8 @@ let tests =
       test_incremental_record_identities_survive_include_directory_changes );
     ( "group-by infers fields read through keep destructuring",
       test_group_by_infers_fields_read_through_keep_destructuring );
+    ( "optional record fields preserve parameter identity",
+      test_optional_record_fields_preserve_parameter_identity );
     ( "local name binding does not inherit core function type",
       test_local_name_binding_does_not_inherit_core_function_type );
     ( "filterv contextualizes generic seqable items",

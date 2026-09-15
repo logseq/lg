@@ -1514,7 +1514,7 @@ let fn_code ?(row_param_type_names = []) parts =
                        Types.ocaml_name (apply_row_constraint_type type_name ty) )
             | _ -> (
                 match ty with
-                | TRecord _ ->
+                | TRecord _ | TNullable (TRecord _ | TNamed_record _) ->
                     Semantic_ir.PTyped (Semantic_ir.PVar name, ty)
                | _ -> (
                    match param_constraint_name ty with
