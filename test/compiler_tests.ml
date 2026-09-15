@@ -30782,6 +30782,28 @@ let test_group_by_preserves_full_concat_elements_with_shorthand_key () =
     (compile_with_stdlib Lg.Target.Melange
        "test/group_by_concat_shorthand.cljc" source)
 
+let test_local_name_binding_does_not_inherit_core_function_type () =
+  let source = {|
+(ns local-name-inference-test)
+(type-record field (label :string))
+(defn duplicates? [values name-of]
+  (loop [index 0 seen (hash-map)]
+    (if (= index (count values))
+      false
+      (let [name (name-of (nth values index))]
+        (if (contains? seen name)
+          true
+          (recur (inc index) (assoc seen name true)))))))
+(println (duplicates? [(record field (label "a")) (record field (label "a"))] :label))
+(println (duplicates? [(record field (label "a")) (record field (label "b"))] :label))
+|} in
+  let native_source = compile_with_stdlib Lg.Target.Native
+    "test/local_name_inference.cljc" source in
+  assert_ocaml_runs "local_name_binding_does_not_inherit_core_function_type"
+    "true\nfalse\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange
+    "test/local_name_inference.cljc" source)
+
 let test_match_collection_updates_preserve_nominal_elements () =
   let source = {|
 (ns match-collection-update-test)
@@ -53608,6 +53630,8 @@ let tests =
       test_into_tuple_map_preserves_full_values_when_key_uses_row_subset );
     ( "match collection updates preserve nominal elements",
       test_match_collection_updates_preserve_nominal_elements );
+    ( "local name binding does not inherit core function type",
+      test_local_name_binding_does_not_inherit_core_function_type );
     ( "filterv contextualizes generic seqable items",
       test_filterv_contextualizes_generic_seqable_items );
     ( "filterv filters static vectors directly",

@@ -7131,6 +7131,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 let rec recur_arguments = function
                   | FList (FSymbol "recur" :: args) -> [ args ]
                   | FList (FSymbol ("loop" | "fn") :: _) -> []
+                  | FList (FSymbol let_name :: bindings :: body)
+                    when let_name = "let"
+                         || String.ends_with ~suffix:"/let" let_name ->
+                      (* Recur arguments must retain the locals in scope at the call. *)
+                      List.concat_map recur_arguments body
+                      |> List.map (List.map (fun arg ->
+                             FList [ FSymbol let_name; bindings; arg ]))
                   | FList forms | FVector forms ->
                       List.concat_map recur_arguments forms
                   | FMap pairs ->
