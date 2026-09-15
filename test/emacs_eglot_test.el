@@ -293,6 +293,9 @@
                   "editors/emacs/lg-mode.el"
                   (lg-test--repo-root))))))
 
+(ert-deftest lg-mode-binds-format-command ()
+  (should (eq (lookup-key lg-mode-map (kbd "C-c C-f")) #'eglot-format)))
+
 (ert-deftest lg-mode-repl-command-uses-repository-state ()
   (let ((root (make-temp-file "lg-source-checkout-" t)))
     (unwind-protect

@@ -133,6 +133,7 @@ When this mode is unavailable, `lg-cljc-mode' falls back to `lisp-mode'."
 (defvar-keymap lg-mode-map
   :doc "Keymap for `lg-mode'."
   "C-c C-b" #'lg-connect-nrepl
+  "C-c C-f" #'eglot-format
   "C-c C-r" #'lg-eval-region
   "C-c C-t" #'lg-show-type-at-point
   "C-c C-z" #'lg-repl
