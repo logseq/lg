@@ -13196,6 +13196,24 @@ let test_ocaml_float_and_char_literals_compile () =
   assert_ocaml_runs "ocaml_float_and_char_literals_compile" "3.75:A\n"
     ocaml_source
 
+let test_character_literals_preserve_reader_delimiters () =
+  let source = {|(println (String.make 1 \,))
+(println (String.make 1 \())
+(println (String.make 1 \)))
+(println (String.make 1 \[))
+(println (String.make 1 \]))
+(println (String.make 1 \{))
+(println (String.make 1 \}))
+(println (String.make 1 \;))
+(println (String.make 1 \"))
+(println (String.make 1 \\))
+(println (String.make 1 \space))
+|} in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "character_literals_preserve_reader_delimiters"
+    ",\n(\n)\n[\n]\n{\n}\n;\n\"\n\\\n \n" native;
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok |> ignore
+
 let test_double_converts_ints_and_preserves_floats () =
   let source =
     {|
@@ -51811,6 +51829,8 @@ let tests =
       test_concise_tuple_values_and_patterns_compile );
     ( "OCaml float and char literals compile",
       test_ocaml_float_and_char_literals_compile );
+    ( "character literals preserve reader delimiters",
+      test_character_literals_preserve_reader_delimiters );
     ( "double converts ints and preserves floats",
       test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",

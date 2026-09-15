@@ -104,7 +104,12 @@ let read_atom source start =
     if i >= String.length source || is_delimiter source.[i] then i
     else loop (i + 1)
   in
-  let finish = loop start in
+  (* A character's first byte is data even when it is a reader delimiter. *)
+  let first =
+    if start + 1 < String.length source && source.[start] = '\\' then start + 2
+    else start
+  in
+  let finish = loop first in
   (String.sub source start (finish - start), finish)
 
 let utf8_scalar_of_string source =
