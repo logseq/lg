@@ -27,6 +27,12 @@ that:
 Unknown types are inference variables, not permission to generate dynamic
 storage.
 
+Result payload constraints flow from match branches back into inferred
+callbacks and polymorphic calls. An absent constructor payload must not erase
+the shared type variable carried by the other branch. A resolved host record
+and its external type name unify with the same type arguments, consistently
+with host-boundary assignability.
+
 Declared type parameters are rigid static types. A `TVar` in a sidecar
 signature, record application, callback, collection, option, equality
 operation, or zero-argument function result must remain the same type variable;

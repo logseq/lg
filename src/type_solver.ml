@@ -636,6 +636,16 @@ let rec unify substitutions left right =
                 Result.bind result (fun substitutions ->
                     unify substitutions left right))
               (Ok substitutions) fields)
+    | TNamed_record record, TOcaml name
+    | TOcaml name, TNamed_record record
+      when (record.type_name = name || Type_id.name record.type_id = name)
+           && record.type_arguments = [] ->
+        Ok substitutions
+    | TNamed_record record, TOcaml_app (name, arguments)
+    | TOcaml_app (name, arguments), TNamed_record record
+      when (record.type_name = name || Type_id.name record.type_id = name)
+           && List.length record.type_arguments = List.length arguments ->
+        unify_lists substitutions record.type_arguments arguments
     | ( TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]),
         (TRecord fields | TNamed_record { fields; nominal = false; _ }) )
     | ( (TRecord fields | TNamed_record { fields; nominal = false; _ }),

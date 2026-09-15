@@ -12400,6 +12400,9 @@ val optional_callback : apply:(?prefix:string -> string -> string) -> string -> 
 type operation = { operation_id : string; title : string }
 type marker = { operation_id : string }
 val collect : stage:(operation -> unit) -> pending:(unit -> operation list) -> int
+type node = [ `Assoc of (string * node) list | `Text of string | `Null ]
+val node : unit -> node
+val children : unit -> node list
 |};
   write_file ml
     {|
@@ -12420,6 +12423,9 @@ let collect ~stage ~pending =
   stage { operation_id = "a"; title = "first" };
   stage { operation_id = "a"; title = "updated" };
   List.length (pending ())
+type node = [ `Assoc of (string * node) list | `Text of string | `Null ]
+let node () = `Assoc [ "title", `Text "kept"; "child", `Null ]
+let children () = [ node () ]
 |};
   Fun.protect
     ~finally:(fun () ->
@@ -12488,6 +12494,16 @@ let collect ~stage ~pending =
                           (remove #(= (:operation_id %) (:operation_id operation)) operations))))
                     (Stdlib.ignore 0))
            :pending (fn [] (apply list (reverse @staged)))))
+(defn count-entries [^:map<string;Unit_tail_fixture.node> entries] (count entries))
+(defn decode-node [node]
+  (match node
+    (tag Assoc fields) (Ok (count-entries (into {} (reverse fields))))
+    _ (Error "not an object")))
+(def decoded-nodes
+  (reduce (fn [result child]
+            (let* [values result value (decode-node child)] (Ok (conj values value))))
+          (Ok []) (fixture/children)))
+(println (match decoded-nodes (Ok values) (nth values 0) _ 0))
 |}
       in
       let native_source = compile_string_with_stdlib source |> expect_ok in
@@ -12518,9 +12534,9 @@ let collect ~stage ~pending =
           failwith
             (Printf.sprintf "generated OCaml did not run, exit code %d" code));
       let actual = read_file output_path in
-      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n" then
+      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n2\n" then
         failwith
-          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n" actual))
+          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n2\n" actual))
 
 let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
   let source =
@@ -46997,6 +47013,77 @@ let () =
 |});
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_type_solver_unifies_named_host_records () =
+  let open Lg.Types in
+  let record = {
+    type_id = Lg.Type_id.create ~owner:["Fixture"] ~name:"entry";
+    nominal = true; extensible = false; type_name = "Fixture.entry";
+    type_parameters = []; type_arguments = []; set_module_name = ""; fields = [];
+  } in
+  let named = TNamed_record record in
+  List.iter (fun (left, right) ->
+    match Lg.Type_solver.unify Lg.Type_solver.empty left right with
+    | Ok _ -> ()
+    | Error _ -> failwith "named host record must unify with its opaque spelling")
+    [named, TOcaml "Fixture.entry"; TOcaml "Fixture.entry", named];
+  (match Lg.Type_solver.unify Lg.Type_solver.empty named (TOcaml "Other.entry") with
+   | Error _ -> ()
+   | Ok _ -> failwith "unrelated host record names must not unify");
+  let generic = TNamed_record {record with
+    type_parameters = ["value"]; type_arguments = [TVar "value"]} in
+  match Lg.Type_solver.unify Lg.Type_solver.empty generic
+          (TOcaml_app ("Fixture.entry", [TInt])) with
+  | Ok substitutions ->
+      if not (equal (Lg.Type_solver.apply substitutions (TVar "value")) TInt) then
+        failwith "host record arguments must retain their substitutions"
+  | Error _ -> failwith "generic named host record must unify with its application"
+
+let test_result_callback_record_constraints_through_try () =
+  let source = {|
+(type-record response (status :int) (body :string))
+(type-record block (status :option<string>) (title :string))
+(type-record prepared (path :string) (rows :int))
+(defn workflow-result [code result]
+  (match result
+    (Ok value) (Ok value)
+    (Error message) (Error (tuple code message))))
+(defn prepare [encrypt]
+  (let* [_ (encrypt "source")]
+    (Ok (record prepared (path "payload") (rows 3)))))
+(defn upload [send cleanup]
+  (let* [encrypt (Ok (fn [value] (Ok value)))
+         prepared (prepare encrypt)]
+    (try
+      (let* [response (send (:path prepared))]
+        (if (<= 200 (:status response) 299)
+          (do (str (:rows prepared)) (Ok (:body response)))
+          (Error (if (= "" (:body response))
+                   (format "HTTP %d" (:status response))
+                   (:body response)))))
+      (finally (cleanup)))))
+(def events (atom []))
+(defn clean [] (swap! events conj "cleanup"))
+(println (= (Ok "done")
+            (upload (fn [_] (Ok (record response (status 201) (body "done")))) clean)))
+(println (= (Error "offline") (upload (fn [_] (Error "offline")) clean)))
+(println (= (Error "HTTP 500")
+            (upload (fn [_] (Ok (record response (status 500) (body "")))) clean)))
+(println (= 3 (count @events)))
+(def wrapped (workflow-result "transport" (Ok (record response (status 200) (body "wrapped")))))
+(println (match wrapped (Ok response) (= "wrapped" (:body response)) _ false))
+(defn response-body [response] (:body response))
+(defn workflow [send]
+  (let* [response (workflow-result "transport" (send "payload"))]
+    (Ok (response-body response))))
+(println (= (Ok "wrapped")
+            (workflow (fn [_] (Ok (record response (status 200) (body "wrapped")))))))
+(println (= (Ok 42) (workflow-result "number" (Ok 42))))
+(println (= (Error (tuple "transport" "offline")) (workflow-result "transport" (Error "offline"))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "result_callback_record_try" "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_result_let_star_rejects_invalid_bindings () =
   Lg.Compiler.compile_string {|(def x (let* [a (Ok 1) b] (Ok a)))|}
   |> expect_error_contains "let* bindings require an even number of forms";
@@ -51874,6 +51961,8 @@ let tests =
     ( "let shadow inference preserves lexical scope", test_let_shadow_inference_preserves_lexical_scope );
     ( "let destructuring infers heterogeneous tuple from body", test_let_destructuring_infers_heterogeneous_tuple_from_body );
     ( "result let star sequences and short circuits", test_result_let_star_sequences_and_short_circuits );
+    ( "type solver unifies named host records", test_type_solver_unifies_named_host_records );
+    ( "result callback record constraints through try", test_result_callback_record_constraints_through_try );
     ( "result let star rejects invalid bindings", test_result_let_star_rejects_invalid_bindings );
     ( "nullable forwarding preserves sequential capabilities",
       test_nullable_forwarding_preserves_sequential_capabilities );

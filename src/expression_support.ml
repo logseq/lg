@@ -774,8 +774,10 @@ let rec merge_branch_types left right =
            && List.length left_args = List.length right_args ->
         let merge_host_arg left right =
           match (left, right) with
-          | (TUnknown | TMeta _ | TVar _), ty
-          | ty, (TUnknown | TMeta _ | TVar _) ->
+          (* An absent constructor payload must not erase a shared type variable. *)
+          | TUnknown, ty | ty, TUnknown -> Some ty
+          | (TMeta _ | TVar _), ty
+          | ty, (TMeta _ | TVar _) ->
               Some ty
           | _ -> merge_branch_types left right
         in

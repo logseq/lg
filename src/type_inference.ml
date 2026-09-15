@@ -4479,16 +4479,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | [] -> Ok params
       | [ form ] -> infer_form params form
       | FList [ FSymbol ("Ok" | "Error" as constructor); FSymbol binding ] :: result :: rest
-        when not (zero_arity_constructor binding)
-             && (match target with
-                 | FSymbol name -> string_mem_assoc name params
-                 | _ -> false) ->
+        when not (zero_arity_constructor binding) ->
           let success, error =
             match inferred_call_return_type ~lookup_function_ty params target with
             | TOcaml_app ("result", [ success; error ]) -> (success, error)
             | _ -> (fresh_type_variable "success", fresh_type_variable "error")
           in
           let payload = if constructor = "Ok" then success else error in
+          let initial_payload = payload in
           let shadowed = string_assoc_opt binding params in
           let branch_params = (binding, payload) :: string_remove_assoc binding params in
           Result.bind (infer_form branch_params result) (fun branch_params ->
@@ -4504,7 +4502,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               let arguments =
                 if constructor = "Ok" then [ payload; error ] else [ success; payload ]
               in
-              Result.bind (infer_expected (TOcaml_app ("result", arguments)) params target)
+              let local_target = match target with
+                | FSymbol name | FList (FSymbol name :: _) -> string_mem_assoc name params
+                | _ -> false in
+              Result.bind
+                (if local_target || not (Types.equal initial_payload payload) then
+                   infer_expected (TOcaml_app ("result", arguments)) params target
+                 else infer_form params target)
                 (fun params -> infer_clauses params rest))
       | FList [ FSymbol "Some"; FSymbol binding ] :: result :: rest
         when not (zero_arity_constructor binding) -> (
