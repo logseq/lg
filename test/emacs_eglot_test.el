@@ -360,7 +360,7 @@
 (ert-deftest lg-mode-eval-buffer-runs-through-lg ()
   (lg-test--with-lg-buffer "(println 42)\n"
     (let ((output (lg-eval-buffer)))
-      (should (string-match-p "\n42\n" output)))))
+      (should (string-match-p "\\(?:\\`\\|\n\\)42\n" output)))))
 
 (ert-deftest lg-mode-eval-region-runs-through-lg ()
   (lg-test--with-lg-buffer "(println 1)\n(println 2)\n"
@@ -368,6 +368,6 @@
     (forward-line 1)
     (let ((output (lg-eval-region (point) (point-max))))
       (should (not (string-match-p "\n1\n" output)))
-      (should (string-match-p "\n2\n" output)))))
+      (should (string-match-p "\\(?:\\`\\|\n\\)2\n" output)))))
 
 (ert-run-tests-batch-and-exit)

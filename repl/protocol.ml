@@ -22,6 +22,7 @@ type completions_request = {
 
 type request =
   | Evaluate of source_request
+  | Load_file of source_request
   | Type_of of source_request
   | Lookup of lookup_request
   | Completions of completions_request
@@ -210,6 +211,7 @@ let request_to_json request =
   `Assoc
     (match request with
     | Evaluate request -> source_fields "evaluate" request
+    | Load_file request -> source_fields "load_file" request
     | Type_of request -> source_fields "type_of" request
     | Lookup request ->
         query_fields "lookup" "symbol" request.id request.symbol
@@ -229,6 +231,7 @@ let request_of_json json =
       | Ok (), Ok op -> (
           match op with
           | "evaluate" -> Result.map (fun value -> Evaluate value) (source_request fields)
+          | "load_file" -> Result.map (fun value -> Load_file value) (source_request fields)
           | "type_of" -> Result.map (fun value -> Type_of value) (source_request fields)
           | "lookup" ->
               query_request "symbol" fields (fun id symbol expected_namespace ->

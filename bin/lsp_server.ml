@@ -2,7 +2,7 @@ open Yojson.Safe.Util
 
 type document = {
   text : string;
-  analysis : (Lg.Language_service.t, Lg.Error.t) result;
+  analysis : (Lg.Language_service.t, Lg.Error.t) result option;
   recovered_analysis : Lg.Language_service.t option;
 }
 
@@ -368,17 +368,20 @@ let analyze_document uri text =
   let analysis = Lg.Language_service.analyze_from_state ~filename:uri state text in
   {
     text;
-    analysis;
+    analysis = Some analysis;
     recovered_analysis =
       (match analysis with
       | Ok analysis -> Some analysis
       | Error _ -> Lg.Language_service.recover_completed_prefix ~filename:uri text);
   }
 
+let unanalyzed_document text = { text; analysis = None; recovered_analysis = None }
+
 let semantic_analysis document =
   match document.analysis with
-  | Ok analysis -> Some analysis
-  | Error _ -> document.recovered_analysis
+  | Some (Ok analysis) -> Some analysis
+  | Some (Error _) -> document.recovered_analysis
+  | None -> document.recovered_analysis
 
 let lg_source_file path =
   Filename.check_suffix path ".cljc" || Filename.check_suffix path ".lgi"
@@ -435,12 +438,12 @@ let rebuild_workspace ?changed_uri () =
               | None -> ()
               | Some error ->
                   let recovered = analyze_document uri text in
-                  let document = { recovered with analysis = Error error } in
+                  let document = { recovered with analysis = Some (Error error) } in
                   Hashtbl.replace workspace_documents uri document;
                   if Hashtbl.mem documents uri then
                     Hashtbl.replace documents uri document)
           | Some analysis ->
-          let document = { text; analysis = Ok analysis; recovered_analysis = Some analysis } in
+          let document = { text; analysis = Some (Ok analysis); recovered_analysis = Some analysis } in
           Hashtbl.replace workspace_documents uri document;
           if Hashtbl.mem documents uri then Hashtbl.replace documents uri document)
         sources;
@@ -471,7 +474,7 @@ let refresh_workspace_document ?text_override index uri =
         | Ok analysis -> Some analysis
         | Error _ -> Lg.Language_service.recover_completed_prefix ~filename:uri text
       in
-      let document = { text; analysis; recovered_analysis } in
+      let document = { text; analysis = Some analysis; recovered_analysis } in
       Hashtbl.replace workspace_documents uri document;
       if Hashtbl.mem documents uri then Hashtbl.replace documents uri document
 
@@ -571,6 +574,31 @@ let ensure_document uri =
       | Some source ->
           ignore (update_current_workspace_document uri source);
           find_document uri)
+
+let ensure_analyzed_document uri document =
+  match document.analysis with
+  | Some _ -> document
+  | None ->
+      if Hashtbl.mem workspace_sources uri then (
+        ignore (update_current_workspace_document uri document.text);
+        find_document uri |> Option.value ~default:document)
+      else
+        let document = analyze_document uri document.text in
+        Hashtbl.replace documents uri document;
+        document
+
+let has_analyzed_workspace_documents () =
+  Hashtbl.length workspace_documents > 0
+
+let eager_workspace_file_limit = 16
+
+let should_eager_analyze_workspace () =
+  Hashtbl.length workspace_sources <= eager_workspace_file_limit
+
+let lazy_large_workspace_document uri document =
+  Hashtbl.mem workspace_sources uri
+  && Option.is_none document.analysis
+  && not (should_eager_analyze_workspace ())
 
 let all_documents () =
   let combined = Hashtbl.copy workspace_documents in
@@ -782,7 +810,7 @@ let diagnostic text ?(severity = 1) ?location ?code ?phase ?title
 
 let diagnostics document =
   match document.analysis with
-  | Ok analysis ->
+  | Some (Ok analysis) ->
       List.map
         (fun (item : Lg.Compiler.diagnostic) ->
           match item.severity with
@@ -790,10 +818,11 @@ let diagnostics document =
               diagnostic document.text ~severity:2 ?location:item.location
                 ~code:item.code ~phase:item.phase item.message)
         (Lg.Language_service.diagnostics analysis)
-  | Error err ->
+  | Some (Error err) ->
       [ diagnostic document.text ?location:err.location ~code:err.code
           ~phase:err.phase ~title:err.title ~related:err.related ~hints:err.hints
           ?type_mismatch:err.type_mismatch err.message ]
+  | None -> []
 
 let write_packet json =
   let body = Yojson.Safe.to_string json in
@@ -972,21 +1001,33 @@ let document_position params document =
   let character = position |> member "character" |> to_int in
   offset_of_position document.text line character
 
-let hover_result document offset =
-  match semantic_analysis document with
-  | None -> `Null
-  | Some analysis -> (
-      match Lg.Language_service.hover analysis ~offset with
+let hover_json document (hover : Lg.Language_service.hover) =
+  `Assoc
+    [ ( "contents",
+        `Assoc
+          [ ("kind", `String "plaintext"); ("value", `String hover.contents) ]
+      );
+      ( "range",
+        range_of_offsets document.text hover.range.start_offset
+          hover.range.end_offset ) ]
+
+let hover_result uri document offset =
+  match
+    Lg.Language_service.source_quick_hover ~state:(state_for_uri uri)
+      ~source:document.text ~offset
+  with
+  | Some hover -> hover_json document hover
+  | None -> (
+      let document =
+        if lazy_large_workspace_document uri document then document
+        else ensure_analyzed_document uri document
+      in
+      match semantic_analysis document with
       | None -> `Null
-      | Some hover ->
-          `Assoc
-            [ ( "contents",
-                `Assoc
-                  [ ("kind", `String "plaintext");
-                    ("value", `String hover.contents) ] );
-              ( "range",
-                range_of_offsets document.text hover.range.start_offset
-                  hover.range.end_offset ) ])
+      | Some analysis -> (
+          match Lg.Language_service.hover analysis ~offset with
+          | None -> `Null
+          | Some hover -> hover_json document hover))
 
 let signature_help_result document offset =
   match semantic_analysis document with
@@ -1010,12 +1051,22 @@ let signature_help_result document offset =
               ("activeParameter", `Int signature.active_parameter) ])
 
 let definition_result uri document offset =
-  match semantic_analysis document with
+  let location =
+    Lg.Language_service.source_quick_definition ~filename:uri
+      ~state:(state_for_uri uri) ~source:document.text ~offset
+  in
+  let location =
+    match location with
+    | Some _ as location -> location
+    | None ->
+        let document = ensure_analyzed_document uri document in
+        (match semantic_analysis document with
+        | Some analysis -> Lg.Language_service.definition analysis ~offset
+        | None -> None)
+  in
+  match location with
   | None -> `Null
-  | Some analysis -> (
-      match Lg.Language_service.definition analysis ~offset with
-      | None -> `Null
-      | Some location ->
+  | Some location ->
           let filename = location.Location.loc_start.Lexing.pos_fname in
           let definition_uri =
             if String.starts_with ~prefix:"file://" filename then filename
@@ -1025,24 +1076,38 @@ let definition_result uri document offset =
           let definition_text =
             find_document definition_uri
             |> Option.map (fun document -> document.text)
-            |> Option.value ~default:document.text
+            |> (function
+                 | Some text -> text
+                 | None -> (
+                     let path = path_of_file_uri definition_uri in
+                     try read_file path with Sys_error _ -> document.text))
           in
           `Assoc
             [ ("uri", `String definition_uri);
-              ("range", range_of_location definition_text location) ])
+              ("range", range_of_location definition_text location) ]
 
-let completion_result document offset =
-  match semantic_analysis document with
-  | None -> `List []
-  | Some analysis ->
-      Lg.Language_service.completions analysis ~offset
-      |> List.map (fun (item : Lg.Language_service.completion_item) ->
-             `Assoc
-               [ ("label", `String item.label);
-                 ("kind", `Int 6);
-                 ("detail", `String item.detail) ])
-      |> fun items ->
-      `Assoc [ ("isIncomplete", `Bool false); ("items", `List items) ]
+let completion_items_json items =
+  items
+  |> List.map (fun (item : Lg.Language_service.completion_item) ->
+         `Assoc
+           [ ("label", `String item.label);
+             ("kind", `Int 6);
+             ("detail", `String item.detail) ])
+  |> fun items ->
+  `Assoc [ ("isIncomplete", `Bool false); ("items", `List items) ]
+
+let completion_result uri document offset =
+  let quick_items =
+    Lg.Language_service.source_quick_completions ~state:(state_for_uri uri)
+      ~source:document.text ~offset
+  in
+  if quick_items <> [] then completion_items_json quick_items
+  else
+    match semantic_analysis document with
+    | None -> completion_items_json []
+    | Some analysis ->
+        Lg.Language_service.completions analysis ~offset
+        |> completion_items_json
 
 let formatting_result document =
   match Lg.Formatter.format document.text with
@@ -1059,8 +1124,8 @@ let formatting_result document =
 
 let code_actions_result uri document =
   match document.analysis with
-  | Ok _ -> `List []
-  | Error error ->
+  | Some (Ok _) | None -> `List []
+  | Some (Error error) ->
       error.fixes
       |> List.map (fun (fix : Lg.Error.fix) ->
              `Assoc
@@ -1129,11 +1194,19 @@ let lexical_references symbol text =
              | _ -> None)
 
 let references_result uri document offset =
-  match semantic_analysis document with
-  | None -> `List []
-  | Some analysis -> (
+  let quick_locations =
+    Lg.Language_service.source_fallback_references ~source:document.text ~offset
+    |> List.map (location_json uri document.text)
+  in
+  if quick_locations <> [] then `List quick_locations
+  else
+    let document = ensure_analyzed_document uri document in
+    match semantic_analysis document with
+    | None -> `List []
+    | Some analysis -> (
       match Lg.Language_service.semantic_key_at analysis ~offset with
-      | None -> `List []
+      | None ->
+          `List []
       | Some key ->
           let target_symbol = symbol_at_offset document offset in
           Hashtbl.fold
@@ -1407,8 +1480,14 @@ let handle_notification method_ params =
       let uri = document |> member "uri" |> to_string in
       let text = document |> member "text" |> to_string in
       if Hashtbl.mem workspace_sources uri then (
-        update_current_workspace_document uri text
-        |> List.iter publish_current_diagnostics)
+        if should_eager_analyze_workspace () then
+          update_current_workspace_document uri text
+          |> List.iter publish_current_diagnostics
+        else (
+          Hashtbl.replace workspace_sources uri text;
+          Hashtbl.replace documents uri (unanalyzed_document text);
+          reset_unanalyzed_workspace_index ();
+          publish_current_diagnostics uri))
       else (
         let document = analyze_document uri text in
         Hashtbl.replace documents uri document;
@@ -1420,11 +1499,18 @@ let handle_notification method_ params =
       | change :: _ ->
           let text = change |> member "text" |> to_string in
           if Hashtbl.mem workspace_sources uri then (
-            let affected = update_current_workspace_document uri text in
-            let affected =
-              if List.mem uri affected then affected else uri :: affected
-            in
-            List.iter publish_current_diagnostics affected)
+            let update_semantics = has_analyzed_workspace_documents () in
+            Hashtbl.replace workspace_sources uri text;
+            if update_semantics then
+              let affected = rebuild_workspace () in
+              let affected =
+                if List.mem uri affected then affected else uri :: affected
+              in
+              List.iter publish_current_diagnostics affected
+            else (
+              Hashtbl.replace documents uri (unanalyzed_document text);
+              reset_unanalyzed_workspace_index ();
+              publish_current_diagnostics uri))
           else (
             let document = analyze_document uri text in
             Hashtbl.replace documents uri document;
@@ -1504,11 +1590,12 @@ let rec loop shutdown_requested =
             | Some document ->
                 let offset = document_position params document in
                 (match method_ with
-                | "textDocument/hover" -> hover_result document offset
+                | "textDocument/hover" ->
+                    hover_result uri document offset
                 | "textDocument/definition" ->
                     definition_result uri document offset
                 | "textDocument/completion" ->
-                    completion_result document offset
+                    completion_result uri document offset
                 | "textDocument/signatureHelp" ->
                     signature_help_result document offset
                 | _ -> `Null)

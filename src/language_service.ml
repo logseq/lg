@@ -58,6 +58,7 @@ type document_symbol = {
 }
 
 type t = {
+  filename : string;
   source : string;
   tokens : Ast.token list;
   forms : Ast.located_form list;
@@ -75,7 +76,7 @@ let analyze ~filename source =
       | Ok tokens -> (
           match Parser.parse_located ~eof_offset:(String.length source) tokens with
           | Error _ as err -> err
-          | Ok forms -> Ok { source; tokens; forms; compiler }))
+          | Ok forms -> Ok { filename; source; tokens; forms; compiler }))
 
 let analyze_from_state ?(target = Target.default) ~filename state source =
   match
@@ -89,7 +90,7 @@ let analyze_from_state ?(target = Target.default) ~filename state source =
       | Ok tokens -> (
           match Parser.parse_located ~eof_offset:(String.length source) tokens with
           | Error _ as err -> err
-          | Ok forms -> Ok { source; tokens; forms; compiler }))
+          | Ok forms -> Ok { filename; source; tokens; forms; compiler }))
 
 let recover_completed_prefix ~filename source =
   match Lexer.tokenize source with
@@ -129,7 +130,8 @@ let analyze_workspace_with_errors_using analyze_compiler sources =
                 (fun (filename, source, tokens, forms) ->
                   compiler filename
                   |> Option.map (fun compiler ->
-                         (filename, { source; tokens; forms; compiler })))
+                         ( filename,
+                           { filename; source; tokens; forms; compiler } )))
                 parsed,
               errors ))
 
@@ -377,6 +379,14 @@ let source_symbol_basename name =
   | None -> name
   | Some index -> String.sub name (index + 1) (String.length name - index - 1)
 
+let is_core_symbol_candidate name =
+  match String.rindex_opt name '/' with
+  | None -> true
+  | Some index ->
+      let qualifier = String.sub name 0 index in
+      String.equal qualifier "clojure.core"
+      || String.equal qualifier "cljs.core"
+
 let identifier_name_matches source_name path =
   let expected = source_symbol_basename source_name |> Names.sanitize_name in
   let actual = Path.name path |> Names.sanitize_name in
@@ -414,6 +424,11 @@ type semantic_key =
 type semantic_identity = {
   key : semantic_key;
   definition_location : Location.t;
+}
+
+type semantic_occurrence = {
+  identity : semantic_identity;
+  range : Ast.source_span;
 }
 
 let compare_semantic_key left right =
@@ -780,6 +795,221 @@ let module_type_identity_at analysis offset source_name =
   iterator.structure iterator analysis.compiler.typed_structure;
   best_semantic_identity best
 
+let ocaml_module_path_of_namespace namespace =
+  let ocaml_prefix = "ocaml." in
+  if String.starts_with ~prefix:ocaml_prefix namespace then
+    String.sub namespace (String.length ocaml_prefix)
+      (String.length namespace - String.length ocaml_prefix)
+  else Names.module_path_to_ocaml namespace
+
+let starts_with_uppercase name =
+  String.length name > 0
+  &&
+  let first = name.[0] in
+  first >= 'A' && first <= 'Z'
+
+let is_ocaml_module_path name =
+  match String.split_on_char '.' name with
+  | first :: _ -> starts_with_uppercase first
+  | [] -> false
+
+let module_identity_by_ocaml_path analysis module_path =
+  match
+    Env.find_module_by_name (longident_of_dotted_name module_path)
+      analysis.compiler.typed_structure.str_final_env
+  with
+  | _path, declaration ->
+      Some
+        {
+          key =
+            Ocaml_uid (Lg_compiler_support.Ocaml_module.uid declaration);
+          definition_location =
+            Lg_compiler_support.Ocaml_module.location declaration;
+        }
+  | exception _ -> None
+
+let value_identity_by_ocaml_path analysis value_path =
+  match
+    Env.find_value_by_name (longident_of_dotted_name value_path)
+      analysis.compiler.typed_structure.str_final_env
+  with
+  | _, description ->
+      Some
+        {
+          key = Ocaml_uid description.val_uid;
+          definition_location = description.val_loc;
+        }
+  | exception _ -> None
+
+let constructor_identity_by_ocaml_path analysis constructor_path =
+  match
+    Env.lookup_constructor ~use:false ~loc:Location.none Env.Positive
+      (longident_of_dotted_name constructor_path)
+      analysis.compiler.typed_structure.str_final_env
+  with
+  | description ->
+      Some
+        {
+          key = Ocaml_uid description.cstr_uid;
+          definition_location = description.cstr_loc;
+        }
+  | exception _ -> None
+
+let value_location_by_ocaml_path env value_path =
+  match Env.find_value_by_name (longident_of_dotted_name value_path) env with
+  | _, description -> Some description.val_loc
+  | exception Not_found -> None
+
+let constructor_location_by_ocaml_path env constructor_path =
+  match
+    Env.lookup_constructor ~use:false ~loc:Location.none Env.Positive
+      (longident_of_dotted_name constructor_path)
+      env
+  with
+  | description -> Some description.cstr_loc
+  | exception _ -> None
+
+let value_hover_by_ocaml_path env source_name range value_path =
+  match Env.find_value_by_name (longident_of_dotted_name value_path) env with
+  | _, description ->
+      Some
+        {
+          contents =
+            source_symbol_basename source_name ^ " : "
+            ^ print_type env description.val_type;
+          range;
+        }
+  | exception Not_found -> None
+
+let constructor_hover_by_ocaml_path env source_name range constructor_path =
+  match
+    Env.lookup_constructor ~use:false ~loc:Location.none Env.Positive
+          (longident_of_dotted_name constructor_path)
+          env
+  with
+  | description ->
+      let argument_types = List.map (print_type env) description.cstr_args in
+      let result_type = print_type env description.cstr_res in
+      let signature =
+        match argument_types with
+        | [] -> result_type
+        | _ -> String.concat " -> " (argument_types @ [ result_type ])
+      in
+      Some
+        {
+          contents =
+            source_symbol_basename source_name ^ " : " ^ signature;
+          range;
+        }
+  | exception _ -> None
+
+let ocaml_alias_module_path analysis alias =
+  let state = analysis.compiler.typecheck_state in
+  match
+    Compiler_environment.resolve_namespace_alias ~scope:state.scope alias
+      state.env
+  with
+  | Some namespace -> Some (ocaml_module_path_of_namespace namespace)
+  | None -> None
+
+let ocaml_alias_module_identity_at analysis alias =
+  ocaml_alias_module_path analysis alias
+  |> fun module_path ->
+  Option.bind module_path (module_identity_by_ocaml_path analysis)
+
+let ocaml_alias_member_identity_at analysis alias member =
+  ocaml_alias_module_path analysis alias
+  |> fun module_path ->
+  Option.bind module_path (fun module_path ->
+         let value_path = module_path ^ "." ^ Names.ocaml_member_name member in
+         match value_identity_by_ocaml_path analysis value_path with
+         | Some _ as identity -> identity
+         | None ->
+             constructor_identity_by_ocaml_path analysis
+               (module_path ^ "." ^ member))
+
+let require_alias_occurrence_at analysis offset =
+  let contains (span : Ast.source_span) =
+    span.start_offset <= offset && offset < span.end_offset
+  in
+  let with_fallback_location fallback identity =
+    if identity.definition_location.Location.loc_ghost then
+      { identity with definition_location = fallback }
+    else identity
+  in
+  let rec alias_target = function
+    | { Ast.form = Ast.FKeyword (":as" | "as") | FSymbol (":as" | "as"); _ }
+      :: { form = FSymbol alias; span; _ }
+      :: _ when contains span ->
+        Some alias
+    | _ :: rest -> alias_target rest
+    | [] -> None
+  in
+  let require_spec = function
+    | { Ast.form = Ast.FVector
+          (Ast.FSymbol namespace :: _);
+        span = vector_span;
+        children =
+          ({ form = FSymbol namespace_symbol; span = namespace_span; _ } :: rest);
+        _ }
+      when String.equal namespace namespace_symbol
+           && (contains namespace_span || contains vector_span) ->
+        let alias =
+          match alias_target rest with
+          | Some alias -> Some alias
+          | None when contains namespace_span -> Some namespace
+          | None -> None
+        in
+        Option.bind alias (fun alias ->
+            module_identity_by_ocaml_path analysis
+              (ocaml_module_path_of_namespace namespace)
+            |> Option.map (fun identity ->
+                   let identity =
+                     with_fallback_location
+                       (Parser.location_of_span namespace_span)
+                       identity
+                   in
+                   {
+                     identity;
+                     range =
+                       if contains namespace_span then namespace_span
+                       else
+                         rest
+                         |> List.find_map (fun child ->
+                                match child.Ast.form with
+                                | FSymbol candidate when String.equal candidate alias ->
+                                    Some child.span
+                                | _ -> None)
+                         |> Option.value ~default:namespace_span;
+                   }))
+    | _ -> None
+  in
+  let clause_is_require = function
+    | { Ast.form =
+          FList
+            ((FKeyword "require" | FKeyword ":require" | FSymbol ":require"
+             | FSymbol "require")
+             :: _);
+        _ } ->
+        true
+    | _ -> false
+  in
+  let rec find_require_spec form =
+    match require_spec form with
+    | Some _ as occurrence -> occurrence
+    | None -> List.find_map find_require_spec form.Ast.children
+  in
+  let find form =
+    match form.Ast.form with
+    | FList (FSymbol "ns" :: _namespace :: _) ->
+        form.children
+        |> List.filter clause_is_require
+        |> List.find_map find_require_spec
+    | FList (FSymbol "require" :: _) -> find_require_spec form
+    | _ -> None
+  in
+  List.find_map find analysis.forms
+
 let protocol_registry analysis =
   analysis.compiler.typecheck_state.env |> Compiler_environment.protocols
 
@@ -939,11 +1169,6 @@ let source_symbol_role_at analysis offset =
   in
   List.find_map (find "") analysis.forms
 
-type semantic_occurrence = {
-  identity : semantic_identity;
-  range : Ast.source_span;
-}
-
 let member_identity_at analysis offset source_name =
   match identifier_identity_at analysis offset source_name with
   | Some _ as identity -> identity
@@ -961,12 +1186,18 @@ let member_identity_at analysis offset source_name =
 let semantic_occurrence_at analysis offset =
   match token_at analysis offset with
   | Some ({ desc = Symbol source_name; span; _ } as token) -> (
+      match require_alias_occurrence_at analysis offset with
+      | Some _ as occurrence -> occurrence
+      | None -> (
       match qualified_symbol_parts token source_name with
       | Some (qualifier, qualifier_range, member, _)
         when offset < qualifier_range.end_offset ->
           (if protocol_defines_method analysis qualifier member then
              protocol_identity_at analysis qualifier
-           else module_identity_at analysis offset qualifier)
+           else
+             match ocaml_alias_module_identity_at analysis qualifier with
+             | Some _ as identity -> identity
+             | None -> module_identity_at analysis offset qualifier)
           |> Option.map (fun identity -> { identity; range = qualifier_range })
       | qualification ->
           let range =
@@ -982,8 +1213,14 @@ let semantic_occurrence_at analysis offset =
             match
               match qualification with
               | Some (qualifier, _, _, _) ->
-                  method_identity_at analysis offset ~protocol_name:qualifier
-                    method_name
+                  (match
+                     method_identity_at analysis offset ~protocol_name:qualifier
+                       method_name
+                   with
+                  | Some _ as identity -> identity
+                  | None ->
+                      ocaml_alias_member_identity_at analysis qualifier
+                        method_name)
               | None -> (
                   match source_symbol_role_at analysis offset with
                   | Some Module_name ->
@@ -1006,7 +1243,7 @@ let semantic_occurrence_at analysis offset =
                     | Some _ as identity -> identity
                     | None -> module_type_identity_at analysis offset source_name))
           in
-          Option.map (fun identity -> { identity; range }) identity)
+          Option.map (fun identity -> { identity; range }) identity))
   | Some { desc = Keyword source_name; span; _ }
     when String.length source_name > 1 ->
       let field_name = String.sub source_name 1 (String.length source_name - 1) in
@@ -1020,12 +1257,426 @@ let semantic_identity_at analysis offset =
   semantic_occurrence_at analysis offset
   |> Option.map (fun occurrence -> occurrence.identity)
 
+let path_of_file_uri uri =
+  if String.starts_with ~prefix:"file://" uri then
+    String.sub uri 7 (String.length uri - 7)
+  else uri
+
+let rec find_repo_root_opt directory =
+  if Sys.file_exists (Filename.concat directory "dune-project") then
+    Some directory
+  else
+    let parent = Filename.dirname directory in
+    if String.equal parent directory then None else find_repo_root_opt parent
+
+let existing_absolute_relative_file root filename =
+  let candidate = Filename.concat root filename in
+  if Sys.file_exists candidate then Some candidate else None
+
+let ocaml_standard_library_file filename =
+  if Filename.is_relative filename then
+    existing_absolute_relative_file Config.standard_library filename
+  else None
+
+let normalize_definition_location_for_filename context_filename location =
+  let filename = location.Location.loc_start.Lexing.pos_fname in
+  if
+    String.equal filename ""
+    || Filename.is_relative filename = false
+    || String.starts_with ~prefix:"file://" filename
+  then location
+  else
+    match
+      context_filename |> path_of_file_uri |> Filename.dirname |> find_repo_root_opt
+    with
+    | None -> location
+    | Some root ->
+        let absolute =
+          match existing_absolute_relative_file root filename with
+          | Some path -> path
+          | None -> (
+              match ocaml_standard_library_file filename with
+              | Some path -> path
+              | None -> Filename.concat root filename)
+        in
+        let update_position position =
+          { position with Lexing.pos_fname = absolute }
+        in
+        {
+          location with
+          Location.loc_start = update_position location.loc_start;
+          loc_end = update_position location.loc_end;
+        }
+
+let normalize_definition_location analysis location =
+  normalize_definition_location_for_filename analysis.filename location
+
+let source_line_starts source =
+  let starts = ref [ 0 ] in
+  String.iteri
+    (fun index char ->
+      if char = '\n' then starts := (index + 1) :: !starts)
+    source;
+  !starts |> List.rev |> Array.of_list
+
+let source_position filename line_starts offset =
+  let rec search low high =
+    if low > high then max 0 (low - 1)
+    else
+      let middle = (low + high) / 2 in
+      if line_starts.(middle) <= offset then search (middle + 1) high
+      else search low (middle - 1)
+  in
+  let line_index = search 0 (Array.length line_starts - 1) in
+  {
+    Lexing.pos_fname = filename;
+    pos_lnum = line_index + 1;
+    pos_bol = line_starts.(line_index);
+    pos_cnum = offset;
+  }
+
+let source_location filename source (span : Ast.source_span) =
+  let line_starts = source_line_starts source in
+  {
+    Location.loc_start =
+      source_position filename line_starts span.start_offset;
+    loc_end = source_position filename line_starts span.end_offset;
+    loc_ghost = false;
+  }
+
+let source_definition_cache = Hashtbl.create 64
+
+let source_definition_location_lexical path source name =
+  let find_substring_from text pattern offset =
+    let pattern_length = String.length pattern in
+    let text_length = String.length text in
+    let limit = text_length - pattern_length in
+    let rec loop index =
+      if index > limit then None
+      else if String.sub text index pattern_length = pattern then Some index
+      else loop (index + 1)
+    in
+    if pattern_length = 0 || offset > limit then None else loop offset
+  in
+  [ "(defn "; "(defn- "; "(def "; "(defonce "; "(defmacro " ]
+  |> List.find_map (fun prefix ->
+         match find_substring_from source (prefix ^ name) 0 with
+         | None -> None
+         | Some start ->
+             let name_start = start + String.length prefix in
+             let name_end = name_start + String.length name in
+             Some
+               (source_location path source
+                  { start_offset = name_start; end_offset = name_end }))
+
+let source_definition_location path source name =
+  let cache_key = (path, Digest.to_hex (Digest.string source), name) in
+  match Hashtbl.find_opt source_definition_cache cache_key with
+  | Some location -> location
+  | None ->
+      let location =
+        source_definition_location_lexical path source name
+      in
+      Hashtbl.add source_definition_cache cache_key location;
+      location
+
+let constructor_definition_cache = Hashtbl.create 64
+
+let constructor_definition_location_lexical path source name =
+  let line_starts = source_line_starts source in
+  let source_length = String.length source in
+  let line_end start =
+    match String.index_from_opt source start '\n' with
+    | Some index -> index
+    | None -> source_length
+  in
+  let is_constructor_delimiter = function
+    | ' ' | '\t' | '\r' | '\n' | '|' | ')' | ';' -> true
+    | _ -> false
+  in
+  let rec find_line index =
+    if index >= Array.length line_starts then None
+    else
+      let start = line_starts.(index) in
+      let limit = line_end start in
+      let rec skip_spaces offset =
+        if offset < limit && (source.[offset] = ' ' || source.[offset] = '\t')
+        then skip_spaces (offset + 1)
+        else offset
+      in
+      let offset = skip_spaces start in
+      let constructor_start =
+        if offset < limit && source.[offset] = '|' then
+          Some (skip_spaces (offset + 1))
+        else
+          match String.index_from_opt source offset '=' with
+          | Some equals when equals < limit -> Some (skip_spaces (equals + 1))
+          | Some _ | None -> None
+      in
+      match constructor_start with
+      | None -> find_line (index + 1)
+      | Some offset ->
+          let name_end = offset + String.length name in
+          if
+            name_end <= limit
+            && String.sub source offset (String.length name) = name
+            && (name_end = limit || is_constructor_delimiter source.[name_end])
+          then
+            Some
+              (source_location path source
+                 { start_offset = offset; end_offset = name_end })
+          else find_line (index + 1)
+  in
+  find_line 0
+
+let constructor_definition_location path source name =
+  let cache_key = (path, Digest.to_hex (Digest.string source), name) in
+  match Hashtbl.find_opt constructor_definition_cache cache_key with
+  | Some location -> location
+  | None ->
+      let location =
+        constructor_definition_location_lexical path source name
+      in
+      Hashtbl.add constructor_definition_cache cache_key location;
+      location
+
+let module_source_cache = Hashtbl.create 32
+
+let source_basename_of_module_name name =
+  let buffer = Buffer.create (String.length name + 8) in
+  String.iteri
+    (fun index char ->
+      if
+        index > 0
+        && char >= 'A'
+        && char <= 'Z'
+        && Buffer.length buffer > 0
+        && Buffer.nth buffer (Buffer.length buffer - 1) <> '_'
+      then Buffer.add_char buffer '_';
+      Buffer.add_char buffer (Char.lowercase_ascii char))
+    name;
+  Buffer.contents buffer
+
+let source_roots_for_filename filename =
+  [
+    Some (Filename.dirname (path_of_file_uri filename));
+    Some (Sys.getcwd ());
+    Some (Filename.dirname Sys.executable_name);
+  ]
+  |> List.filter_map (function
+       | None -> None
+       | Some path -> find_repo_root_opt path)
+  |> List.sort_uniq String.compare
+
+let source_files_for_module filename module_path =
+  let module_name =
+    match List.rev (String.split_on_char '.' module_path) with
+    | name :: _ -> name
+    | [] -> module_path
+  in
+  let basename = source_basename_of_module_name module_name in
+  let cache_key = (source_roots_for_filename filename, basename) in
+  match Hashtbl.find_opt module_source_cache cache_key with
+  | Some paths -> paths
+  | None ->
+      let target_names = [ basename ^ ".mli"; basename ^ ".ml" ] in
+      let skip_dir name =
+        name = "_build" || name = "_opam" || name = "node_modules"
+        || name = ".git" || String.starts_with ~prefix:"." name
+      in
+      let rec scan acc dir =
+        match Sys.readdir dir with
+        | exception Sys_error _ -> acc
+        | entries ->
+            Array.fold_left
+              (fun acc entry ->
+                if skip_dir entry then acc
+                else
+                  let path = Filename.concat dir entry in
+                  match (Sys.is_directory path, List.mem entry target_names) with
+                  | true, _ -> scan acc path
+                  | false, true -> path :: acc
+                  | false, false -> acc
+                  | exception Sys_error _ -> acc)
+              acc entries
+      in
+      let paths =
+        source_roots_for_filename filename
+        |> List.fold_left scan []
+        |> List.sort_uniq String.compare
+        |> List.sort (fun left right ->
+             match (Filename.check_suffix left ".mli", Filename.check_suffix right ".mli") with
+             | true, false -> -1
+             | false, true -> 1
+             | _ -> String.compare left right)
+      in
+      Hashtbl.add module_source_cache cache_key paths;
+      paths
+
+let included_module_paths source =
+  let words =
+    source
+    |> String.map (function '(' | ')' | '\n' | '\r' | '\t' -> ' ' | char -> char)
+    |> String.split_on_char ' '
+    |> List.filter (( <> ) "")
+  in
+  let rec collect acc = function
+    | "include" :: "module" :: "type" :: "of" :: module_name :: rest
+    | "include" :: module_name :: rest ->
+        collect (module_name :: acc) rest
+    | _ :: rest -> collect acc rest
+    | [] -> List.rev acc
+  in
+  collect [] words
+
+let rec external_constructor_source_location ?(visited = []) ~filename module_path
+    constructor_name =
+  if List.mem module_path visited then None
+  else
+    let visited = module_path :: visited in
+    source_files_for_module filename module_path
+    |> List.find_map (fun path ->
+           let source = In_channel.with_open_bin path In_channel.input_all in
+           match constructor_definition_location path source constructor_name with
+           | Some _ as location -> location
+           | None ->
+               included_module_paths source
+               |> List.find_map (fun included ->
+                      external_constructor_source_location ~visited ~filename
+                        included constructor_name))
+
+let stdlib_source_candidates_for_filename filename relative =
+  let unique_paths paths =
+    let seen = Hashtbl.create 8 in
+    paths
+    |> List.filter (fun path ->
+           if Hashtbl.mem seen path then false
+           else (
+             Hashtbl.add seen path ();
+             true))
+  in
+  let roots =
+    [
+      Some (Filename.dirname (path_of_file_uri filename));
+      Some (Sys.getcwd ());
+      Some (Filename.dirname Sys.executable_name);
+    ]
+    |> List.filter_map (function
+         | None -> None
+         | Some path -> find_repo_root_opt path)
+    |> unique_paths
+  in
+  roots
+  |> List.concat_map (fun root ->
+         [
+           Filename.concat root relative;
+           Filename.concat root (Filename.concat "duniverse/lg" relative);
+         ])
+
+let stdlib_source_candidates analysis relative =
+  stdlib_source_candidates_for_filename analysis.filename relative
+
+let stdlib_core_definition_location analysis source_name =
+  let name = source_symbol_basename source_name in
+  stdlib_source_candidates analysis "stdlib/clojure/core.cljc"
+  |> List.find_map (fun path ->
+         if Sys.file_exists path then
+           let source = In_channel.with_open_bin path In_channel.input_all in
+           source_definition_location path source name
+         else None)
+
+let stdlib_core_definition_location_for_filename filename source_name =
+  let name = source_symbol_basename source_name in
+  stdlib_source_candidates_for_filename filename "stdlib/clojure/core.cljc"
+  |> List.find_map (fun path ->
+         if Sys.file_exists path then
+           let source = In_channel.with_open_bin path In_channel.input_all in
+           source_definition_location path source name
+         else None)
+
+let require_alias_target_location analysis alias =
+  let contains_alias child =
+    match child.Ast.form with
+    | FSymbol candidate when String.equal candidate alias -> true
+    | _ -> false
+  in
+  let rec alias_in_spec namespace_span = function
+    | { Ast.form = Ast.FKeyword (":as" | "as") | FSymbol (":as" | "as"); _ }
+      :: alias_form :: _ when contains_alias alias_form ->
+        Some (source_location analysis.filename analysis.source namespace_span)
+    | _ :: rest -> alias_in_spec namespace_span rest
+    | [] -> None
+  in
+  let require_spec form =
+    match (form.Ast.form, form.children) with
+    | FVector (FSymbol _ :: _),
+      ({ Ast.form = FSymbol _; span = namespace_span; _ } :: rest) ->
+        alias_in_spec namespace_span rest
+    | _ -> None
+  in
+  let clause_is_require = function
+    | { Ast.form =
+          FList
+            ((FKeyword "require" | FKeyword ":require" | FSymbol ":require"
+             | FSymbol "require")
+             :: _);
+        _ } ->
+        true
+    | _ -> false
+  in
+  let rec find_require_spec form =
+    match require_spec form with
+    | Some _ as location -> location
+    | None -> List.find_map find_require_spec form.Ast.children
+  in
+  let find form =
+    match form.Ast.form with
+    | FList (FSymbol "ns" :: _namespace :: _) ->
+        form.children
+        |> List.filter clause_is_require
+        |> List.find_map find_require_spec
+    | FList (FSymbol "require" :: _) -> find_require_spec form
+    | _ -> None
+  in
+  List.find_map find analysis.forms
+
 let definition analysis ~offset =
-  match semantic_identity_at analysis offset with
-  | Some identity
+  match semantic_occurrence_at analysis offset with
+  | Some { identity; _ }
     when not identity.definition_location.Location.loc_ghost ->
-      Some identity.definition_location
-  | Some _ | None -> None
+      Some (normalize_definition_location analysis identity.definition_location)
+  | Some occurrence ->
+      (match token_at analysis offset with
+      | Some ({ desc = Symbol source_name; _ } as token) -> (
+          match qualified_symbol_parts token source_name with
+          | Some (qualifier, qualifier_range, _, _)
+            when offset < qualifier_range.end_offset -> (
+              match require_alias_target_location analysis qualifier with
+              | Some _ as location -> location
+              | None ->
+                  stdlib_core_definition_location analysis
+                    (String.sub analysis.source occurrence.range.start_offset
+                       (occurrence.range.end_offset
+                      - occurrence.range.start_offset)))
+          | Some _ | None
+            when is_core_symbol_candidate source_name ->
+              stdlib_core_definition_location analysis
+                (String.sub analysis.source occurrence.range.start_offset
+                   (occurrence.range.end_offset - occurrence.range.start_offset))
+          | Some _ | None -> None)
+      | Some _ | None -> None)
+  | None -> (
+      match token_at analysis offset with
+      | Some ({ desc = Symbol source_name; _ } as token) -> (
+          match qualified_symbol_parts token source_name with
+          | Some (qualifier, qualifier_range, _, _)
+            when offset < qualifier_range.end_offset ->
+              require_alias_target_location analysis qualifier
+          | Some _ | None
+            when is_core_symbol_candidate source_name ->
+              stdlib_core_definition_location analysis source_name
+          | Some _ | None -> None)
+      | Some _ | None -> None)
 
 let compare_span (left : Ast.source_span) (right : Ast.source_span) =
   Int.compare left.start_offset right.start_offset
@@ -1048,9 +1699,419 @@ let semantic_occurrences_for_token analysis (token : Ast.token) =
          if range_order <> 0 then range_order
          else compare_semantic_key left.identity.key right.identity.key)
 
+let source_symbol_references analysis source_name =
+  let target = source_symbol_basename source_name in
+  analysis.tokens
+  |> List.filter_map (fun (token : Ast.token) ->
+         match token.desc with
+         | Symbol candidate
+           when String.equal (source_symbol_basename candidate) target ->
+             Some token.span
+         | _ -> None)
+  |> List.sort_uniq compare_span
+
+let source_token_at source offset =
+  match Lexer.tokenize source with
+  | Error _ -> None
+  | Ok tokens ->
+      List.find_opt
+        (fun (token : Ast.token) ->
+          token.span.start_offset <= offset && offset < token.span.end_offset)
+        tokens
+
+let source_fallback_definition ~filename ~source ~offset =
+  match source_token_at source offset with
+  | Some ({ desc = Symbol source_name; _ } as token) -> (
+      match qualified_symbol_parts token source_name with
+      | Some (_, _, _, _) when not (is_core_symbol_candidate source_name) ->
+          None
+      | Some _ | None ->
+          stdlib_core_definition_location_for_filename filename source_name)
+  | Some _ | None -> None
+
+type source_require_alias = {
+  namespace : string;
+  alias : string option;
+  namespace_span : Ast.source_span;
+  alias_span : Ast.source_span option;
+}
+
+let source_require_aliases forms =
+  let rec alias_target = function
+    | { Ast.form = Ast.FKeyword (":as" | "as") | FSymbol (":as" | "as"); _ }
+      :: { form = FSymbol alias; span; _ }
+      :: _ ->
+        Some (alias, span)
+    | _ :: rest -> alias_target rest
+    | [] -> None
+  in
+  let rec require_spec form =
+    match (form.Ast.form, form.children) with
+    | FVector (FSymbol namespace :: _),
+      ({ Ast.form = FSymbol namespace_symbol; span = namespace_span; _ } :: rest)
+      when String.equal namespace namespace_symbol ->
+        let alias, alias_span =
+          match alias_target rest with
+          | Some (alias, span) -> (Some alias, Some span)
+          | None -> (None, None)
+        in
+        [
+          {
+            namespace;
+            alias;
+            namespace_span;
+            alias_span;
+          };
+        ]
+    | _ ->
+        form.children |> List.concat_map require_spec
+  in
+  let clause_is_require = function
+    | { Ast.form =
+          FList
+            ((FKeyword "require" | FKeyword ":require" | FSymbol ":require"
+             | FSymbol "require")
+             :: _);
+        _ } ->
+        true
+    | _ -> false
+  in
+  let source_form form =
+    match form.Ast.form with
+    | FList (FSymbol "ns" :: _namespace :: _) ->
+        form.children
+        |> List.filter clause_is_require
+        |> List.concat_map require_spec
+    | FList (FSymbol "require" :: _) -> require_spec form
+    | _ -> []
+  in
+  forms |> List.concat_map source_form
+
+let source_quick_definition ~filename ~state ~source ~offset =
+  let contains (span : Ast.source_span) =
+    span.start_offset <= offset && offset < span.end_offset
+  in
+  match Lexer.tokenize source with
+  | Error _ -> source_fallback_definition ~filename ~source ~offset
+  | Ok tokens -> (
+      let token =
+        List.find_opt
+          (fun (token : Ast.token) ->
+            token.span.start_offset <= offset && offset < token.span.end_offset)
+          tokens
+      in
+      match
+        Parser.parse_located ~eof_offset:(String.length source) tokens
+      with
+      | Error _ -> source_fallback_definition ~filename ~source ~offset
+      | Ok forms -> (
+          let aliases = source_require_aliases forms in
+          let alias_target alias =
+            aliases
+            |> List.find_opt (fun item ->
+                   match item.alias with
+                   | Some candidate -> String.equal candidate alias
+                   | None -> String.equal item.namespace alias)
+          in
+          let require_token_target () =
+            aliases
+            |> List.find_map (fun item ->
+                   if contains item.namespace_span then
+                     Some
+                       (source_location filename source item.namespace_span)
+                   else
+                     match item.alias_span with
+                     | Some span when contains span ->
+                         Some
+                           (source_location filename source item.namespace_span)
+                     | Some _ | None -> None)
+          in
+          match token with
+          | Some ({ desc = Symbol source_name; _ } as token) -> (
+              match require_token_target () with
+              | Some _ as location -> location
+              | None -> (
+                  match qualified_symbol_parts token source_name with
+                  | Some (qualifier, qualifier_range, member, member_range) -> (
+                      match alias_target qualifier with
+                      | Some alias when contains qualifier_range ->
+                          Some
+                            (source_location filename source alias.namespace_span)
+                      | Some alias when contains member_range ->
+                          let module_path =
+                            ocaml_module_path_of_namespace alias.namespace
+                          in
+                          let value_path =
+                            module_path ^ "." ^ Names.ocaml_member_name member
+                          in
+                          let env = Compiler.state_environment state in
+                          (match value_location_by_ocaml_path env value_path with
+                          | Some location ->
+                              Some
+                                (normalize_definition_location_for_filename
+                                   filename location)
+                          | None ->
+                              let constructor_path = module_path ^ "." ^ member in
+                              (match
+                                 constructor_location_by_ocaml_path env
+                                   constructor_path
+                               with
+                              | Some location ->
+                                  Some
+                                    (normalize_definition_location_for_filename
+                                       filename location)
+                              | None ->
+                                  external_constructor_source_location ~filename
+                                    module_path
+                                    member))
+                      | None
+                        when contains member_range
+                             && is_ocaml_module_path qualifier ->
+                          let module_path = qualifier in
+                          let value_path =
+                            module_path ^ "." ^ Names.ocaml_member_name member
+                          in
+                          let env = Compiler.state_environment state in
+                          (match value_location_by_ocaml_path env value_path with
+                          | Some location ->
+                              Some
+                                (normalize_definition_location_for_filename
+                                   filename location)
+                          | None ->
+                              let constructor_path = module_path ^ "." ^ member in
+                              (match
+                                 constructor_location_by_ocaml_path env
+                                   constructor_path
+                               with
+                              | Some location ->
+                                  Some
+                                    (normalize_definition_location_for_filename
+                                       filename location)
+                              | None ->
+                                  external_constructor_source_location ~filename
+                                    module_path member))
+                      | Some _ | None ->
+                          if is_core_symbol_candidate source_name then
+                            stdlib_core_definition_location_for_filename filename
+                              source_name
+                          else None)
+                  | None ->
+                      if is_core_symbol_candidate source_name then
+                        stdlib_core_definition_location_for_filename filename
+                          source_name
+                      else None))
+          | Some _ | None -> source_fallback_definition ~filename ~source ~offset))
+
+let core_value_hover env source_name range =
+  let basename = source_symbol_basename source_name in
+  let candidates =
+    [
+      Names.ocaml_binding_name "clojure.core" basename;
+      Names.ocaml_binding_name "cljs.core" basename;
+      "Clojure.Core." ^ Names.ocaml_member_name basename;
+      "Cljs.Core." ^ Names.ocaml_member_name basename;
+    ]
+  in
+  candidates
+  |> List.find_map (fun path ->
+         value_hover_by_ocaml_path env basename range path)
+
+let source_name_of_ocaml_member name =
+  let bang_suffix = "_bang" in
+  let name =
+    if String.ends_with ~suffix:bang_suffix name then
+      String.sub name 0 (String.length name - String.length bang_suffix) ^ "!"
+    else name
+  in
+  String.map (function '_' -> '-' | char -> char) name
+
+let module_value_completions env module_path prefix =
+  match Env.find_module_by_name (longident_of_dotted_name module_path) env with
+  | _, declaration -> (
+      let printed =
+        Printtyp.wrap_printing_env ~error:false env (fun () ->
+            Format.asprintf "%a" Printtyp.modtype declaration.md_type)
+      in
+      printed |> String.split_on_char '\n'
+      |> List.filter_map (fun line ->
+             let line = String.trim line in
+             let val_prefix = "val " in
+             if String.starts_with ~prefix:val_prefix line then
+               match String.index_opt line ':' with
+               | Some separator ->
+                   let ocaml_name =
+                     String.sub line (String.length val_prefix)
+                       (separator - String.length val_prefix)
+                     |> String.trim
+                   in
+                   let label = source_name_of_ocaml_member ocaml_name in
+                   if String.starts_with ~prefix label then
+                     let detail =
+                       String.sub line (separator + 1)
+                         (String.length line - separator - 1)
+                       |> String.trim
+                     in
+                     Some ({ label; detail } : completion_item)
+                   else None
+               | None -> None
+             else None)
+      |> List.sort_uniq (fun (left : completion_item) right ->
+             String.compare left.label right.label))
+  | exception Not_found -> []
+
+let source_quick_completions ~state ~source ~offset =
+  let prefix_token token =
+    match token.Ast.desc with
+    | Symbol source_name
+      when token.span.start_offset <= offset && offset <= token.span.end_offset ->
+        let typed_prefix_length = max 0 (offset - token.span.start_offset) in
+        Some
+          (String.sub source_name 0
+             (min typed_prefix_length (String.length source_name)))
+    | _ -> None
+  in
+  match Lexer.tokenize source with
+  | Error _ -> []
+  | Ok tokens -> (
+      match List.find_map prefix_token tokens with
+      | None -> []
+      | Some prefix -> (
+          match String.rindex_opt prefix '/' with
+          | None -> []
+          | Some separator ->
+              let qualifier = String.sub prefix 0 separator in
+              let member_prefix =
+                String.sub prefix (separator + 1)
+                  (String.length prefix - separator - 1)
+              in
+              match Parser.parse_located ~eof_offset:(String.length source) tokens with
+              | Error _ -> []
+              | Ok forms ->
+                  source_require_aliases forms
+                  |> List.find_map (fun item ->
+                         let matches_alias =
+                           match item.alias with
+                           | Some alias -> String.equal alias qualifier
+                           | None -> String.equal item.namespace qualifier
+                         in
+                         if matches_alias then
+                           let module_path =
+                             ocaml_module_path_of_namespace item.namespace
+                           in
+                           Some
+                             (module_value_completions
+                                (Compiler.state_environment state)
+                                module_path member_prefix)
+                         else None)
+                  |> Option.value ~default:[]))
+
+let source_quick_hover ~state ~source ~offset =
+  let contains (span : Ast.source_span) =
+    span.start_offset <= offset && offset < span.end_offset
+  in
+  match Lexer.tokenize source with
+  | Error _ -> None
+  | Ok tokens -> (
+      let token =
+        List.find_opt
+          (fun (token : Ast.token) ->
+            token.span.start_offset <= offset && offset < token.span.end_offset)
+          tokens
+      in
+      match
+        Parser.parse_located ~eof_offset:(String.length source) tokens
+      with
+      | Error _ -> None
+      | Ok forms -> (
+          let aliases = source_require_aliases forms in
+          let alias_target alias =
+            aliases
+            |> List.find_opt (fun item ->
+                   match item.alias with
+                   | Some candidate -> String.equal candidate alias
+                   | None -> String.equal item.namespace alias)
+          in
+          match token with
+          | Some ({ desc = Symbol source_name; _ } as token) -> (
+              let env = Compiler.state_environment state in
+              match qualified_symbol_parts token source_name with
+              | Some (qualifier, qualifier_range, member, member_range) -> (
+                  match alias_target qualifier with
+                  | Some alias when contains qualifier_range ->
+                      Some
+                        {
+                          contents = "module " ^ alias.namespace;
+                          range = qualifier_range;
+                        }
+                  | Some alias when contains member_range ->
+                      let module_path =
+                        ocaml_module_path_of_namespace alias.namespace
+                      in
+                      let value_path =
+                        module_path ^ "." ^ Names.ocaml_member_name member
+                      in
+                      (match
+                         value_hover_by_ocaml_path env member member_range
+                           value_path
+                       with
+                      | Some _ as hover -> hover
+                      | None ->
+                          constructor_hover_by_ocaml_path env member
+                            member_range (module_path ^ "." ^ member))
+                  | None
+                    when contains member_range && is_ocaml_module_path qualifier ->
+                      let module_path = qualifier in
+                      let value_path =
+                        module_path ^ "." ^ Names.ocaml_member_name member
+                      in
+                      (match
+                         value_hover_by_ocaml_path env member member_range
+                           value_path
+                       with
+                      | Some _ as hover -> hover
+                      | None ->
+                          constructor_hover_by_ocaml_path env member
+                            member_range (module_path ^ "." ^ member))
+                  | Some _ | None ->
+                      if is_core_symbol_candidate source_name then
+                        core_value_hover env source_name token.span
+                      else None)
+              | None ->
+                  if is_core_symbol_candidate source_name then
+                    core_value_hover env source_name token.span
+                  else None)
+          | Some _ | None -> None))
+
+let source_fallback_references ~source ~offset =
+  match source_token_at source offset with
+  | Some { desc = Symbol source_name; _ }
+    when is_core_symbol_candidate source_name ->
+      let target = source_symbol_basename source_name in
+      (match Lexer.tokenize source with
+      | Error _ -> []
+      | Ok tokens ->
+          tokens
+          |> List.filter_map (fun (token : Ast.token) ->
+                 match token.desc with
+                 | Symbol candidate
+                   when is_core_symbol_candidate candidate
+                        && String.equal (source_symbol_basename candidate) target
+                   ->
+                     Some token.span
+                 | _ -> None)
+          |> List.sort_uniq compare_span)
+  | Some _ | None -> []
+
 let references analysis ~offset =
   match semantic_identity_at analysis offset with
-  | None -> []
+  | None -> (
+      match token_at analysis offset with
+      | Some { desc = Symbol source_name; _ }
+        when is_core_symbol_candidate source_name
+             && Option.is_some
+               (stdlib_core_definition_location analysis source_name) ->
+          source_symbol_references analysis source_name
+      | Some _ | None -> [])
   | Some target ->
       analysis.tokens
       |> List.concat_map (semantic_occurrences_for_token analysis)
@@ -1599,7 +2660,7 @@ let completion_source_names analysis =
          if String.starts_with ~prefix:"__" key then None
          else Some (binding.ocaml_name, key))
 
-let completions_from_state state : completion_item list =
+let completions_from_state ?prefix ?limit state : completion_item list =
   Compiler_session.run (fun () ->
       let scope = Toolchain.source_scope state in
       let label key =
@@ -1610,17 +2671,28 @@ let completions_from_state state : completion_item list =
             String.sub key (index + 1) (String.length key - index - 1)
         | Some _ | None -> key
       in
+      let matches_prefix label =
+        match prefix with
+        | None -> true
+        | Some prefix -> String.starts_with ~prefix label
+      in
+      let limit = Option.value limit ~default:max_int in
+      let count = ref 0 in
       state.Toolchain.typecheck_state.env
       |> Compiler_environment.filter_map
            (fun key (binding : Types.binding) ->
-             if String.starts_with ~prefix:"__" key then None
+             if !count >= limit || String.starts_with ~prefix:"__" key then None
              else
-               let binding = Types.instantiate_binding binding in
-               let ty =
-                 Types.runtime_root_value_type binding
-                 |> Option.value ~default:binding.ty
-               in
-               Some { label = label key; detail = Types.source_name ty })
+               let label = label key in
+               if not (matches_prefix label) then None
+               else (
+                 incr count;
+                 let binding = Types.instantiate_binding binding in
+                 let ty =
+                   Types.runtime_root_value_type binding
+                   |> Option.value ~default:binding.ty
+                 in
+                 Some { label; detail = Types.source_name ty }))
       |> List.sort_uniq
            (fun (left : completion_item) (right : completion_item) ->
              String.compare left.label right.label))
@@ -1769,20 +2841,8 @@ let completions analysis ~offset : completion_item list =
   |> List.sort_uniq (fun (left : completion_item) (right : completion_item) ->
          String.compare left.label right.label)
 
-let repl_completions state : completion_item list =
-  let source = "nil" in
-  let state_items = completions_from_state state in
-  let analyzed_items =
-    match analyze_from_state ~filename:"<repl-completion>" state source with
-    | Error _ -> []
-    | Ok analysis ->
-        Compiler_session.run (fun () ->
-            completions analysis ~offset:(String.length source))
-  in
-  state_items @ analyzed_items
-  |> List.sort_uniq
-       (fun (left : completion_item) (right : completion_item) ->
-         String.compare left.label right.label)
+let repl_completions ?prefix ?limit state : completion_item list =
+  completions_from_state ?prefix ?limit state
 
 module String_map = Map.Make (String)
 module String_set = Set.Make (String)

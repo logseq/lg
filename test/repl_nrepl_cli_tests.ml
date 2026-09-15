@@ -73,6 +73,18 @@ let read_file path =
     ~finally:(fun () -> close_in_noerr input)
     (fun () -> really_input_string input (in_channel_length input))
 
+let write_file path source =
+  let output = open_out_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr output)
+    (fun () -> output_string output source)
+
+let rec mkdir_p path =
+  if Sys.file_exists path then ()
+  else (
+    mkdir_p (Filename.dirname path);
+    Unix.mkdir path 0o700)
+
 let wait_for_port process port_path log_path =
   let rec loop attempts =
     if Sys.file_exists port_path && (Unix.stat port_path).st_size > 0 then
@@ -90,6 +102,7 @@ let wait_for_port process port_path log_path =
 let send output fields = Bencode.write output (request fields) |> expect_ok
 
 let read_until_done input expected_id =
+  let started_at = Unix.gettimeofday () in
   let rec loop responses =
     match Bencode.read input |> expect_ok with
     | None -> fail "nREPL connection closed before status done"
@@ -103,7 +116,11 @@ let read_until_done input expected_id =
           List.rev responses
         else loop responses
   in
-  loop []
+  let responses = loop [] in
+  if Sys.getenv_opt "LG_NREPL_TEST_TIMING" = Some "1" then
+    Printf.eprintf "nREPL %s %.3fs\n%!" expected_id
+      (Unix.gettimeofday () -. started_at);
+  responses
 
 let one_field name responses =
   match List.find_map (find_string name) responses with
@@ -111,6 +128,12 @@ let one_field name responses =
   | None -> fail "nREPL responses did not include %s" name
 
 let statuses responses = List.concat_map (find_strings "status") responses
+
+let errors responses =
+  responses |> List.filter_map (find_string "err") |> String.concat ""
+
+let outputs responses =
+  responses |> List.filter_map (find_string "out") |> String.concat ""
 
 let test_session input output =
   send output [ ("op", bytes "describe"); ("id", bytes "describe") ];
@@ -143,10 +166,11 @@ let test_session input output =
     ];
   let evaluated = read_until_done input "eval-1" in
   let printed =
-    evaluated |> List.filter_map (find_string "out") |> String.concat ""
+    outputs evaluated
   in
   if not (contains printed "nrepl-output") then
-    fail "nREPL eval did not return stdout: %S" printed;
+    fail "nREPL eval did not return stdout: out=%S err=%S status=%s"
+      printed (errors evaluated) (String.concat "," (statuses evaluated));
   let values = List.filter_map (find_string "value") evaluated in
   if not (List.mem "42" values) then
     fail "nREPL multi-form eval did not return 42";
@@ -199,6 +223,23 @@ let test_session input output =
       in
       fail "completions did not include answer; received: %s; status: %s"
         rendered (String.concat ", " (statuses completed)));
+
+  send output
+    [
+      ("op", bytes "completions");
+      ("id", bytes "completions-empty");
+      ("session", bytes session);
+      ("prefix", bytes "");
+      ("ns", bytes "nrepl.demo");
+    ];
+  let empty_completed = read_until_done input "completions-empty" in
+  let empty_candidates =
+    empty_completed |> List.find_map (find_list "completions")
+    |> Option.value ~default:[]
+  in
+  if List.length empty_candidates > 256 then
+    fail "empty-prefix completions returned %d candidates"
+      (List.length empty_candidates);
 
   send output
     [
@@ -259,6 +300,87 @@ let test_session input output =
       ()
   | Some _ -> fail "lookup did not preserve load-file source metadata"
   | None -> fail "lookup did not find the loaded definition");
+
+  let project_root = Filename.temp_file "lg-nrepl-project-" "" in
+  Sys.remove project_root;
+  Unix.mkdir project_root 0o700;
+  write_file (Filename.concat project_root "dune-project")
+    "(lang dune 3.20)\n(name lg_nrepl_project)\n";
+  let source_directory =
+    Filename.concat project_root "lg/logseq_chat/core"
+  in
+  mkdir_p source_directory;
+  let protocol_path = Filename.concat source_directory "sync_protocol.cljc" in
+  write_file protocol_path
+    "(ns logseq-chat.sync-protocol)\n(defn marker [] 41)\n";
+  let entity_path = Filename.concat source_directory "entity_sync.cljc" in
+  let entity_source =
+    "(ns logseq-chat.entity-sync\n\
+    \  (:require [logseq-chat.sync-protocol :as protocol]))\n\
+     (defn synced [] (+ (protocol/marker) 1))\n"
+  in
+  write_file entity_path entity_source;
+  send output
+    [
+      ("op", bytes "load-file");
+      ("id", bytes "load-file-workspace");
+      ("session", bytes session);
+      ("file-path", bytes entity_path);
+      ("file-name", bytes "entity_sync.cljc");
+      ("file", bytes entity_source);
+    ];
+  let workspace_loaded = read_until_done input "load-file-workspace" in
+  if List.mem "eval-error" (statuses workspace_loaded) then
+    fail "nREPL load-file did not load workspace namespace dependencies: %s"
+      (errors workspace_loaded);
+  send output
+    [
+      ("op", bytes "eval");
+      ("id", bytes "workspace-eval");
+      ("session", bytes session);
+      ("code", bytes "(synced)");
+  ];
+  let workspace_evaluated = read_until_done input "workspace-eval" in
+  if List.mem "eval-error" (statuses workspace_evaluated) then
+    fail "nREPL workspace dependency eval failed: out=%S err=%S status=%s"
+      (outputs workspace_evaluated) (errors workspace_evaluated)
+      (String.concat "," (statuses workspace_evaluated));
+  let workspace_values = List.filter_map (find_string "value") workspace_evaluated in
+  if not (List.mem "42" workspace_values) then
+    fail "nREPL workspace dependency was not available after load-file";
+
+  send output
+    [
+      ("op", bytes "load-file");
+      ("id", bytes "load-file-forward");
+      ("session", bytes session);
+      ("file-path", bytes "/tmp/lg-nrepl-forward.cljc");
+      ("file-name", bytes "lg-nrepl-forward.cljc");
+      ( "file",
+        bytes
+          "(ns loaded.forward)\n\
+           (defn first-value [] (second-value))\n\
+           (defn second-value [] 42)\n" );
+    ];
+  let forward_loaded = read_until_done input "load-file-forward" in
+  if List.mem "eval-error" (statuses forward_loaded) then
+    fail "nREPL load-file split a forward reference across evals: %s"
+      (errors forward_loaded);
+  send output
+    [
+      ("op", bytes "eval");
+      ("id", bytes "forward-eval");
+      ("session", bytes session);
+      ("code", bytes "(ns loaded.forward)\n(first-value)");
+    ];
+  let forward_evaluated = read_until_done input "forward-eval" in
+  if List.mem "eval-error" (statuses forward_evaluated) then
+    fail "nREPL forward-reference eval failed: out=%S err=%S status=%s"
+      (outputs forward_evaluated) (errors forward_evaluated)
+      (String.concat "," (statuses forward_evaluated));
+  let forward_values = List.filter_map (find_string "value") forward_evaluated in
+  if not (List.mem "42" forward_values) then
+    fail "nREPL load-file did not commit the forward-reference file";
 
   send output
     [
@@ -321,10 +443,11 @@ let test_session input output =
       ("op", bytes "eval");
       ("id", bytes "eval-after-error");
       ("session", bytes session);
-      ("code", bytes "loaded-value");
-    ];
+      ("code", bytes "(ns loaded.demo)\nloaded-value");
+  ];
   let recovered = read_until_done input "eval-after-error" in
-  if one_field "value" recovered <> "9" then
+  let recovered_values = List.filter_map (find_string "value") recovered in
+  if not (List.mem "9" recovered_values) then
     fail "nREPL session did not recover after an evaluation error";
 
   send output [ ("op", bytes "clone"); ("id", bytes "clone-2") ];

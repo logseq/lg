@@ -37,7 +37,9 @@ let response_id = function
 let exchange session request =
   let id =
     match request with
-    | Internal.Evaluate request | Internal.Type_of request -> request.id
+    | Internal.Evaluate request | Internal.Load_file request
+    | Internal.Type_of request ->
+        request.id
     | Internal.Lookup request -> request.id
     | Internal.Completions request -> request.id
     | Internal.Describe { id } | Internal.Close { id } -> id
@@ -87,6 +89,12 @@ let startup_error responses fallback =
   |> Option.value ~default:fallback
 
 let spawn_worker ~worker_path ~state_path session_id =
+  let started_at = Unix.gettimeofday () in
+  let mark label =
+    if Sys.getenv_opt "LG_NREPL_TEST_TIMING" = Some "1" then
+      Printf.eprintf "nREPL spawn-worker %s %.3fs\n%!" label
+        (Unix.gettimeofday () -. started_at)
+  in
   let parent_socket, child_socket =
     Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0
   in
@@ -112,6 +120,7 @@ let spawn_worker ~worker_path ~state_path session_id =
       Unix.close child_socket;
       Error ("unable to start LG REPL worker: " ^ message)
   | Ok process ->
+      mark "process-created";
       Unix.close child_socket;
       let input = Unix.in_channel_of_descr (Unix.dup parent_socket) in
       let output = Unix.out_channel_of_descr parent_socket in
@@ -129,7 +138,9 @@ let spawn_worker ~worker_path ~state_path session_id =
       in
       let id = next_id "describe" in
       (match exchange session (Internal.Describe { id }) with
-      | Ok (_, Internal.Done) -> Ok session
+      | Ok (_, Internal.Done) ->
+          mark "describe-done";
+          Ok session
       | Ok (responses, (Internal.Failed | Internal.Unsupported)) ->
           let message = startup_error responses "LG REPL worker startup failed" in
           terminate_worker session;
@@ -588,20 +599,47 @@ let serve_connection ~worker_path ~state_path ~input ~output =
               | Some _ as path -> path
               | None -> request.file_name
             in
-            let eval_request : Session_protocol.eval_request =
-              {
-                id = request.id;
-                session = request.session;
-                code = request.contents;
-                namespace = None;
-                file;
-                line = Some 1;
-                column = None;
-              }
-            in
             with_worker ~id:request.id request.session
               (fun external_session session ->
-                evaluate output eval_request external_session session);
+                let internal_id = next_id "load-file" in
+                let internal_request =
+                  Internal.Load_file
+                    {
+                      id = internal_id;
+                      source = request.contents;
+                      expected_namespace = None;
+                      filename = file;
+                    }
+                in
+                match exchange session internal_request with
+                | Error message ->
+                    send_error output ~id:request.id ~session:external_session
+                      ~error_type:"server-error" message
+                      [ Session_protocol.Server_error; Session_protocol.Done ]
+                | Ok (responses, Internal.Done) ->
+                    send_internal_responses output ~id:request.id
+                      ~external_session session responses;
+                    send output
+                      (Session_protocol.Status
+                         {
+                           id = request.id;
+                           session = external_session;
+                           statuses = [ Session_protocol.Done ];
+                         })
+                | Ok (responses, (Internal.Failed | Internal.Unsupported)) ->
+                    send_internal_responses output ~id:request.id
+                      ~external_session session responses;
+                    send output
+                      (Session_protocol.Status
+                         {
+                           id = request.id;
+                           session = external_session;
+                           statuses =
+                             [
+                               Session_protocol.Eval_error;
+                               Session_protocol.Done;
+                             ];
+                         }));
             loop ()
         | Ok (Session_protocol.Lookup request) ->
             with_worker ~id:request.id request.session

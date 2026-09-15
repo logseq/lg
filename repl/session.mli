@@ -52,6 +52,12 @@ val eval :
   string ->
   (evaluation, Lg.Compiler.compile_error) result
 
+val load_source :
+  ?filename:string ->
+  t ->
+  string ->
+  (evaluation, Lg.Compiler.compile_error) result
+
 val eval_files :
   t -> string list -> (int, Lg.Compiler.compile_error) result
 

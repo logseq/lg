@@ -153,6 +153,27 @@ let evaluate output session (request : Protocol.source_request) =
           ignore (send output (response_of_evaluation ~id:request.id evaluation));
           ignore (send_status output session ~id:request.id Protocol.Done)
 
+let load_file output session (request : Protocol.source_request) =
+  let result, stdout_text, stderr_text =
+    capture_output (fun () ->
+        Session.load_source ?filename:request.Protocol.filename session
+          request.source)
+  in
+  if send_output output ~id:request.id stdout_text stderr_text then
+    match result with
+    | Error exn ->
+        ignore
+          (send output
+             (protocol_diagnostic ~id:request.id ~code:"LG9000"
+                ("REPL worker failed: " ^ Printexc.to_string exn)));
+        ignore (send_status output session ~id:request.id Protocol.Failed)
+    | Ok (Error error) ->
+        ignore (send output (compiler_diagnostic ~id:request.id error));
+        ignore (send_status output session ~id:request.id Protocol.Failed)
+    | Ok (Ok evaluation) ->
+        ignore (send output (response_of_evaluation ~id:request.id evaluation));
+        ignore (send_status output session ~id:request.id Protocol.Done)
+
 let type_of output session (request : Protocol.source_request) =
   if
     expected_namespace_matches output session ~id:request.Protocol.id
@@ -246,6 +267,9 @@ let serve session ~input ~output =
         loop ()
     | Ok (Some (Protocol.Evaluate request)) ->
         evaluate output session request;
+        loop ()
+    | Ok (Some (Protocol.Load_file request)) ->
+        load_file output session request;
         loop ()
     | Ok (Some (Protocol.Type_of request)) ->
         type_of output session request;

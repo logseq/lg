@@ -65,6 +65,10 @@ type state = {
   ocaml_env : Env.t option;
 }
 
+let state_environment state =
+  state.ocaml_env
+  |> Option.value ~default:Env.empty
+
 module String_set = Set.Make (String)
 let compiled_interface_cache = Hashtbl.create 32
 
@@ -2413,7 +2417,7 @@ let compile_chunk ?(target = Target.default) ?(filename = "<string>") state
   | Ok (state, compilation) -> Ok (state, compilation.ocaml_source)
 
 let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
-    state source =
+    ?(check_ocaml = true) state source =
   let previous_items = state.located_items in
   match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
@@ -2429,16 +2433,18 @@ let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
               if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
                 Printf.eprintf "%s\n%!"
                   (Ocaml_parsetree_backend.print result.structure);
-              match
-                Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
-                  result.structure
-              with
-              | Error _ as err -> err
-              | Ok analysis ->
-                  let state =
-                    { state with ocaml_env = Some analysis.compiler_env }
-                  in
-                  Ok (state, result.structure))))
+              if not check_ocaml then Ok (state, result.structure)
+              else
+                match
+                  Ocaml_typechecker.analyze ?compiler_env:state.ocaml_env
+                    result.structure
+                with
+                | Error _ as err -> err
+                | Ok analysis ->
+                    let state =
+                      { state with ocaml_env = Some analysis.compiler_env }
+                    in
+                    Ok (state, result.structure))))
 
 type pending_repl_kind =
   | Pending_value
@@ -2499,8 +2505,8 @@ let repl_definition_type state name =
       in
       Ok (Types.source_name ty)
 
-let compile_repl_form ?(target = Target.default) ?(filename = "<string>") state
-    source =
+let compile_repl_form ?(target = Target.default) ?(filename = "<string>")
+    ?(check_ocaml = true) state source =
   match parse_single_repl_form ~target source with
   | Error _ as error -> error
   | Ok form -> (
@@ -2514,7 +2520,8 @@ let compile_repl_form ?(target = Target.default) ?(filename = "<string>") state
                 source
           in
           match
-            compile_chunk_parsetree ~target ~filename state compiled_source
+            compile_chunk_parsetree ~target ~filename ~check_ocaml state
+              compiled_source
           with
           | Error _ as error -> error
           | Ok (next_state, structure) -> (

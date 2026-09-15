@@ -48,6 +48,7 @@ val empty_state : state
 val cacheable_state : state -> state
 val with_source_scope : string -> state -> state
 val source_scope : state -> string
+val state_environment : state -> Env.t
 
 val render_error : source:string -> compile_error -> string
 
@@ -143,12 +144,14 @@ val compile_prepared_chunk_with_diagnostics :
 
 val compile_chunk_parsetree :
   ?target:Target.t ->
+  ?check_ocaml:bool ->
   state ->
   string ->
   (state * Parsetree.structure, compile_error) result
 
 val compile_chunk_parsetree_with_filename :
   ?target:Target.t ->
+  ?check_ocaml:bool ->
   filename:string ->
   state ->
   string ->
@@ -157,6 +160,7 @@ val compile_chunk_parsetree_with_filename :
 val compile_repl_form :
   ?target:Target.t ->
   ?filename:string ->
+  ?check_ocaml:bool ->
   state ->
   string ->
   (state * repl_compilation, compile_error) result

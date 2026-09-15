@@ -22,6 +22,7 @@ type completions_request = {
 
 type request =
   | Evaluate of source_request
+  | Load_file of source_request
   | Type_of of source_request
   | Lookup of lookup_request
   | Completions of completions_request

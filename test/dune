@@ -68,6 +68,13 @@
  (modules compiler_support_performance_tests)
  (libraries lg.compiler_support))
 
+(test
+ (name language_service_navigation_tests)
+ (deps ../stdlib/lg_stdlib_native.state)
+ (modules language_service_navigation_tests)
+ (libraries lg unix)
+ (action (run %{test} %{dep:../stdlib/lg_stdlib_native.state})))
+
 (executable
  (name repl_session_tests)
  (modules repl_session_tests)

@@ -29,11 +29,23 @@
 
 (defvar eglot-server-programs)
 (defvar eglot-managed-mode)
+(defvar neat-default-connection)
+(defvar neat-current-connection)
+(defvar lg--nrepl-port-file nil
+  "Port file for the current `lg-start-nrepl' server.")
 
 (declare-function eglot--TextDocumentPositionParams "eglot")
 (declare-function eglot-current-server "eglot")
 (declare-function jsonrpc-request "jsonrpc")
 (declare-function neat "neat")
+(declare-function neat-active-connection "neat-client")
+(declare-function neat-bencode-get "neat-bencode")
+(declare-function neat-client--block-for-done "neat-client")
+(declare-function neat-clone-session "neat-client")
+(declare-function neat-connect "neat-client")
+(declare-function neat-connection-live-p "neat-client")
+(declare-function neat-connection-session "neat-client")
+(declare-function neat-load-file "neat-client")
 
 (cl-defmethod project-root ((project (head lg)))
   "Return the root directory for an lg PROJECT."
@@ -84,6 +96,16 @@ The edited file path is appended to this command."
   :type 'boolean
   :group 'lg)
 
+(defcustom lg-use-nrepl-eval t
+  "Prefer an lg nREPL session for `lg-eval-buffer' and `lg-eval-region'."
+  :type 'boolean
+  :group 'lg)
+
+(defcustom lg-nrepl-session-timeout 15
+  "Seconds to wait for an lg nREPL session during cold startup."
+  :type 'number
+  :group 'lg)
+
 (defcustom lg-repl-command '("lg" "repl")
   "Command used to start an installed lg terminal REPL."
   :type '(repeat string)
@@ -110,7 +132,7 @@ When this mode is unavailable, `lg-cljc-mode' falls back to `lisp-mode'."
 
 (defvar-keymap lg-mode-map
   :doc "Keymap for `lg-mode'."
-  "C-c C-b" #'lg-eval-buffer
+  "C-c C-b" #'lg-connect-nrepl
   "C-c C-r" #'lg-eval-region
   "C-c C-t" #'lg-show-type-at-point
   "C-c C-z" #'lg-repl
@@ -201,6 +223,14 @@ When this mode is unavailable, `lg-cljc-mode' falls back to `lisp-mode'."
   (cl-some #'lg--opam-file-depends-on-lg-p
            (directory-files root t "\\.opam\\'")))
 
+(defun lg--dune-lg-command-p (root)
+  "Return non-nil when ROOT should run lg commands through Dune."
+  (and (file-exists-p (expand-file-name "dune-project" root))
+       (or (lg--source-checkout-p root)
+           (file-exists-p (expand-file-name "duniverse/lg/bin/lg_lsp.ml" root))
+           (lg--dune-project-depends-on-lg-p root)
+           (lg--opam-project-depends-on-lg-p root))))
+
 (defun lg-project-p (&optional root)
   "Return non-nil when ROOT should use `lg-mode' for `.cljc' files."
   (let ((root (file-name-as-directory (or root (lg--nearest-project-root)))))
@@ -249,7 +279,8 @@ conservative fallback for the Lisp-like syntax."
 Inside this repository the command runs through Dune so Emacs uses the local
 checkout.  Outside it, the installed `lg --lsp' command is used."
   (let* ((root (or root (lg--project-root)))
-         (command (if (and lg-use-repository-lsp (lg--source-checkout-p root))
+         (command (if (and lg-use-repository-lsp
+                           (lg--dune-lg-command-p root))
                       '("dune" "exec" "lg" "--" "--lsp")
                     lg-lsp-command))
          (state (lg-project-state-path root))
@@ -264,6 +295,16 @@ checkout.  Outside it, the installed `lg --lsp' command is used."
                       (concat "OCAMLPATH=" include-path))
                 command)
       command)))
+
+(defun lg--with-project-include-env (root command)
+  "Wrap COMMAND with project include path environment for ROOT when available."
+  (if-let ((include-path (lg-project-include-path root)))
+      (append (list "env"
+                    "LG_OCAML_INCLUDE_PATH_AUTHORITATIVE=1"
+                    (concat "LG_OCAML_INCLUDE_PATH=" include-path)
+                    (concat "OCAMLPATH=" include-path))
+              command)
+    command))
 
 (defun lg-project-state-path (&optional root)
   "Return the first readable project-local lg compiler state under ROOT."
@@ -366,20 +407,38 @@ The caller appends the source file path."
 (defun lg-repl-server-command (&optional root)
   "Return the preferred terminal REPL command for ROOT."
   (let* ((root (or root (lg--project-root)))
-         (state (car (lg--repository-eval-artifacts root))))
-    (if (and lg-use-repository-repl (lg--source-checkout-p root))
-        (list "dune" "exec" "lg" "--" "repl" "--state" state)
-      lg-repl-command)))
+         (repository-state (car (lg--repository-eval-artifacts root)))
+         (project-state (lg-project-state-path root))
+         (command (if (and lg-use-repository-repl
+                           (lg--dune-lg-command-p root))
+                      (append (list "dune" "exec" "lg" "--" "repl")
+                              (when project-state
+                                (list "--state" project-state)))
+                    (if (and project-state
+                             (not (member "--state" lg-repl-command)))
+                        (append lg-repl-command (list "--state" project-state))
+                      lg-repl-command))))
+    (when (and (lg--source-checkout-p root) (not project-state))
+      (setq command (append command (list "--state" repository-state))))
+    (lg--with-project-include-env root command)))
 
 (defun lg-nrepl-server-command (&optional root port-file)
   "Return the preferred nREPL server command for ROOT and PORT-FILE."
   (let* ((root (or root (lg--project-root)))
          (state (car (lg--repository-eval-artifacts root)))
-         (base (if (and lg-use-repository-repl (lg--source-checkout-p root))
-                   (list "dune" "exec" "lg" "--" "repl" "--nrepl-listen"
-                         "127.0.0.1:0" "--state" state)
-                 lg-nrepl-command)))
-    (append base (when port-file (list "--port-file" port-file)))))
+         (project-state (lg-project-state-path root))
+         (base (cond
+                ((and lg-use-repository-repl
+                      (lg--dune-lg-command-p root))
+                 (list "dune" "exec" "lg" "--" "repl" "--nrepl-listen"
+                       "127.0.0.1:0" "--state"
+                       (or project-state state)))
+                ((and project-state (not (member "--state" lg-nrepl-command)))
+                 (append lg-nrepl-command (list "--state" project-state)))
+                (t lg-nrepl-command))))
+    (lg--with-project-include-env
+     root
+     (append base (when port-file (list "--port-file" port-file))))))
 
 (defun lg-eglot-contact (_interactive project)
   "Return an Eglot server contact for PROJECT."
@@ -422,31 +481,35 @@ The function is safe to call repeatedly from init files."
   "Evaluate SOURCE with lg and return its output.
 
 LABEL is used in the temporary file name and output buffer heading."
-  (let* ((root (lg--project-root))
-         (default-directory root)
-         (buffer (get-buffer-create "*lg eval*"))
-         (temp-file (make-temp-file (concat "lg-" label "-") nil ".cljc"))
-         (command (lg-eval-server-command root))
-         (program (car command))
-         (arguments (append (cdr command) (list temp-file))))
-    (unwind-protect
-        (progn
-          (write-region source nil temp-file nil 'silent)
-          (with-current-buffer buffer
-            (let ((inhibit-read-only t))
-              (erase-buffer)
-              (lg--ensure-repository-eval-artifacts root buffer)
-              (insert "$ " (mapconcat #'identity (append command (list temp-file)) " ")
-                      "\n\n")
-              (let ((exit-code (apply #'call-process program nil buffer t arguments)))
-                (if (zerop exit-code)
-                    (progn
-                      (display-buffer buffer)
-                      (buffer-substring-no-properties (point-min) (point-max)))
-                  (display-buffer buffer)
-                  (error "lg eval failed with exit code %s" exit-code))))))
-      (when (file-exists-p temp-file)
-        (delete-file temp-file)))))
+  (if (and lg-use-nrepl-eval (require 'neat-client nil t))
+      (lg--nrepl-eval-source source label)
+    (let* ((root (lg--project-root))
+           (default-directory root)
+           (buffer (get-buffer-create "*lg eval*"))
+           (temp-file (make-temp-file (concat "lg-" label "-") nil ".cljc"))
+           (command (lg-eval-server-command root))
+           (program (car command))
+           (arguments (append (cdr command) (list temp-file))))
+      (unwind-protect
+          (progn
+            (write-region source nil temp-file nil 'silent)
+            (with-current-buffer buffer
+              (let ((inhibit-read-only t))
+                (erase-buffer)
+                (lg--ensure-repository-eval-artifacts root buffer)
+                (insert "$ "
+                        (mapconcat #'identity (append command (list temp-file))
+                                   " ")
+                        "\n\n")
+                (let ((exit-code (apply #'call-process program nil buffer t arguments)))
+                  (if (zerop exit-code)
+                      (progn
+                        (display-buffer buffer)
+                        (buffer-substring-no-properties (point-min) (point-max)))
+                    (display-buffer buffer)
+                    (error "lg eval failed with exit code %s" exit-code))))))
+        (when (file-exists-p temp-file)
+          (delete-file temp-file))))))
 
 (defun lg-eval-region (start end)
   "Evaluate the active region as an lg program."
@@ -505,7 +568,9 @@ LABEL is used in the temporary file name and output buffer heading."
   (interactive)
   (let* ((root (lg--project-root))
          (buffer (get-buffer-create "*lg nREPL*"))
-         (port-file (make-temp-file "lg-nrepl-port-"))
+         (port-file (or lg--nrepl-port-file
+                        (setq lg--nrepl-port-file
+                              (make-temp-file "lg-nrepl-port-"))))
          (command (lg-nrepl-server-command root port-file))
          (program (car command))
          (arguments (cdr command)))
@@ -541,6 +606,70 @@ When PORT-FILE is nil, start a local lg nREPL server first."
   (let* ((port-file (or port-file (lg-start-nrepl)))
          (port (lg--wait-for-port-file port-file)))
     (neat "127.0.0.1" port)))
+
+(defun lg--nrepl-connection ()
+  "Return a live neat connection for the current lg buffer."
+  (require 'neat-client)
+  (let ((connection (neat-active-connection)))
+    (unless (and connection (neat-connection-live-p connection))
+      (let* ((port-file (lg-start-nrepl))
+             (port (lg--wait-for-port-file port-file)))
+        (setq connection (neat-connect "127.0.0.1" port))
+        (setq neat-default-connection connection)
+        (setq-local neat-current-connection connection)))
+    (unless (neat-connection-session connection)
+      (let (done)
+        (neat-clone-session
+         connection
+         (lambda (response)
+           (when (member "done" (neat-bencode-get response "status"))
+             (setq done t))))
+        (neat-client--block-for-done connection lg-nrepl-session-timeout
+                                     (lambda () done))
+        (unless (neat-connection-session connection)
+          (user-error "Timed out waiting for lg nREPL session"))))
+    connection))
+
+(defun lg--nrepl-eval-source (source label)
+  "Evaluate SOURCE through neat nREPL and return display output.
+
+LABEL is used for the synthetic source file name."
+  (let* ((connection (lg--nrepl-connection))
+         (file-name (or (buffer-file-name)
+                        (concat "lg-" label ".cljc")))
+         outputs values errors done failed)
+    (neat-load-file
+     connection source
+     :file-path file-name
+     :file-name (file-name-nondirectory file-name)
+     :callback
+     (lambda (response)
+       (when-let ((out (neat-bencode-get response "out")))
+         (push out outputs))
+       (when-let ((value (neat-bencode-get response "value")))
+         (push value values))
+       (when-let ((err (neat-bencode-get response "err")))
+         (push err errors))
+       (let ((status (neat-bencode-get response "status")))
+         (when (member "eval-error" status)
+           (setq failed t))
+         (when (member "done" status)
+           (setq done t)))))
+    (neat-client--block-for-done connection 10 (lambda () done))
+    (unless done
+      (user-error "Timed out waiting for lg nREPL evaluation"))
+    (when failed
+      (user-error "%s" (mapconcat #'identity (nreverse errors) "")))
+    (let ((output (concat (mapconcat #'identity (nreverse outputs) "")
+                          (mapconcat (lambda (value) (concat value "\n"))
+                                     (nreverse values)
+                                     ""))))
+      (with-current-buffer (get-buffer-create "*lg eval*")
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert output)))
+      (display-buffer "*lg eval*")
+      output)))
 
 ;;;###autoload
 (define-derived-mode lg-mode lisp-mode "lg"

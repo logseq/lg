@@ -48,6 +48,7 @@ let empty_state = Toolchain.empty_state
 let cacheable_state = Toolchain.cacheable_state
 let with_source_scope = Toolchain.with_source_scope
 let source_scope = Toolchain.source_scope
+let state_environment = Toolchain.state_environment
 let render_error = Error.render
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
@@ -127,19 +128,21 @@ let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
       Toolchain.compile_prepared_chunk_with_diagnostics ~check_ocaml state
         prepared)
 
-let compile_chunk_parsetree ?(target = Target.default) state source =
-  Compiler_session.run (fun () ->
-      Toolchain.compile_chunk_parsetree ~target state source)
-
-let compile_chunk_parsetree_with_filename ?(target = Target.default) ~filename
+let compile_chunk_parsetree ?(target = Target.default) ?(check_ocaml = true)
     state source =
   Compiler_session.run (fun () ->
-      Toolchain.compile_chunk_parsetree ~target ~filename state source)
+      Toolchain.compile_chunk_parsetree ~target ~check_ocaml state source)
 
-let compile_repl_form ?(target = Target.default) ?(filename = "<string>") state
-    source =
+let compile_chunk_parsetree_with_filename ?(target = Target.default)
+    ?(check_ocaml = true) ~filename state source =
   Compiler_session.run (fun () ->
-      Toolchain.compile_repl_form ~target ~filename state source)
+      Toolchain.compile_chunk_parsetree ~target ~filename ~check_ocaml state
+        source)
+
+let compile_repl_form ?(target = Target.default) ?(filename = "<string>")
+    ?(check_ocaml = true) state source =
+  Compiler_session.run (fun () ->
+      Toolchain.compile_repl_form ~target ~filename ~check_ocaml state source)
 
 let infer_repl_type ?(target = Target.default) state source =
   Compiler_session.run (fun () ->

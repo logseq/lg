@@ -326,7 +326,9 @@ let next_request_id remote =
 let exchange remote request =
   let expected_id =
     match request with
-    | Protocol.Evaluate request | Protocol.Type_of request -> request.id
+    | Protocol.Evaluate request | Protocol.Load_file request
+    | Protocol.Type_of request ->
+        request.id
     | Protocol.Lookup request -> request.id
     | Protocol.Completions request -> request.id
     | Protocol.Describe { id } | Protocol.Close { id } -> id
@@ -503,7 +505,9 @@ let run_socket_session state_path =
       | Ok (Some request) ->
           let id =
             match request with
-            | Protocol.Evaluate request | Protocol.Type_of request -> request.id
+            | Protocol.Evaluate request | Protocol.Load_file request
+            | Protocol.Type_of request ->
+                request.id
             | Protocol.Lookup request -> request.id
             | Protocol.Completions request -> request.id
             | Protocol.Describe { id } | Protocol.Close { id } -> id
