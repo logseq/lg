@@ -49493,6 +49493,22 @@ let test_polymorphic_variants_preserve_static_payloads () =
   assert_ocaml_runs "polymorphic_variant_payloads" "ready\n42\n7\n" compiled;
   ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_return_hint_constrains_redefable_variant_root () =
+  let source =
+    {|
+(ns app.redef-json)
+(defn ^:variant-open<Int:int;String:string> encode [^:int value]
+  (tag Int value))
+(def result (encode 42))
+|}
+  in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring compiled "_weak" then
+    failwith "return-hinted redefable roots must not export weak row variables";
+  assert_ocaml_runs "return_hint_constrains_redefable_variant_root" ""
+    compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_polymorphic_variant_collection_payloads_infer_capabilities () =
   let source = {|
 (defn find-field [key node]
@@ -51983,6 +51999,8 @@ let tests =
     ( "inference propagates long constraint chains", test_inference_propagates_long_constraint_chains );
     ( "GADT constructors preserve result indices", test_gadt_constructors_preserve_result_indices );
     ( "polymorphic variants preserve static payloads", test_polymorphic_variants_preserve_static_payloads );
+    ( "return hint constrains redefable variant root",
+      test_return_hint_constrains_redefable_variant_root );
     ( "OCaml metadata preserves polymorphic variant rows", test_ocaml_type_metadata_preserves_variant_rows );
     ( "OCaml recursive variant metadata terminates", test_ocaml_recursive_variant_metadata_terminates );
     ( "polymorphic variants infer rows from patterns", test_polymorphic_variants_infer_rows_from_patterns );

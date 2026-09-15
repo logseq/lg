@@ -2667,13 +2667,64 @@ and compile_definition scope env next_type form =
   | FList (FSymbol "defmethod" :: _) ->
       Error.error "defmethod currently supports print-method"
   | FList (FSymbol "recursive-definition-group" :: definitions) ->
+      let definitions =
+        definitions
+        |> List.map (function
+             | FList
+                 (FSymbol (("defn" | "defn-") as definition)
+                 :: FSymbol annotation :: (FSymbol _ as name) :: forms)
+               when String.starts_with ~prefix:"^" annotation ->
+                 (match forms with
+                 | (FVector _ as params) :: body_forms ->
+                     FList
+                       (FSymbol definition :: name :: params
+                      :: FList
+                           [ FSymbol "__return-type"; FSymbol annotation ]
+                      :: body_forms)
+                 | _ ->
+                     FList
+                       (FSymbol definition :: name :: FSymbol annotation
+                      :: forms))
+             | FList
+                 (FSymbol (("defn" | "defn-") as definition)
+                 :: FList
+                      [
+                        FSymbol "__type-hint";
+                        FSymbol annotation;
+                        FSymbol name;
+                      ]
+                 :: forms) ->
+                 (match forms with
+                 | (FVector _ as params) :: body_forms ->
+                     FList
+                       (FSymbol definition :: FSymbol name :: params
+                      :: FList
+                           [ FSymbol "__return-type"; FSymbol annotation ]
+                      :: body_forms)
+                 | _ ->
+                     FList
+                       (FSymbol definition :: FSymbol name
+                      :: FSymbol annotation :: forms))
+             | definition -> definition)
+      in
+      let definition_name_and_params = function
+        | FList
+            (FSymbol ("defn" | "defn-") :: FSymbol name
+            :: (FVector _ as params) :: _) ->
+            Some (name, params)
+        | FList
+            (FSymbol ("defn" | "defn-") :: FSymbol name
+            :: FSymbol annotation :: (FVector _ as params) :: _)
+          when String.starts_with ~prefix:"^" annotation ->
+            Some (name, params)
+        | _ -> None
+      in
       let env =
         definitions
         |> List.fold_left
-             (fun env -> function
-               | FList
-                   (FSymbol ("defn" | "defn-") :: FSymbol name
-                   :: (FVector _ as params) :: _) ->
+             (fun env definition ->
+               match definition_name_and_params definition with
+               | Some (name, params) ->
                    let key = Names.scoped_key scope name in
                    let ocaml_name = Names.ocaml_binding_name scope name in
                    (match sidecar_function_signature scope env name with
@@ -2708,7 +2759,7 @@ and compile_definition scope env next_type form =
                                       (parameter_tys, Type_solver.fresh ())
                                 | Error _ -> TOcaml "__declared_fn"))
                              env))
-               | _ -> env)
+               | None -> env)
              env
       in
       let method_definitions, function_definitions =
@@ -2720,25 +2771,25 @@ and compile_definition scope env next_type form =
       in
       let generalize_function_bindings env =
         List.fold_left
-          (fun env -> function
-            | FList
-                (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
+          (fun env definition ->
+            match definition_name_and_params definition with
+            | Some (name, _) ->
                 let key = Names.scoped_key scope name in
                 (match Env.find_opt key env with
                 | Some binding ->
                     Env.add key (Types.generalize_binding binding) env
                 | None -> env)
-            | _ -> env)
+            | None -> env)
           env function_definitions
       in
       let scc_inference_params env =
         function_definitions
-        |> List.filter_map (function
-             | FList
-                 (FSymbol ("defn" | "defn-") :: FSymbol name :: _) ->
+        |> List.filter_map (fun definition ->
+             match definition_name_and_params definition with
+             | Some (name, _) ->
                  Env.find_opt (Names.scoped_key scope name) env
                  |> Option.map (fun (binding : binding) -> (name, binding.ty))
-             | _ -> None)
+             | None -> None)
       in
       let scc_requires_inference env =
         scc_inference_params env
@@ -3116,6 +3167,17 @@ and compile_definition scope env next_type form =
             :: (FSymbol name as name_form)
             :: params :: body_forms)
           :: rest -> (
+            let explicit_return_ty, body_forms =
+              match body_forms with
+              | FList [ FSymbol "__return-type"; FSymbol annotation ] :: rest -> (
+                  match Type_annotation.of_param_annotation annotation with
+                  | Ok ty ->
+                      ( Some
+                          (Function_elaborator.infer_named_record scope env ty),
+                        rest )
+                  | Error _ -> (None, body_forms))
+              | _ -> (None, body_forms)
+            in
             let ocaml_name = Names.ocaml_binding_name scope name in
             let inferred_scc_env = ref env in
             let refine_inferred_env inferred env =
@@ -3136,6 +3198,9 @@ and compile_definition scope env next_type form =
                            binding.ty)
             in
             let declared_return_ty =
+              match explicit_return_ty with
+              | Some _ as return_ty -> return_ty
+              | None -> (
               match predeclared_type with
               | Some (TFn (_, return_ty))
                 when not (Types.equal return_ty TUnknown)
@@ -3145,7 +3210,7 @@ and compile_definition scope env next_type form =
                      | TMeta _ | TVar _ -> false
                      | _ -> true) ->
                   Some return_ty
-              | Some _ | None -> None
+              | Some _ | None -> None)
             in
             let predeclared_param_tys =
               match predeclared_type with

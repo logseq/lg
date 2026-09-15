@@ -1110,6 +1110,7 @@ let definition_result uri document offset =
   let location =
     match location with
     | Some _ as location -> location
+    | None when lazy_large_workspace_document uri document -> None
     | None ->
         let document = ensure_analyzed_document uri document in
         (match semantic_analysis document with
@@ -1246,6 +1247,17 @@ let symbol_at_offset document offset =
                (span.end_offset - span.start_offset)))
   | None -> None
 
+let lexical_symbol_at_offset text offset =
+  match Lg.Lexer.tokenize text with
+  | Error _ -> None
+  | Ok tokens -> (
+      tokens
+      |> List.find_opt (fun (token : Lg.Ast.token) ->
+             token.span.start_offset <= offset && offset < token.span.end_offset)
+      |> function
+      | Some { desc = Symbol symbol; _ } -> Some symbol
+      | Some _ | None -> None)
+
 let lexical_references symbol text =
   match Lg.Lexer.tokenize text with
   | Error _ -> []
@@ -1273,6 +1285,17 @@ let references_result uri document offset =
     |> List.map (location_json uri document.text)
   in
   if quick_locations <> [] then `List quick_locations
+  else if lazy_large_workspace_document uri document then
+    match lexical_symbol_at_offset document.text offset with
+    | None -> `List []
+    | Some symbol ->
+        Hashtbl.fold
+          (fun reference_uri source locations ->
+            lexical_references symbol source
+            |> List.map (location_json reference_uri source)
+            |> List.rev_append locations)
+          workspace_sources []
+        |> List.rev |> fun locations -> `List locations
   else
     let document = ensure_analyzed_document uri document in
     match semantic_analysis document with
@@ -1310,7 +1333,18 @@ let references_result uri document offset =
 
 let highlights_result document offset =
   match semantic_analysis document with
-  | None -> `List []
+  | None -> (
+      match lexical_symbol_at_offset document.text offset with
+      | None -> `List []
+      | Some symbol ->
+          lexical_references symbol document.text
+          |> List.map (fun (range : Lg.Ast.source_span) ->
+                 `Assoc
+                   [ ( "range",
+                       range_of_offsets document.text range.start_offset
+                         range.end_offset );
+                     ("kind", `Int 1) ])
+          |> fun highlights -> `List highlights)
   | Some analysis ->
       Lg.Language_service.references analysis ~offset
       |> List.map (fun (range : Lg.Ast.source_span) ->

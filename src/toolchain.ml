@@ -1215,7 +1215,11 @@ let target_include_dirs target include_dirs =
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =
-  let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+  let report_timings =
+    match Sys.getenv_opt "LG_COMPILE_TIMINGS" with
+    | Some ("1" | "details" | "debug") -> true
+    | _ -> false
+  in
   let timed label f =
     let started_at = if report_timings then Unix.gettimeofday () else 0.0 in
     let result = f () in
@@ -1641,6 +1645,11 @@ let affected_stabilization_forms ast evidence_ast changed_names =
 let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
     ~(initial_state : Compiler_state.t) ast =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+  let report_timing_details =
+    match Sys.getenv_opt "LG_COMPILE_TIMINGS" with
+    | Some ("details" | "debug") -> true
+    | _ -> false
+  in
   let module Signed_names = Set.Make (String) in
   let scope =
     ast
@@ -1750,7 +1759,7 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
            | Some _ | None -> Some name)
   in
   let report_changed_declarations previous next =
-    if report_timings then
+    if report_timings || report_timing_details then
       let previous_by_name name =
         List.find_opt (fun (candidate, _) -> String.equal name candidate) previous
         |> Option.map snd
@@ -1792,7 +1801,14 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
                         then changes
                         else "return-param" :: changes)
                  in
-                 Some (name ^ "[" ^ String.concat "," (List.rev changes) ^ "]"))
+                 let label =
+                   name ^ "[" ^ String.concat "," (List.rev changes) ^ "]"
+                 in
+                 if report_timing_details then
+                   let previous_ty = Types.source_name previous_binding.ty in
+                   let next_ty = Types.source_name binding.ty in
+                   Some (label ^ " " ^ previous_ty ^ " => " ^ next_ty)
+                 else Some label)
       |> function
       | [] -> ()
       | names ->
@@ -1952,6 +1968,17 @@ let typecheck (parsed : parser_result) =
         |> Signature_overlay.value_names
       in
       let evidence_ast = stabilization_ast ~signed_names parsed.ast in
+      if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "debug" then begin
+        let evidence_names =
+          evidence_ast
+          |> List.filter_map (fun form ->
+                 match Dependency_graph.provided_names form with
+                 | [] -> None
+                 | names -> Some (String.concat "/" names))
+        in
+        Printf.eprintf "lg: stabilization evidence forms: %s\n%!"
+          (String.concat ", " evidence_names)
+      end;
       let compile_evidence =
         if List.for_all2 ( == ) evidence_ast parsed.ast then None
         else
@@ -2025,6 +2052,17 @@ let typecheck_incremental state (parsed : parser_result) =
         |> Signature_overlay.value_names
       in
       let evidence_ast = stabilization_ast ~signed_names parsed.ast in
+      if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "debug" then begin
+        let evidence_names =
+          evidence_ast
+          |> List.filter_map (fun form ->
+                 match Dependency_graph.provided_names form with
+                 | [] -> None
+                 | names -> Some (String.concat "/" names))
+        in
+        Printf.eprintf "lg: stabilization evidence forms: %s\n%!"
+          (String.concat ", " evidence_names)
+      end;
       let compile_evidence =
         if List.for_all2 ( == ) evidence_ast parsed.ast then None
         else
