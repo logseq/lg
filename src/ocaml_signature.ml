@@ -389,20 +389,13 @@ let record_type name =
       record
 
 let field_type type_name field_name =
-  let owner =
-    match String.rindex_opt type_name '.' with
-    | None -> ""
-    | Some index -> String.sub type_name 0 index
-  in
-  let qualified_name =
-    if owner = "" then field_name else owner ^ "." ^ field_name
-  in
-  match
-    Lg_compiler_support.Ocaml_value.lookup_label ~include_dirs:(include_dirs ())
-      qualified_name
-  with
-  | Ok compiler_type -> Ok (of_compiler_type compiler_type)
-  | Error message -> Error.error message
+  match record_type type_name with
+  | Ok (TNamed_record record) -> (
+      match List.find_opt (fun (field : Types.field) -> field.ocaml_name = field_name) record.fields with
+      | Some field -> Ok field.ty
+      | None -> Error.error ("unknown field " ^ field_name ^ " in " ^ type_name))
+  | Ok _ -> Error.error ("OCaml type " ^ type_name ^ " is not a record")
+  | Error _ as error -> error
 
 let parameter_label_name = function
   | Positional -> None

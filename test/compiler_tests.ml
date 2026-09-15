@@ -24899,6 +24899,8 @@ type row = {
   age : int;
 }
 
+type other = { name : int; age : string }
+
 val make : string -> int -> row
 |};
   write_file ml
@@ -24908,7 +24910,9 @@ type row = {
   age : int;
 }
 
-let make name age = { name; age }
+type other = { name : int; age : string }
+
+let make name age : row = { name; age }
 |};
   Fun.protect
     ~finally:(fun () ->
@@ -24942,7 +24946,9 @@ let make name age = { name; age }
 (require [ocaml.Mli_record_fixture :as fixture])
 (def row (fixture/make "Ada" 41))
 (def updated (assoc row :age 42))
+(def constructed (record Mli_record_fixture.row (name "Grace") (age 43)))
 (println (str (:name updated) ":" (:age updated)))
+(println (str (:name constructed) ":" (:age constructed)))
 |}
       in
       let native_source = compile_string_with_stdlib source |> expect_ok in
@@ -24971,9 +24977,9 @@ let make name age = { name; age }
           failwith
             (Printf.sprintf "generated OCaml did not run, exit code %d" code));
       let actual = read_file output_path in
-      if actual <> "Ada:42\n" then
+      if actual <> "Ada:42\nGrace:43\n" then
         failwith
-          (Printf.sprintf "expected %S, got %S" "Ada:42\n" actual))
+          (Printf.sprintf "expected %S, got %S" "Ada:42\nGrace:43\n" actual))
 
 let test_external_record_alias_survives_incremental_namespaces () =
   let provider =
