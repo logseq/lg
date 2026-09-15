@@ -13206,6 +13206,10 @@ let test_recursive_text_fallback_infers_string_return () =
 (def leaf (record text-node (text (Some "leaf")) (children [])))
 (assert (= (flatten-text (record text-node (text nil) (children [leaf leaf]))) "leafleaf"))
 (assert (= (flatten-text (record text-node (text (Some "")) (children [leaf]))) ""))
+(assert (= (or (:text leaf) (:text leaf)) (Some "leaf")))
+(def empty-node (record text-node (text nil) (children [])))
+(assert (= (or (:text empty-node) (:text empty-node)) nil))
+(assert (= (or (:text empty-node) (:text leaf)) (Some "leaf")))
 |} in
   let native = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "recursive_text_fallback_infers_string_return" "" native;

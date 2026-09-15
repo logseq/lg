@@ -2709,7 +2709,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                      let ty = inferred_form_or_call_type ~lookup_function_ty params form in
                      if Type_solver.is_open ty || Types.is_dynamic ty
                         || Types.equal ty TNil || Types.equal ty TBool
-                     then None else Some ty)
+                     then None
+                     else
+                       match ty with
+                       | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                           let fallback_ty =
+                             inferred_form_or_call_type ~lookup_function_ty params last
+                           in
+                           if Type_solver.is_open fallback_ty || Types.is_dynamic fallback_ty
+                           then Some ty
+                           else Some fallback_ty
+                       | _ -> Some ty)
             in
             let infer_last =
               match expected_result with
