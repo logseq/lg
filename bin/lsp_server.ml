@@ -6,14 +6,204 @@ type document = {
   recovered_analysis : Lg.Language_service.t option;
 }
 
+type saved_compilation_state = {
+  target : Lg.Target.t;
+  state : Lg.Compiler.state;
+  packages : string list;
+  ocaml_source : string;
+}
+
 let documents = Hashtbl.create 16
 let workspace_documents = Hashtbl.create 32
 let workspace_sources = Hashtbl.create 32
 let workspace_index = ref None
 let supports_dynamic_watched_files = ref false
+let base_state = ref Lg.Compiler.empty_state
+let explicit_state_path = ref false
+let configured_state_path = ref None
+
+let path_of_file_uri uri =
+  if String.starts_with ~prefix:"file://" uri then
+    String.sub uri 7 (String.length uri - 7)
+  else uri
+
+let read_file path =
+  let channel = open_in_bin path in
+  Fun.protect ~finally:(fun () -> close_in channel) (fun () ->
+      really_input_string channel (in_channel_length channel))
+
+let excluded_directory name =
+  name = "_build" || name = "_opam" || name = "duniverse"
+  || name = "node_modules"
+  || name = ".build"
+  || name = ".git" || (String.length name > 0 && name.[0] = '.')
+
+let rec find_repo_root_opt directory =
+  if Sys.file_exists (Filename.concat directory "dune-project") then
+    Some directory
+  else
+    let parent = Filename.dirname directory in
+    if String.equal parent directory then None else find_repo_root_opt parent
+
+let default_state_path () =
+  let executable_directory = Filename.dirname Sys.executable_name in
+  let repository_state =
+    find_repo_root_opt (Sys.getcwd ())
+    |> Option.map (fun root ->
+           Filename.concat root "stdlib/lg_stdlib_native.state")
+  in
+  let candidates =
+    Option.to_list (Sys.getenv_opt "LG_LSP_STATE")
+    @ Option.to_list (Sys.getenv_opt "LG_STDLIB_STATE")
+    @ [
+        Filename.concat executable_directory "../stdlib/lg_stdlib_native.state";
+        Filename.concat executable_directory
+          "../lib/lg/stdlib/lg_stdlib_native.state";
+        Filename.concat executable_directory "lg_stdlib_native.state";
+      ]
+    @ Option.to_list repository_state
+  in
+  List.find_opt Sys.file_exists candidates
+
+let sorted_readdir path =
+  if Sys.file_exists path && Sys.is_directory path then
+    try Sys.readdir path |> Array.to_list |> List.sort String.compare
+    with Sys_error _ -> []
+  else []
+
+let rec dune_files path =
+  if Sys.is_directory path then
+    sorted_readdir path
+    |> List.filter (fun name -> not (excluded_directory name))
+    |> List.concat_map (fun name -> dune_files (Filename.concat path name))
+  else if Filename.basename path = "dune" then [ path ]
+  else []
+
+let replace_char source target text =
+  String.map (fun char -> if char = source then target else char) text
+
+let unique_preserving_order values =
+  let rec loop seen result = function
+    | [] -> List.rev result
+    | value :: rest when List.mem value seen -> loop seen result rest
+    | value :: rest -> loop (value :: seen) (value :: result) rest
+  in
+  loop [] [] values
+
+let rec state_references_in_text text offset references =
+  match String.index_from_opt text offset '%' with
+  | None -> List.rev references
+  | Some percent when percent + 6 > String.length text ->
+      List.rev references
+  | Some percent ->
+      let prefix = "%{lib:" in
+      if
+        percent + String.length prefix <= String.length text
+        && String.sub text percent (String.length prefix) = prefix
+      then
+        let library_start = percent + String.length prefix in
+        match String.index_from_opt text library_start ':' with
+        | None -> List.rev references
+        | Some library_end -> (
+            match String.index_from_opt text (library_end + 1) '}' with
+            | None -> List.rev references
+            | Some reference_end ->
+                let library =
+                  String.sub text library_start (library_end - library_start)
+                in
+                let state_file =
+                  String.sub text (library_end + 1) (reference_end - library_end - 1)
+                in
+                let references =
+                  if Filename.check_suffix state_file ".state" then
+                    (library, state_file) :: references
+                  else references
+                in
+                state_references_in_text text (reference_end + 1) references)
+      else state_references_in_text text (percent + 1) references
+
+let state_references_in_dune path =
+  try state_references_in_text (read_file path) 0 [] with Sys_error _ -> []
+
+let project_state_candidates root =
+  let dune_candidates =
+    dune_files root
+    |> List.concat_map state_references_in_dune
+    |> List.map (fun (library, state_file) ->
+           Filename.concat root
+             (Filename.concat "_build/install/default/lib"
+                (Filename.concat (replace_char '.' '/' library) state_file)))
+  in
+  let fallback_candidates =
+    [
+      "_build/install/default/lib/lg/stdlib/lg_stdlib_native.state";
+      "_build/default/stdlib/lg_stdlib_native.state";
+    ]
+    |> List.map (Filename.concat root)
+  in
+  (dune_candidates @ fallback_candidates)
+  |> List.filter Sys.file_exists
+  |> unique_preserving_order
+
+let workspace_state_path root_uri =
+  path_of_file_uri root_uri |> project_state_candidates |> List.find_opt Sys.file_exists
+
+let split_colon_list text =
+  String.split_on_char ':' text |> List.filter (fun item -> item <> "")
+
+let absolute_path_from directory path =
+  if Filename.is_relative path then Filename.concat directory path else path
+
+let configure_workspace_include_path root =
+  let candidates =
+    [ "_build/default/core/lg_native_include_path"; "core/lg_native_include_path" ]
+    |> List.map (Filename.concat root)
+  in
+  match List.find_opt Sys.file_exists candidates with
+  | None -> ()
+  | Some path ->
+      let build_directory = Filename.concat root "_build/default/core" in
+      let directory =
+        if Sys.file_exists build_directory && Sys.is_directory build_directory then
+          build_directory
+        else Filename.dirname path
+      in
+      let include_path =
+        read_file path |> String.trim |> split_colon_list
+        |> List.map (absolute_path_from directory)
+        |> String.concat ":"
+      in
+      if include_path <> "" then (
+        Unix.putenv "LG_OCAML_INCLUDE_PATH_AUTHORITATIVE" "1";
+        Unix.putenv "LG_OCAML_INCLUDE_PATH" include_path;
+        Unix.putenv "OCAMLPATH" include_path)
+
+let load_saved_state path =
+  match Lg.Compiler_artifact.read ~kind:"saved-state" ~path with
+  | Ok saved ->
+      let saved = (saved : saved_compilation_state) in
+      if saved.target <> Lg.Target.default then
+        Error "saved compiler state target does not match LSP target"
+      else
+        Lg.Compiler.restore_ocaml_environment ~packages:saved.packages saved.state
+          [ saved.ocaml_source ]
+        |> Result.map (Lg.Compiler.with_source_scope "")
+        |> Result.map_error (fun (error : Lg.Compiler.compile_error) ->
+               error.message)
+  | Error message -> Error message
+
+let configure_base_state = function
+  | None -> ()
+  | Some path -> (
+      match load_saved_state path with
+      | Ok state ->
+          configured_state_path := Some path;
+          base_state := state
+      | Error message ->
+          prerr_endline ("lg-lsp: unable to load compiler state " ^ path ^ ": " ^ message))
 
 let analyze_document uri text =
-  let analysis = Lg.Language_service.analyze ~filename:uri text in
+  let analysis = Lg.Language_service.analyze_from_state ~filename:uri !base_state text in
   {
     text;
     analysis;
@@ -28,26 +218,15 @@ let semantic_analysis document =
   | Ok analysis -> Some analysis
   | Error _ -> document.recovered_analysis
 
-let path_of_file_uri uri =
-  if String.starts_with ~prefix:"file://" uri then
-    String.sub uri 7 (String.length uri - 7)
-  else uri
-
-let read_file path =
-  let channel = open_in_bin path in
-  Fun.protect ~finally:(fun () -> close_in channel) (fun () ->
-      really_input_string channel (in_channel_length channel))
-
-let excluded_directory name =
-  name = "_build" || name = "_opam" || name = "node_modules"
-  || name = ".git" || (String.length name > 0 && name.[0] = '.')
+let lg_source_file path =
+  Filename.check_suffix path ".cljc" || Filename.check_suffix path ".lgi"
 
 let rec lg_files path =
   if Sys.is_directory path then
     Sys.readdir path |> Array.to_list
     |> List.filter (fun name -> not (excluded_directory name))
     |> List.concat_map (fun name -> lg_files (Filename.concat path name))
-  else if Filename.check_suffix path ".cljc" then [ path ]
+  else if lg_source_file path then [ path ]
   else []
 
 let rebuild_workspace ?changed_uri () =
@@ -66,9 +245,10 @@ let rebuild_workspace ?changed_uri () =
     match (!workspace_index, changed_uri) with
     | Some index, Some uri ->
         let source = List.assoc uri sources in
-        Lg.Language_service.update_workspace_index index ~filename:uri ~source
+        Lg.Language_service.update_workspace_index_from_state !base_state index
+          ~filename:uri ~source
     | _ ->
-        Lg.Language_service.create_workspace_index sources
+        Lg.Language_service.create_workspace_index_from_state !base_state sources
         |> Result.map (fun index -> (index, List.map fst sources))
   in
   match indexed with
@@ -135,7 +315,10 @@ let remove_workspace_source uri =
   match !workspace_index with
   | None -> rebuild_workspace ()
   | Some index -> (
-      match Lg.Language_service.remove_workspace_file index ~filename:uri with
+      match
+        Lg.Language_service.remove_workspace_file_from_state !base_state index
+          ~filename:uri
+      with
       | Error _ -> rebuild_workspace ()
       | Ok (index, affected) ->
           workspace_index := Some index;
@@ -151,7 +334,7 @@ let update_watched_workspace_file uri change_type =
   if change_type = 3 then remove_workspace_source uri
   else
     let path = path_of_file_uri uri in
-    if Filename.check_suffix path ".cljc" && Sys.file_exists path then (
+    if lg_source_file path && Sys.file_exists path then (
       Hashtbl.replace workspace_sources uri (read_file path);
       rebuild_workspace ~changed_uri:uri ())
     else []
@@ -166,9 +349,11 @@ let index_workspace root_uri =
   ignore (rebuild_workspace ())
 
 let find_document uri =
-  match Hashtbl.find_opt documents uri with
-  | Some _ as document -> document
-  | None -> Hashtbl.find_opt workspace_documents uri
+  if Hashtbl.mem workspace_sources uri then
+    match Hashtbl.find_opt workspace_documents uri with
+    | Some _ as document -> document
+    | None -> Hashtbl.find_opt documents uri
+  else Hashtbl.find_opt documents uri
 
 let all_documents () =
   let combined = Hashtbl.copy workspace_documents in
@@ -528,6 +713,14 @@ let initialize_result =
 
 let document_uri params =
   params |> member "textDocument" |> member "uri" |> to_string
+
+let dynamic_watched_files_supported params =
+  try
+    (params |> member "capabilities" |> member "workspace"
+   |> member "didChangeWatchedFiles" |> member "dynamicRegistration"
+   |> to_bool_option)
+    = Some true
+  with Type_error _ -> false
 
 let line_start_offset text target_line =
   let rec loop offset line =
@@ -942,8 +1135,7 @@ let handle_notification method_ params =
              update_watched_workspace_file uri change_type)
       |> List.sort_uniq String.compare
       |> List.iter publish_current_diagnostics
-  | "initialized" ->
-      if !supports_dynamic_watched_files then register_watched_files ()
+  | "initialized" -> ()
   | "exit" -> ()
   | _ -> ()
 
@@ -956,13 +1148,15 @@ let rec loop shutdown_requested =
       let params = json |> member "params" in
       (match (method_, id) with
       | Some "initialize", (`Int _ | `String _) ->
-          supports_dynamic_watched_files :=
-            (params |> member "capabilities" |> member "workspace"
-           |> member "didChangeWatchedFiles" |> member "dynamicRegistration"
-           |> to_bool_option)
-            = Some true;
+          supports_dynamic_watched_files := dynamic_watched_files_supported params;
           (match params |> member "rootUri" with
-          | `String root_uri -> index_workspace root_uri
+          | `String root_uri ->
+              let root = path_of_file_uri root_uri in
+              configure_workspace_include_path root;
+              if !explicit_state_path then
+                configure_base_state !configured_state_path
+              else configure_base_state (workspace_state_path root_uri);
+              index_workspace root_uri
           | _ -> ());
           response id initialize_result;
           loop shutdown_requested
@@ -1064,4 +1258,29 @@ let rec loop shutdown_requested =
           loop shutdown_requested
       | _ -> loop shutdown_requested)
 
-let run () = loop false
+let usage () =
+  prerr_endline "Usage: lg-lsp [--state <saved-state>]";
+  exit 2
+
+let parse_args argv =
+  let rec loop state_path = function
+    | [] -> state_path
+    | "--state" :: path :: rest -> loop (Some path) rest
+    | [ "--state" ] -> usage ()
+    | _ -> usage ()
+  in
+  loop None (List.tl (Array.to_list argv))
+
+let run ?state_path () =
+  let state_path =
+    match state_path with
+    | Some _ as state_path -> state_path
+    | None -> parse_args Sys.argv
+  in
+  let state_path_was_explicit = Option.is_some state_path in
+  let state_path =
+    match state_path with Some _ -> state_path | None -> default_state_path ()
+  in
+  explicit_state_path := state_path_was_explicit;
+  configured_state_path := state_path;
+  loop false

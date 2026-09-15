@@ -14,7 +14,7 @@ let usage () =
      --run-files <input.cljc>... | \
      --run-files-from <state> <implementation.ml> <input.cljc>... | repl \
      [--state <lg_stdlib_native.state>] | mobile build [options] [paths...] | \
-     --lsp. \
+     --lsp [--state <saved-state>]. \
      Batch commands default to all .clj, .cljc, .cljs, and .lgi files in the \
      current directory.";
   exit 2
@@ -412,7 +412,7 @@ type mode =
       implementation_path : string;
       input_paths : string list;
     }
-  | Lsp
+  | Lsp of { state_path : string option }
 
 let extract_compilation_options args =
   let reader_target_of_string = function
@@ -446,7 +446,9 @@ let parse_args argv =
   in
   let mode =
     match args with
-    | [ _program; "--lsp" ] -> Lsp
+    | [ _program; "--lsp" ] -> Lsp { state_path = None }
+    | [ _program; "--lsp"; "--state"; state_path ] ->
+        Lsp { state_path = Some state_path }
     | [ _program; "--interface"; input ] ->
         Interface { input_path = input; output_path = None }
     | [ _program; "--interface"; input; "-o"; output ] ->
@@ -988,7 +990,7 @@ let report_error (err : Lg.Compiler.compile_error) =
   prerr_endline (Lg.Compiler.render_error ~source err);
   exit 1
 
-let run_lsp () =
+let run_lsp state_path =
   let executable_directory = Filename.dirname Sys.executable_name in
   let adjacent_executables =
     [
@@ -996,9 +998,14 @@ let run_lsp () =
       Filename.concat executable_directory "lg-lsp";
     ]
   in
+  let arguments executable =
+    match state_path with
+    | None -> [| executable |]
+    | Some state_path -> [| executable; "--state"; state_path |]
+  in
   match List.find_opt Sys.file_exists adjacent_executables with
-  | Some executable -> Unix.execv executable [| executable |]
-  | None -> Unix.execvp "lg-lsp" [| "lg-lsp" |]
+  | Some executable -> Unix.execv executable (arguments executable)
+  | None -> Unix.execvp "lg-lsp" (arguments "lg-lsp")
 
 let run_mobile argv =
   let executable_directory = Filename.dirname Sys.executable_name in
@@ -1050,7 +1057,7 @@ let () =
   if Array.length Sys.argv > 1 && Sys.argv.(1) = "repl" then
     run_repl Sys.argv;
   let target, reader_target, mode = parse_args Sys.argv in
-  (match mode with Lsp -> () | _ -> tune_compiler_gc ());
+  (match mode with Lsp _ -> () | _ -> tune_compiler_gc ());
   match mode with
   | Compile { input_path; output_path } -> (
       match compile_file ?reader_target target input_path with
@@ -1193,4 +1200,4 @@ let () =
           run_ocaml_source packages
             (concatenate_compilation_outputs
                [ read_file implementation_path; ocaml_source ]))
-  | Lsp -> run_lsp ()
+  | Lsp { state_path } -> run_lsp state_path

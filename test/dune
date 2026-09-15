@@ -415,6 +415,44 @@
 
 (rule
  (alias runtest)
+ (enabled_if
+  (= %{bin-available:emacs} true))
+ (deps
+  emacs_eglot_test.el
+  ../bin/lg_cli.exe
+  ../bin/lg_lsp.exe
+  ../editors/emacs/lg-mode.el
+  ../stdlib/lg_stdlib_native.state
+  ../stdlib/lg_stdlib_native.ml)
+ (action
+  (setenv
+   LG_TEST_WORKSPACE_ROOT
+   .
+   (setenv
+    LG_TEST_LSP_EXE
+    bin/lg_lsp.exe
+    (setenv
+     LG_TEST_CLI_EXE
+     bin/lg_cli.exe
+     (setenv
+      LG_TEST_STDLIB_STATE
+      stdlib/lg_stdlib_native.state
+      (setenv
+       LG_TEST_STDLIB_ML
+       stdlib/lg_stdlib_native.ml
+       (chdir
+        %{workspace_root}
+        (run
+         emacs
+         --batch
+         -Q
+         -L
+         editors/emacs
+         -l
+         %{dep:emacs_eglot_test.el})))))))))
+
+(rule
+ (alias runtest)
  (deps
   cli_state_cache_test.sh
   ../bin/lg_cli.exe

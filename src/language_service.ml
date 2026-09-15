@@ -1796,6 +1796,7 @@ type workspace_index = {
 
 type workspace_symbol_kind =
   | Value_symbol
+  | Namespace_symbol
   | Module_symbol
   | Module_type_symbol
   | Type_symbol
@@ -1815,7 +1816,28 @@ module Workspace_symbol_map = Map.Make (Workspace_symbol)
 let workspace_symbol_name (kind, name) =
   match kind with Type_symbol -> Names.sanitize_name name | _ -> name
 
-let workspace_symbol kind name = (kind, workspace_symbol_name (kind, name))
+let namespace_scoped_symbol = function
+  | Value_symbol | Type_symbol | Constructor_symbol | Protocol_symbol
+  | Method_symbol ->
+      true
+  | Namespace_symbol | Module_symbol | Module_type_symbol -> false
+
+let namespace_qualified_name namespace kind name =
+  let name = workspace_symbol_name (kind, name) in
+  match namespace with
+  | Some namespace when namespace_scoped_symbol kind -> namespace ^ "/" ^ name
+  | _ -> name
+
+let workspace_symbol ?namespace kind name =
+  (kind, namespace_qualified_name namespace kind name)
+
+let source_namespace forms =
+  List.find_map
+    (function
+      | Ast.FList (FSymbol "ns" :: FSymbol namespace_name :: _) ->
+          Some namespace_name
+      | _ -> None)
+    forms
 
 let provided_symbols source =
   let open Ast in
@@ -1825,53 +1847,50 @@ let provided_symbols source =
       match Parser.parse tokens with
       | Error _ -> Workspace_symbol_set.empty
       | Ok forms ->
+          let namespace = source_namespace forms in
+          let add kind name symbols =
+            Workspace_symbol_set.add (workspace_symbol ?namespace kind name)
+              symbols
+          in
           List.fold_left
             (fun symbols -> function
+              | FList (FSymbol "ns" :: FSymbol namespace_name :: _) ->
+                  Workspace_symbol_set.add
+                    (workspace_symbol Namespace_symbol namespace_name)
+                    symbols
               | FList
                   (FSymbol ("module-alias" | "module-apply")
                   :: FSymbol name :: _) ->
-                  Workspace_symbol_set.add (workspace_symbol Module_symbol name)
-                    symbols
+                  add Module_symbol name symbols
               | FList
                   (FSymbol "type-variant" :: FSymbol name :: constructors) ->
                   List.fold_left
                     (fun symbols -> function
                       | FSymbol constructor
                       | FList (FSymbol constructor :: _) ->
-                          Workspace_symbol_set.add
-                            (workspace_symbol Constructor_symbol constructor)
-                            symbols
+                          add Constructor_symbol constructor symbols
                       | _ -> symbols)
-                    (Workspace_symbol_set.add (workspace_symbol Type_symbol name)
-                       symbols)
+                    (add Type_symbol name symbols)
                     constructors
               | FList
                   (FSymbol ("module" | "module-functor") :: FSymbol name :: _) ->
-                  Workspace_symbol_set.add (workspace_symbol Module_symbol name)
-                    symbols
+                  add Module_symbol name symbols
               | FList (FSymbol "module-signature" :: FSymbol name :: _) ->
-                  Workspace_symbol_set.add
-                    (workspace_symbol Module_type_symbol name) symbols
+                  add Module_type_symbol name symbols
               | FList
                   (FSymbol ("def" | "defonce" | "defn" | "defn-")
                   :: FSymbol name :: _) ->
-                  Workspace_symbol_set.add (workspace_symbol Value_symbol name)
-                    symbols
+                  add Value_symbol name symbols
               | FList
                   (FSymbol ("type-alias" | "type-record") :: FSymbol name :: _) ->
-                  Workspace_symbol_set.add (workspace_symbol Type_symbol name)
-                    symbols
+                  add Type_symbol name symbols
               | FList (FSymbol "defprotocol" :: FSymbol protocol_name :: methods) ->
                   List.fold_left
                     (fun symbols -> function
                       | FList (FSymbol method_name :: _) ->
-                          Workspace_symbol_set.add
-                            (workspace_symbol Method_symbol method_name)
-                            symbols
+                          add Method_symbol method_name symbols
                       | _ -> symbols)
-                    (Workspace_symbol_set.add
-                       (workspace_symbol Protocol_symbol protocol_name)
-                       symbols)
+                    (add Protocol_symbol protocol_name symbols)
                     methods
               | _ -> symbols)
             Workspace_symbol_set.empty forms)
@@ -1968,6 +1987,89 @@ let rec declaration_type_references add references = function
   | FMap _ | FCoreSymbol _ ->
       references
 
+let namespace_require_keyword = function
+  | Ast.FKeyword "require" | FKeyword ":require" | FSymbol ":require"
+  | FSymbol "require" ->
+      true
+  | _ -> false
+
+let namespace_require_reference add references = function
+  | Ast.FVector (FSymbol namespace_name :: _)
+  | FList (FSymbol namespace_name :: _) ->
+      add Namespace_symbol namespace_name references
+  | FSymbol namespace_name -> add Namespace_symbol namespace_name references
+  | _ -> references
+
+let namespace_clause_references add references = function
+  | Ast.FList (keyword :: specs) when namespace_require_keyword keyword ->
+      List.fold_left (namespace_require_reference add) references specs
+  | _ -> references
+
+let namespace_references add references clauses =
+  List.fold_left (namespace_clause_references add) references clauses
+
+let find_substring_from text pattern offset =
+  let pattern_length = String.length pattern in
+  let text_length = String.length text in
+  let limit = text_length - pattern_length in
+  let rec loop index =
+    if index > limit then None
+    else if String.sub text index pattern_length = pattern then Some index
+    else loop (index + 1)
+  in
+  if pattern_length = 0 || offset > limit then None else loop offset
+
+let namespace_token_char = function
+  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' | '.' -> true
+  | _ -> false
+
+let skip_whitespace text offset =
+  let length = String.length text in
+  let rec loop index =
+    if index >= length then index
+    else
+      match text.[index] with
+      | ' ' | '\n' | '\r' | '\t' | ',' -> loop (index + 1)
+      | _ -> index
+  in
+  loop offset
+
+let source_require_namespace_references add source references =
+  let length = String.length source in
+  let rec token_end index =
+    if index < length && namespace_token_char source.[index] then
+      token_end (index + 1)
+    else index
+  in
+  let rec vectors limit offset references =
+    match find_substring_from source "[" offset with
+    | None -> references
+    | Some vector_start when vector_start >= limit -> references
+    | Some vector_start ->
+        let start = skip_whitespace source (vector_start + 1) in
+        let stop = token_end start in
+        let references =
+          if stop > start then
+            let namespace_name = String.sub source start (stop - start) in
+            if String.contains namespace_name '.' then
+              add Namespace_symbol namespace_name references
+            else references
+          else references
+        in
+        vectors limit stop references
+  in
+  let rec requires offset references =
+    match find_substring_from source ":require" offset with
+    | None -> references
+    | Some require_start ->
+        let next = require_start + String.length ":require" in
+        let limit =
+          find_substring_from source "\n\n" next |> Option.value ~default:length
+        in
+        requires next (vectors limit next references)
+  in
+  requires 0 references
+
 let add_symbol_references bound name references =
   let add kind name references =
     Workspace_symbol_set.add (workspace_symbol kind name) references
@@ -2002,8 +2104,11 @@ let rec pattern_references bound references = function
 
 let referenced_symbols source =
   let open Ast in
+  let current_namespace = ref None in
   let add kind name references =
-    Workspace_symbol_set.add (workspace_symbol kind name) references
+    Workspace_symbol_set.add
+      (workspace_symbol ?namespace:!current_namespace kind name)
+      references
   in
   let rec forms bound references = function
     | [] -> references
@@ -2022,6 +2127,10 @@ let referenced_symbols source =
     | _ -> references
   and form_references bound references = function
     | FSymbol name -> add_symbol_references bound name references
+    | FList (FSymbol "ns" :: _namespace :: clauses) ->
+        namespace_references add references clauses
+    | FList (FSymbol "require" :: specs) ->
+        List.fold_left (namespace_require_reference add) references specs
     | FList
         (FSymbol ("defn" | "defn-") :: FSymbol _
         :: ((FList _) :: _ as clauses)) ->
@@ -2103,7 +2212,10 @@ let referenced_symbols source =
   | Ok tokens -> (
       match Parser.parse tokens with
       | Error _ -> Workspace_symbol_set.empty
-      | Ok parsed -> forms String_set.empty Workspace_symbol_set.empty parsed)
+      | Ok parsed ->
+          current_namespace := source_namespace parsed;
+          forms String_set.empty Workspace_symbol_set.empty parsed
+          |> source_require_namespace_references add source)
 
 let workspace_providers sources =
   String_map.fold
@@ -2120,86 +2232,103 @@ let workspace_providers sources =
                     Workspace_symbol_map.find_opt symbol providers
                     |> Option.value ~default:String_set.empty
                   in
-                  let unique =
-                    match fst symbol with
-                    | Value_symbol | Module_symbol | Module_type_symbol
-                    | Type_symbol | Protocol_symbol -> true
-                    | Constructor_symbol | Method_symbol -> false
-                  in
-                  match String_set.choose_opt existing with
-                  | Some existing_filename
-                    when unique && existing_filename <> filename ->
-                      Error.error
-                        ("workspace symbol " ^ snd symbol
-                       ^ " has multiple providers: " ^ existing_filename ^ " and "
-                       ^ filename)
-                  | _ ->
-                      Ok
-                        (Workspace_symbol_map.add symbol
-                           (String_set.add filename existing)
-                           providers)))
+                  Ok
+                    (Workspace_symbol_map.add symbol
+                       (String_set.add filename existing)
+                       providers)))
             (provided_symbols source) (Ok providers))
     sources (Ok Workspace_symbol_map.empty)
 
-let workspace_components sources =
+let workspace_dependencies sources =
   match workspace_providers sources with
   | Error _ as err -> err
   | Ok providers ->
-  let dependencies =
-    String_map.mapi
-      (fun filename source ->
-        Workspace_symbol_set.fold
-             (fun symbol dependencies ->
-               Workspace_symbol_map.find_opt symbol providers
-               |> Option.value ~default:String_set.empty
-               |> String_set.remove filename
-               |> String_set.union dependencies)
-             (referenced_symbols source)
-             String_set.empty)
-      sources
-  in
-  let adjacent filename =
-    let direct =
-      String_map.find_opt filename dependencies
-      |> Option.value ~default:String_set.empty
-    in
-    String_map.fold
-      (fun candidate candidate_dependencies adjacent ->
-        if String_set.mem filename candidate_dependencies then
-          String_set.add candidate adjacent
-        else adjacent)
-      dependencies direct
-  in
-  let rec component pending visited =
+      Ok
+        (String_map.mapi
+           (fun filename source ->
+             Workspace_symbol_set.fold
+               (fun symbol dependencies ->
+                 let providers =
+                   Workspace_symbol_map.find_opt symbol providers
+                   |> Option.value ~default:String_set.empty
+                   |> String_set.remove filename
+                 in
+                 let providers =
+                   match fst symbol with
+                   | Namespace_symbol -> providers
+                   | _ ->
+                       if String_set.cardinal providers = 1 then providers
+                       else String_set.empty
+                 in
+                 String_set.union providers dependencies)
+               (referenced_symbols source)
+               String_set.empty)
+           sources)
+
+let workspace_components sources =
+  match workspace_dependencies sources with
+  | Error _ as err -> err
+  | Ok dependencies ->
+      let adjacent filename =
+        let direct =
+          String_map.find_opt filename dependencies
+          |> Option.value ~default:String_set.empty
+        in
+        String_map.fold
+          (fun candidate candidate_dependencies adjacent ->
+            if String_set.mem filename candidate_dependencies then
+              String_set.add candidate adjacent
+            else adjacent)
+          dependencies direct
+      in
+      let rec component pending visited =
+        match String_set.choose_opt pending with
+        | None -> visited
+        | Some filename ->
+            let pending = String_set.remove filename pending in
+            if String_set.mem filename visited then component pending visited
+            else
+              component
+                (String_set.union pending (adjacent filename))
+                (String_set.add filename visited)
+      in
+      let rec collect remaining components =
+        match String_set.choose_opt remaining with
+        | None -> List.rev components
+        | Some filename ->
+            let members =
+              component (String_set.singleton filename) String_set.empty
+            in
+            collect (String_set.diff remaining members) (members :: components)
+      in
+      Ok
+        (collect
+           (String_map.to_seq sources |> Seq.map fst |> String_set.of_seq)
+           [])
+
+let dependency_closure dependencies filename =
+  let rec visit pending visited =
     match String_set.choose_opt pending with
     | None -> visited
     | Some filename ->
         let pending = String_set.remove filename pending in
-        if String_set.mem filename visited then component pending visited
+        if String_set.mem filename visited then visit pending visited
         else
-          component
-            (String_set.union pending (adjacent filename))
-            (String_set.add filename visited)
+          let direct =
+            String_map.find_opt filename dependencies
+            |> Option.value ~default:String_set.empty
+          in
+          visit (String_set.union pending direct) (String_set.add filename visited)
   in
-  let rec collect remaining components =
-    match String_set.choose_opt remaining with
-    | None -> List.rev components
-    | Some filename ->
-        let members = component (String_set.singleton filename) String_set.empty in
-        collect (String_set.diff remaining members) (members :: components)
-  in
-  Ok
-    (collect
-       (String_map.to_seq sources |> Seq.map fst |> String_set.of_seq)
-       [])
+  visit (String_set.singleton filename) String_set.empty
 
-let analyze_component sources filenames =
+let analyze_component_from_state ?(target = Target.default) state sources filenames =
   let component_sources =
     String_set.to_seq filenames
     |> Seq.map (fun filename -> (filename, String_map.find filename sources))
     |> List.of_seq
   in
-  analyze_workspace_with_errors component_sources
+  analyze_workspace_with_errors_from_state ~target state component_sources
   |> Result.map (fun (analyses, errors) ->
          ( List.fold_left
              (fun result (filename, analysis) ->
@@ -2208,9 +2337,12 @@ let analyze_component sources filenames =
            List.fold_left
              (fun result (filename, error) ->
                String_map.add filename error result)
-             String_map.empty errors ))
+            String_map.empty errors ))
 
-let create_workspace_index source_list =
+let analyze_component sources filenames =
+  analyze_component_from_state Toolchain.empty_state sources filenames
+
+let create_workspace_index_from_state ?(target = Target.default) state source_list =
   let sources =
     List.fold_left
       (fun sources (filename, source) -> String_map.add filename source sources)
@@ -2219,24 +2351,51 @@ let create_workspace_index source_list =
   match workspace_components sources with
   | Error _ as err -> err
   | Ok components ->
-  let analyze_individually component analyses errors =
-    String_set.fold
-      (fun filename (analyses, errors) ->
-        match analyze ~filename (String_map.find filename sources) with
-        | Ok analysis -> (String_map.add filename analysis analyses, errors)
-        | Error error -> (analyses, String_map.add filename error errors))
-      component (analyses, errors)
-  in
+      let dependencies =
+        workspace_dependencies sources |> Result.value ~default:String_map.empty
+      in
+      let analyze_individually component analyses errors =
+        String_set.fold
+          (fun filename (analyses, errors) ->
+            let closure = dependency_closure dependencies filename in
+            match analyze_component_from_state ~target state sources closure with
+            | Ok (closure_analyses, closure_errors) -> (
+                match String_map.find_opt filename closure_analyses with
+                | Some analysis ->
+                    ( String_map.add filename analysis analyses,
+                      String_map.remove filename errors )
+                | None -> (
+                    match String_map.find_opt filename closure_errors with
+                    | Some error -> (analyses, String_map.add filename error errors)
+                    | None -> (analyses, errors)))
+            | Error _ -> (
+                match
+                  analyze_from_state ~target ~filename state
+                    (String_map.find filename sources)
+                with
+                | Ok analysis ->
+                    ( String_map.add filename analysis analyses,
+                      String_map.remove filename errors )
+                | Error error -> (analyses, String_map.add filename error errors)))
+          component (analyses, errors)
+      in
   let rec analyze_all analyses errors = function
     | [] -> Ok { sources; analyses; errors; components }
     | component :: rest -> (
-        match analyze_component sources component with
+        match analyze_component_from_state ~target state sources component with
         | Error _ ->
             let analyses, errors =
               analyze_individually component analyses errors
             in
             analyze_all analyses errors rest
         | Ok (component_analyses, component_errors) ->
+            let failed =
+              String_map.to_seq component_errors |> Seq.map fst
+              |> String_set.of_seq
+            in
+            let component_analyses, component_errors =
+              analyze_individually failed component_analyses component_errors
+            in
             analyze_all
               (String_map.union (fun _ _ updated -> Some updated) analyses
                  component_analyses)
@@ -2245,6 +2404,9 @@ let create_workspace_index source_list =
               rest)
   in
   analyze_all String_map.empty String_map.empty components
+
+let create_workspace_index source_list =
+  create_workspace_index_from_state Toolchain.empty_state source_list
 
 let workspace_analysis index filename =
   String_map.find_opt filename index.analyses
@@ -2255,16 +2417,36 @@ let component_containing filename components =
   List.find_opt (String_set.mem filename) components
   |> Option.value ~default:(String_set.singleton filename)
 
-let rebuild_workspace_components index ~sources ~components ~affected_components
-    ~invalidated ~reported =
+let rebuild_workspace_components ?(target = Target.default) state index ~sources
+    ~components ~affected_components ~invalidated ~reported =
   let analyses = String_set.fold String_map.remove invalidated index.analyses in
   let errors = String_set.fold String_map.remove invalidated index.errors in
+  let dependencies =
+    workspace_dependencies sources |> Result.value ~default:String_map.empty
+  in
   let analyze_individually component analyses errors =
     String_set.fold
       (fun filename (analyses, errors) ->
-        match analyze ~filename (String_map.find filename sources) with
-        | Ok analysis -> (String_map.add filename analysis analyses, errors)
-        | Error error -> (analyses, String_map.add filename error errors))
+        let closure = dependency_closure dependencies filename in
+        match analyze_component_from_state ~target state sources closure with
+        | Ok (closure_analyses, closure_errors) -> (
+            match String_map.find_opt filename closure_analyses with
+            | Some analysis ->
+                ( String_map.add filename analysis analyses,
+                  String_map.remove filename errors )
+            | None -> (
+                match String_map.find_opt filename closure_errors with
+                | Some error -> (analyses, String_map.add filename error errors)
+                | None -> (analyses, errors)))
+        | Error _ -> (
+            match
+              analyze_from_state ~target ~filename state
+                (String_map.find filename sources)
+            with
+            | Ok analysis ->
+                ( String_map.add filename analysis analyses,
+                  String_map.remove filename errors )
+            | Error error -> (analyses, String_map.add filename error errors)))
       component (analyses, errors)
   in
   let rec rebuild analyses errors = function
@@ -2273,13 +2455,20 @@ let rebuild_workspace_components index ~sources ~components ~affected_components
           ( { sources; analyses; errors; components },
             String_set.elements reported )
     | component :: rest -> (
-        match analyze_component sources component with
+        match analyze_component_from_state ~target state sources component with
         | Error _ ->
             let analyses, errors =
               analyze_individually component analyses errors
             in
             rebuild analyses errors rest
         | Ok (component_analyses, component_errors) ->
+            let failed =
+              String_map.to_seq component_errors |> Seq.map fst
+              |> String_set.of_seq
+            in
+            let component_analyses, component_errors =
+              analyze_individually failed component_analyses component_errors
+            in
             rebuild
               (String_map.union (fun _ _ updated -> Some updated) analyses
                  component_analyses)
@@ -2289,7 +2478,8 @@ let rebuild_workspace_components index ~sources ~components ~affected_components
   in
   rebuild analyses errors affected_components
 
-let update_workspace_index index ~filename ~source =
+let update_workspace_index_from_state ?(target = Target.default) state index ~filename
+    ~source =
   match String_map.find_opt filename index.sources with
   | Some previous when previous = source -> Ok (index, [])
   | _ ->
@@ -2307,10 +2497,13 @@ let update_workspace_index index ~filename ~source =
       let reanalyzed =
         List.fold_left String_set.union String_set.empty affected_components
       in
-      rebuild_workspace_components index ~sources ~components ~affected_components
-        ~invalidated:reanalyzed ~reported:reanalyzed)
+      rebuild_workspace_components ~target state index ~sources ~components
+        ~affected_components ~invalidated:reanalyzed ~reported:reanalyzed)
 
-let remove_workspace_file index ~filename =
+let update_workspace_index index ~filename ~source =
+  update_workspace_index_from_state Toolchain.empty_state index ~filename ~source
+
+let remove_workspace_file_from_state ?(target = Target.default) state index ~filename =
   if not (String_map.mem filename index.sources) then Ok (index, [])
   else
     let old_affected = component_containing filename index.components in
@@ -2331,5 +2524,8 @@ let remove_workspace_file index ~filename =
           List.fold_left String_set.union String_set.empty affected_components
         in
         let invalidated = String_set.add filename reanalyzed in
-        rebuild_workspace_components index ~sources ~components
+        rebuild_workspace_components ~target state index ~sources ~components
           ~affected_components ~invalidated ~reported:invalidated
+
+let remove_workspace_file index ~filename =
+  remove_workspace_file_from_state Toolchain.empty_state index ~filename

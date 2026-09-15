@@ -333,8 +333,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 161; then
-  echo "compiler form dispatch changed: expected 161 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 166; then
+  echo "compiler form dispatch changed: expected 166 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -349,6 +349,7 @@ awk -F '\t' '
     form_reason["__lg_when-let"] = "private-source-static-truthy-binding-expansion"
     form_reason["__lg_if-some"] = "private-source-static-non-nil-binding-expansion"
     form_reason["__lg_when-some"] = "private-source-static-non-nil-binding-expansion"
+    form_reason["__lg_quote"] = "private-compiler-owned-quote-normalization-marker"
     form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
     form_reason["__lg_second"] = "private-source-static-tuple-or-seqable-second-element-elaboration"

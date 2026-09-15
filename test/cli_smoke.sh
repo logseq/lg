@@ -195,10 +195,13 @@ bad_source="$multi_dir/bad.cljc"
 bad_stderr="$multi_dir/bad.stderr"
 watched_provider="$multi_dir/watched-provider.cljc"
 watched_consumer="$multi_dir/watched-consumer.cljc"
+vendored_source="$multi_dir/duniverse/lg/vendor/clojure-test-suite/test/clojure/core_test/not.cljc"
 printf '%s\n' \
   '(def bad (Stdlib.abs "bad"))' > "$bad_source"
 printf '%s\n' '(module Watched (def value 42))' > "$watched_provider"
 printf '%s\n' '(def watched Watched/value)' > "$watched_consumer"
+mkdir -p "$(dirname "$vendored_source")"
+printf '%s\n' '(require [clojure.test :refer [are]])' > "$vendored_source"
 
 if "$cli" --compile-files-from "$stdlib_state" "$math_source" "$bad_source" -o "$multi_output" \
     2> "$bad_stderr"; then
@@ -273,8 +276,14 @@ grep -q '"documentSymbolProvider":true' "$lsp_output"
 grep -q '"workspaceSymbolProvider":true' "$lsp_output"
 grep -q '"semanticTokensProvider"' "$lsp_output"
 grep -q '"signatureHelpProvider"' "$lsp_output"
-grep -q '"method":"client/registerCapability"' "$lsp_output"
-grep -Fq '"globPattern":"**/*.cljc"' "$lsp_output"
+if grep -q '"method":"client/registerCapability"' "$lsp_output"; then
+  echo "LSP must not ask Eglot to file-watch the whole workspace" >&2
+  exit 1
+fi
+if grep -Fq "$vendored_source" "$lsp_output"; then
+  echo "LSP indexed diagnostics from vendored duniverse sources" >&2
+  exit 1
+fi
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
@@ -353,3 +362,33 @@ if ! grep -Fq "\"uri\":\"file://$record_definition\",\"range\":{\"start\":{\"lin
   cat "$related_lsp_output" >&2
   exit 1
 fi
+
+namespace_workspace="$multi_dir/namespace-workspace"
+namespace_lsp_output="$multi_dir/namespace-lsp.output"
+namespace_consumer="$namespace_workspace/app/a_consumer.cljc"
+namespace_provider="$namespace_workspace/app/z_provider.cljc"
+mkdir -p "$(dirname "$namespace_consumer")"
+printf '%s\n' \
+  '(ns app.consumer' \
+  '  (:require [app.z-provider :as provider]))' \
+  '' \
+  '(def answer (provider/value))' > "$namespace_consumer"
+printf '%s\n' \
+  '(ns app.z-provider)' \
+  '' \
+  '(defn value [] 42)' > "$namespace_provider"
+
+{
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootUri\":\"file://$namespace_workspace\",\"capabilities\":{\"workspace\":{\"didChangeWatchedFiles\":{\"dynamicRegistration\":false}}}}}"
+  send_lsp_message '{"jsonrpc":"2.0","method":"initialized","params":{}}'
+  send_lsp_message "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$namespace_consumer\",\"languageId\":\"lg\",\"version\":1,\"text\":\"(ns app.consumer\\n  (:require [app.z-provider :as provider]))\\n\\n(def answer (provider/value))\\n\"}}}"
+  send_lsp_message '{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}'
+  send_lsp_message '{"jsonrpc":"2.0","method":"exit","params":null}'
+} | "$cli" --lsp --state "$stdlib_state" > "$namespace_lsp_output"
+
+if grep -Fq "cannot require unknown namespace app.z-provider" "$namespace_lsp_output"; then
+  echo "LSP did not order namespace require dependencies" >&2
+  cat "$namespace_lsp_output" >&2
+  exit 1
+fi
+grep -Fq "\"uri\":\"file://$namespace_consumer\",\"diagnostics\":[]" "$namespace_lsp_output"

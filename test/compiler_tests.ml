@@ -48395,22 +48395,19 @@ let test_workspace_index_handles_file_removal_readd_and_rename () =
       ()
   | _ -> failwith "definitions must move to the re-added provider URI"
 
-let test_workspace_index_rejects_duplicate_providers () =
-  match
+let test_workspace_index_tolerates_duplicate_providers () =
+  let consumer_uri = "file:///tmp/provider-user.cljc" in
+  let index =
     Lg.Language_service.create_workspace_index
       [
         ("file:///tmp/provider-one.cljc", "(def shared-value 1)\n");
         ("file:///tmp/provider-two.cljc", "(def shared-value 2)\n");
-        ("file:///tmp/provider-user.cljc", "(def result shared-value)\n");
+        (consumer_uri, "(def result shared-value)\n");
       ]
-  with
-  | Error error
-    when string_contains_substring error.message
-           "workspace symbol shared-value has multiple providers" ->
-      ()
-  | Error error ->
-      failwith ("unexpected workspace provider error: " ^ error.message)
-  | Ok _ -> failwith "workspace index must reject duplicate symbol providers"
+    |> expect_ok
+  in
+  if Lg.Language_service.workspace_error index consumer_uri = None then
+    failwith "ambiguous duplicate providers must stay local to their consumer"
 
 let test_workspace_index_contains_component_errors () =
   let math_uri = "file:///tmp/error-math.cljc" in
@@ -54612,8 +54609,8 @@ let tests =
       test_workspace_index_separates_module_and_protocol_providers );
     ( "workspace index handles file lifecycle",
       test_workspace_index_handles_file_removal_readd_and_rename );
-    ( "workspace index rejects duplicate providers",
-      test_workspace_index_rejects_duplicate_providers );
+    ( "workspace index tolerates duplicate providers",
+      test_workspace_index_tolerates_duplicate_providers );
     ( "workspace index contains component errors",
       test_workspace_index_contains_component_errors );
     ( "workspace index records partial component errors",
