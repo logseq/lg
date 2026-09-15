@@ -71,6 +71,15 @@ let read_string source start =
           | 'r' ->
               Buffer.add_char buffer '\r';
               loop (i + 2)
+          | 't' ->
+              Buffer.add_char buffer '\t';
+              loop (i + 2)
+          | 'b' ->
+              Buffer.add_char buffer '\b';
+              loop (i + 2)
+          | 'f' ->
+              Buffer.add_char buffer '\012';
+              loop (i + 2)
           | ch ->
               Buffer.add_char buffer ch;
               loop (i + 2))

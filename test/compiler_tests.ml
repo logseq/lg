@@ -51150,8 +51150,17 @@ let test_discarded_pure_values_are_elided () =
   assert_ocaml_runs "discarded_pure_values_are_elided" "2\n"
     (ocaml_source ^ "\nlet () = print_endline (string_of_int result)\n")
 
+let test_string_control_escapes_preserve_bytes () =
+  let source = {|(println "\t\b\f\n\r\"\\")|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "string_control_escapes_preserve_bytes"
+    "\t\b\012\n\r\"\\\n" ocaml_source;
+  compile_with_stdlib Lg.Target.Melange "test/string_control_escapes.cljc" source
+  |> ignore
+
 let tests =
   [
+    ( "string control escapes preserve bytes", test_string_control_escapes_preserve_bytes );
     ( "inference keeps local uuid separate from core function", test_inference_keeps_local_uuid_separate_from_core_function );
     ( "list star infers generic tail", test_list_star_infers_generic_tail );
     ( "recursive host variant module aliases", test_recursive_host_variant_module_aliases );
