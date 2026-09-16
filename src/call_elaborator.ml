@@ -11162,7 +11162,7 @@ let create ~compile_expr =
         constructor
           (function
                       | [ value ] ->
-                          TOcaml_app ("result", [ value.ty; expected_error ])
+                          TOcaml_app ("result", [ Types.constraint_value_type value.ty; expected_error ])
             | _ -> TUnknown)
           ?payload_tys:(Option.map (fun ty -> [ ty ]) expected_ok)
           1
@@ -11176,7 +11176,7 @@ let create ~compile_expr =
         constructor
           (function
                       | [ value ] ->
-                          TOcaml_app ("result", [ expected_ok; value.ty ])
+                          TOcaml_app ("result", [ expected_ok; Types.constraint_value_type value.ty ])
             | _ -> TUnknown)
           ?payload_tys:(Option.map (fun ty -> [ ty ]) expected_error)
           1

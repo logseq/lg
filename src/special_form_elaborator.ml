@@ -743,6 +743,24 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
                 [ value ] ))
           (adapt_branch_expression env target_inner branch)
+    | TOcaml_app ("result", [target_ok; target_error]),
+      TOcaml_app ("result", [source_ok; source_error]) ->
+        let adapt constructor target source =
+          let name = "__lg_branch_result_payload" in
+          Result.map
+            (fun value ->
+              let pattern = capability_pattern name source in
+              ((Semantic_ir.PConstructor (constructor, Some pattern),
+                Semantic_ir.Constructor (constructor, Some value)),
+               pattern = Semantic_ir.PVar name && value = Semantic_ir.Ident name))
+            (adapt_branch_expression env target (typed_ir source (Semantic_ir.Ident name)))
+        in
+        Result.bind (adapt "Ok" target_ok source_ok) (fun (success, success_identity) ->
+          Result.map
+            (fun (error, error_identity) ->
+              if success_identity && error_identity then branch.semantic_expr
+              else Semantic_ir.Match (branch.semantic_expr, [success; error]))
+            (adapt "Error" target_error source_error))
     | ( (TNullable target_inner
         | TOcaml_app ("option", [ target_inner ])),
         (TNullable source_inner
@@ -990,6 +1008,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                branch.semantic_expr))
   in
   let rec requires_branch_adaptation = function
+    | TOcaml_app ("result", _) -> true
     | ty when Types.is_dynamic ty -> true
     | ty when Option.is_some (Types.reduced_element ty) -> true
     | ty when Option.is_some (Types.next_seq_element ty) -> true

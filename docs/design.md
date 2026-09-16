@@ -33,6 +33,12 @@ the shared type variable carried by the other branch. A resolved host record
 and its external type name unify with the same type arguments, consistently
 with host-boundary assignability.
 
+Result constructors describe the stored payload, not the capability evidence
+used to inspect it. Branch adaptation converts both Result alternatives when
+their payload representations differ, including nested tuples. Unqualified
+nullary constructors retain their nominal result type in emitted expressions
+so distinct namespaces may use the same OCaml constructor spelling.
+
 Destructured local bindings retain independent inference variables until their
 initializers and uses constrain them. In a mixed `let`, later initializer
 expressions constrain earlier destructured values as well as the final body.

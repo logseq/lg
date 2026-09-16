@@ -169,7 +169,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
       match Env.find_opt (Names.scoped_key scope name) env with
       | Some { ty = TFn ([], return_ty); ocaml_name; _ }
         when is_constructor_name name ->
-          Ok (typed_ir return_ty (Semantic_ir.Constructor (ocaml_name, None)))
+          let value = Semantic_ir.Constructor (ocaml_name, None) in
+          let value =
+            if String.contains ocaml_name '.' then value
+            else Semantic_ir.Constraint (value, Types.ocaml_name return_ty)
+          in
+          Ok (typed_ir return_ty value)
       | Some
           {
             ty = TRef value_ty;

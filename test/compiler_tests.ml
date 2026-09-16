@@ -47154,6 +47154,65 @@ let test_result_callback_record_constraints_through_try () =
   assert_ocaml_runs "result_callback_record_try" "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" output;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_logged_result_callback () =
+  let source = {|
+(defn workflow-result [code result]
+  (match result
+    (Ok value) (Ok value)
+    (Error message) (Error (tuple code message))))
+(defn log-message [message] (str "request failed: " message))
+(defn checked [value] (if (> value 0) (Ok value) (Error "negative")))
+(defn workflow [send]
+  (let [result
+        (let* [value (workflow-result "transport"
+                      (match (send)
+                        (Error message) (do (log-message (str "transport: " message)) (Error message))
+                        (Ok value) (Ok value)))
+               value (workflow-result "check" (checked value))
+               next (workflow-result "next" (send))
+               _ (workflow-result "check" (checked next))]
+          (Ok value))]
+    (match result
+      (Ok value) (str value)
+      (Error (tuple code message)) (subs message 0))))
+(println (workflow (fn [] (Ok 42))))
+(println (workflow (fn [] (Error "offline"))))
+(println (workflow (fn [] (Ok -1))))
+(def calls (atom 0))
+(println (workflow (fn []
+                     (if (= 1 (swap! calls inc)) (Ok 42) (Error "later")))))
+(defn logged [input]
+  (match input
+    (Ok value) (do (log-message value) (Ok value))
+    (Error message) (do (log-message message) (Error message))))
+(println (match (logged (Ok 41)) (Ok value) (inc value) _ 0))
+(println (match (logged (Error "offline")) (Error message) (subs message 0 3) _ ""))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "logged_result_callback" "42\noffline\nnegative\nlater\n42\noff\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_result_constructor_namespace_identity () =
+  let source = {|
+(ns result.consumer (:require [result.left :as left]))
+(defn decode [wire]
+  (case wire
+    "confirm" (Ok left/Confirm_delete)
+    "save" (Ok left/Save)
+    (Error "unknown")))
+(println (match (decode "confirm") (Ok left/Confirm_delete) true _ false))
+|} in
+  let compile target =
+    let state, left = Lg.Compiler.compile_chunk ~target (stdlib_state target)
+      "(ns result.left) (type-variant action Confirm_delete Save)" |> expect_ok in
+    let state, right = Lg.Compiler.compile_chunk ~target state
+      "(ns result.right) (type-variant effect (Confirm_delete :int))" |> expect_ok in
+    let _, consumer = Lg.Compiler.compile_chunk ~target state source |> expect_ok in
+    String.concat "\n" [left; right; consumer]
+  in
+  assert_ocaml_runs "result_constructor_namespace_identity" "true\n" (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let test_result_let_star_rejects_invalid_bindings () =
   Lg.Compiler.compile_string {|(def x (let* [a (Ok 1) b] (Ok a)))|}
   |> expect_error_contains "let* bindings require an even number of forms";
@@ -52033,6 +52092,8 @@ let tests =
     ( "result let star sequences and short circuits", test_result_let_star_sequences_and_short_circuits );
     ( "type solver unifies named host records", test_type_solver_unifies_named_host_records );
     ( "result callback record constraints through try", test_result_callback_record_constraints_through_try );
+    ( "logged result callback", test_logged_result_callback );
+    ( "result constructor namespace identity", test_result_constructor_namespace_identity );
     ( "result let star rejects invalid bindings", test_result_let_star_rejects_invalid_bindings );
     ( "nullable forwarding preserves sequential capabilities",
       test_nullable_forwarding_preserves_sequential_capabilities );
