@@ -2749,6 +2749,26 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               Expression_support.contextual_variant_type expected_return_ty
                 return_ty_for_unification
             in
+            (* Callback inputs and the expected result can constrain the same row. *)
+            let callback_substitutions =
+              List.fold_left2
+                (fun substitutions parameter_ty argument ->
+                  match parameter_ty with
+                  | TFn (expected_params, _) ->
+                      let actual_params = inferred_function_parameter_types params argument in
+                      if List.length expected_params <> List.length actual_params then substitutions
+                      else List.fold_left2
+                        (fun substitutions expected actual ->
+                          Type_solver.unify substitutions expected actual
+                          |> Result.value ~default:substitutions)
+                        substitutions expected_params actual_params
+                  | _ -> substitutions)
+                Type_solver.empty parameter_tys args
+            in
+            let expected_return_ty =
+              refine_type expected_return_ty
+                (Type_solver.apply callback_substitutions return_ty_for_unification)
+            in
             match
               Type_solver.unify Type_solver.empty return_ty_for_unification
                 expected_return_ty
@@ -2941,6 +2961,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         | FList [ FKeyword keyword; FSymbol name ] ->
                             add_record_field_constraint name keyword
                               (TNullable result_ty) params
+                        | FList (FSymbol name :: _)
+                          when string_mem_assoc name params
+                               && not (Types.equal result_ty TBool)
+                               && not (Types.equal result_ty TUnknown) ->
+                            (match inferred_form_or_call_type ~lookup_function_ty params condition with
+                            | TUnknown | TMeta _ | TVar _ ->
+                                infer_expected (TNullable result_ty) params condition
+                            | _ -> infer_truthy params condition)
                         | condition -> infer_truthy params condition))
                   (Ok params) (List.rev reversed_prefix)))
     | FSymbol name -> constrain_truthy_symbol params name
@@ -2959,7 +2987,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             args
           |> specialize_accumulating_hof_parameter_types name
         in
-        constrain_symbol (TFn (parameter_types, TBool)) params name
+        let return_ty =
+          match string_assoc_opt name params with
+          | Some (TFn (_, (TUnknown | TMeta _ | TVar _))) -> TBool
+          | Some (TFn (_, return_ty)) -> return_ty
+          | _ -> TBool
+        in
+        constrain_symbol (TFn (parameter_types, return_ty)) params name
     | FList [ FKeyword keyword; FSymbol name ] ->
         let field_ty =
           record_field_type params name keyword
@@ -5159,7 +5193,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (Ok params) parameter_tys arguments)
     | FList
         [ FSymbol "IDeref/-deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
-        add_record_field_constraint name keyword (TRef TUnknown) params
+        add_record_field_constraint name keyword (TRef (Type_solver.fresh ())) params
     | FList
         [
           FSymbol "IDeref/-deref";
@@ -5169,7 +5203,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let keyword =
           ":" ^ String.sub field_access 2 (String.length field_access - 2)
         in
-        add_record_field_constraint name keyword (TRef TUnknown) params
+        add_record_field_constraint name keyword (TRef (Type_solver.fresh ())) params
     | FList
         [
           FSymbol ("__lg_weak-deref" | "__lg_weak-clear!");

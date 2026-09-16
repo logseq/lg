@@ -27,6 +27,18 @@ that:
 Unknown types are inference variables, not permission to generate dynamic
 storage.
 
+Unannotated accessors that dereference record fields retain a fresh payload
+variable, shared with the reference field. Calling the accessor specializes
+that variable to the stored type without copying or erasing the mutable cell.
+
+Truthiness checks preserve a callback's known return type. In `or`, a static
+fallback constrains an otherwise unknown callback result as optional instead
+of incorrectly forcing that callback to return a boolean.
+
+Contextual collection results retain record fields required by their callbacks.
+Structural callback parameters stay structural even when their fields also
+match a named record.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record

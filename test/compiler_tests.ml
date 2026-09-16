@@ -14167,6 +14167,102 @@ let test_ocaml_refs_support_read_and_assignment () =
   assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42:42\n"
     ocaml_source
 
+let test_record_reference_accessors_preserve_payload_types () =
+  let source =
+    {|
+(type-record app-state (cursor :option<int>) (title :string))
+
+(type-record session (state :ref<app-state>))
+
+(defn state [session] @(:state session))
+
+(defn field-state [session] @(.-state session))
+
+(defn cursor [session] (:cursor (state session)))
+
+(def instance
+  (record session
+    (state (atom (record app-state (cursor (Some 42)) (title "ready"))))))
+
+(println (or (cursor instance) 0))
+(println (:title (state instance)))
+(println (:title (field-state instance)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "record_reference_accessors_preserve_payload_types"
+    "42\nready\nready\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter
+    (fun target ->
+      compile_string_with_stdlib ~target
+        (source ^ "\n(inc (:title (state instance)))\n")
+      |> expect_error_contains "expected int arguments")
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
+let test_optional_callback_match_branches_keep_independent_types () =
+  let source =
+    {|
+(type-record page (uuid :string))
+
+(type-record sources
+  (page :option<page>)
+  (page-blocks :option<fn<string;option<list<int>>>>)
+  (blocks :option<fn<option<list<int>>>>))
+
+(defn blocks [source]
+  (match (tuple (:page source) (:page-blocks source) (:blocks source))
+    (tuple (Some page) (Some load) _) (vec (or (load (:uuid page)) (list)))
+    (tuple _ _ (Some load)) (vec (or (load) (list)))
+    _ []))
+
+(println (blocks (record sources (page nil) (page-blocks nil)
+                  (blocks (Some (fn [] (Some (list 42))))))))
+(println (blocks (record sources (page nil) (page-blocks nil)
+                  (blocks (Some (fn [] nil))))))
+(println (blocks (record sources (page (Some (record page (uuid "page"))))
+                  (page-blocks (Some (fn [uuid] (Some (list (count uuid))))))
+                  (blocks nil))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "optional_callback_match_branches_keep_independent_types"
+    "[42]\n[]\n[4]\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_filtered_record_lookup_retains_predicate_fields () =
+  let source =
+    {|
+(type-record summary (uuid :string) (title :string))
+
+(type-record block (page-id :string) (breadcrumbs :vector<summary>)
+  (journal :option<tuple<string;int>>) (title :string))
+
+(defn page-title [block]
+  (let [title (match (:journal block)
+                (Some (tuple title _)) (when (not= title "") (Some title))
+                None nil)
+        title (or title
+                  (when-some [page (first (filter #(= (:uuid %) (:page-id block)) (:breadcrumbs block)))]
+                    (Some (:title page)))
+                  "fallback")]
+    (record summary (uuid (:page-id block)) (title title))))
+
+(println (:title (page-title (record block (page-id "b") (journal nil) (title "fallback")
+                          (breadcrumbs [(record summary (uuid "a") (title "A"))
+                                        (record summary (uuid "b") (title "B"))])))))
+(println (:title (page-title (record block (page-id "missing") (journal nil)
+                              (title "fallback") (breadcrumbs [])))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "filtered_record_lookup_retains_predicate_fields" "B\nfallback\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_custom_ideref_dispatches_nominal_return_values () =
   let source =
     {|
@@ -52707,6 +52803,12 @@ let tests =
       test_forward_datascript_result_payload_infers_from_typed_accumulator );
     ( "mutual Datascript result payloads infer without return hints",
       test_mutual_datascript_result_payloads_infer_without_return_hints );
+    ( "record reference accessors preserve payload types",
+      test_record_reference_accessors_preserve_payload_types );
+    ( "optional callback match branches keep independent types",
+      test_optional_callback_match_branches_keep_independent_types );
+    ( "filtered record lookup retains predicate fields",
+      test_filtered_record_lookup_retains_predicate_fields );
     ( "structural record helper refines to nominal argument",
       test_structural_record_helper_refines_to_nominal_argument );
     ( "map projects named record elements for structural callbacks",
