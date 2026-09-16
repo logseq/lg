@@ -4266,6 +4266,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | Ok ((TOcaml _ | TOcaml_app _ | TNamed_record _) as return_ty) ->
               (return_ty, [])
           | Ok _ | Error _ -> (ty, [ (name, ty) ]))
+      | FList [ FSymbol ("Ok" | "Error" as constructor); payload_pattern ] ->
+          let success, error =
+            match ty with
+            | TOcaml_app ("result", [ success; error ]) -> success, error
+            | _ -> fresh_type_variable "pattern_success", fresh_type_variable "pattern_error"
+          in
+          let payload, bindings =
+            refine_pattern payload_pattern (if constructor = "Ok" then success else error)
+          in
+          let arguments =
+            if constructor = "Ok" then [ payload; error ] else [ success; payload ]
+          in
+          TOcaml_app ("result", arguments), bindings
       | FList [ FSymbol "Some"; payload_pattern ] ->
           let payload_ty =
             match ty with
@@ -4329,6 +4342,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | _ -> (ty, [])
     in
     let variant_pattern = function
+      | (FList [ FSymbol ("Ok" | "Error"); (FList _ | FVector _ | FMap _) ] as pattern) ->
+          Some (refine_pattern pattern (inferred_form_type params target))
       | FVector patterns -> (
           match inferred_form_type params target with
           | TTuple items as ty when List.length items = List.length patterns ->

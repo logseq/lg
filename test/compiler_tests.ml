@@ -47213,6 +47213,25 @@ let test_result_constructor_namespace_identity () =
   assert_ocaml_runs "result_constructor_namespace_identity" "true\n" (compile Lg.Target.Native);
   ignore (compile Lg.Target.Melange)
 
+let test_nested_result_patterns_infer_payloads () =
+  let source = {|
+(defn response [result]
+  (match result
+    (Ok value) (subs value 0)
+    (Error (tuple code message)) (str (subs code 0) ":" (subs message 0))))
+(println (response (Ok "done")))
+(println (response (Error (tuple "failed" "offline"))))
+(defn nested [result]
+  (match result
+    (Ok (Some (tuple left right))) (+ left right)
+    _ 0))
+(println (nested (Ok (Some (tuple 20 22)))))
+(println (nested (Error "offline")))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nested_result_patterns" "done\nfailed:offline\n42\n0\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_result_let_star_rejects_invalid_bindings () =
   Lg.Compiler.compile_string {|(def x (let* [a (Ok 1) b] (Ok a)))|}
   |> expect_error_contains "let* bindings require an even number of forms";
@@ -52094,6 +52113,7 @@ let tests =
     ( "result callback record constraints through try", test_result_callback_record_constraints_through_try );
     ( "logged result callback", test_logged_result_callback );
     ( "result constructor namespace identity", test_result_constructor_namespace_identity );
+    ( "nested result patterns infer payloads", test_nested_result_patterns_infer_payloads );
     ( "result let star rejects invalid bindings", test_result_let_star_rejects_invalid_bindings );
     ( "nullable forwarding preserves sequential capabilities",
       test_nullable_forwarding_preserves_sequential_capabilities );

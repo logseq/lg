@@ -33,6 +33,10 @@ the shared type variable carried by the other branch. A resolved host record
 and its external type name unify with the same type arguments, consistently
 with host-boundary assignability.
 
+Nested `Ok` and `Error` patterns infer payload structure recursively, including
+tuples and options. A helper matching an error tuple therefore does not need a
+parameter hint; unconstrained alternatives retain independent type variables.
+
 Result constructors describe the stored payload, not the capability evidence
 used to inspect it. Branch adaptation converts both Result alternatives when
 their payload representations differ, including nested tuples. Unqualified
