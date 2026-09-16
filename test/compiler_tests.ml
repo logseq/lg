@@ -51026,6 +51026,35 @@ let test_return_hint_constrains_redefable_variant_root () =
     compiled;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_variant_callback_payload_unpacks_collection_evidence () =
+  let source = {|
+(defn inspect [value handle]
+  (match value
+    (tag Items items) (handle value (count (reverse items)))
+    (tag Empty) 0))
+
+(defn first-item [^:variant<Items:list<int>;Empty> value]
+  (match value (tag Items items) (or (first items) 0) (tag Empty) 0))
+
+(println (inspect (tag Items (list 7 8)) (fn [value size] (+ (first-item value) size))))
+(println (inspect (tag Empty) (fn [value size] (+ (first-item value) size))))
+(println (inspect (tag Items (list)) (fn [value size] (+ (first-item value) size))))
+(let [calls (atom 0)]
+  (println (inspect (do (swap! calls inc) (tag Items (list 3)))
+                    (fn [value size] (+ (first-item value) size))))
+  (println @calls))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "variant_callback_payload_unpacks_collection_evidence" "9\n0\n0\n4\n1\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target (source ^ {|
+(inspect (tag Items (list "bad")) (fn [value size] (+ (first-item value) size)))
+|}) with
+    | Error _ -> ()
+    | Ok _ -> failwith "variant adaptation erased the collection element type")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_polymorphic_variant_collection_payloads_infer_capabilities () =
   let source = {|
 (defn find-field [key node]
@@ -53549,6 +53578,7 @@ let tests =
     ( "OCaml recursive variant metadata terminates", test_ocaml_recursive_variant_metadata_terminates );
     ( "polymorphic variants infer rows from patterns", test_polymorphic_variants_infer_rows_from_patterns );
     ( "polymorphic variants support generic and open rows", test_polymorphic_variants_support_generic_and_open_rows );
+    ( "variant callback payload unpacks collection evidence", test_variant_callback_payload_unpacks_collection_evidence );
     ( "polymorphic variant collection payloads infer capabilities", test_polymorphic_variant_collection_payloads_infer_capabilities );
     ( "vectors merge tuple variant rows", test_vectors_merge_tuple_variant_rows );
     ( "polymorphic variants reject unknown tags and payloads", test_polymorphic_variants_reject_unknown_tags_and_payloads );

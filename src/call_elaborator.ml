@@ -5818,7 +5818,7 @@ let rec emit_argument_adaptation env adaptation argument =
             Result.bind
               (emit_argument_adaptation env adaptation (typed_ir ty (Semantic_ir.Ident name)))
               (fun value ->
-                emit ((Semantic_ir.PPolyTag (tag, Some (Semantic_ir.PVar name)),
+                emit ((Semantic_ir.PPolyTag (tag, Some (constrained_identifier_pattern name ty)),
                        Semantic_ir.PolyTag (tag, Some value)) :: branches) rest)
       in
       emit [] tags

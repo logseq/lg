@@ -40,6 +40,11 @@ The field can remain a boolean, option, or another statically typed value;
 using it in a condition must not prevent later record constraints from resolving
 its actual type.
 
+Variant payload adaptation destructures capability evidence at the payload
+boundary, just as ordinary parameter binding does. Forwarding a variant to a
+typed callback must expose its original collection value without its sequence
+adapter, while preserving concrete element types and single evaluation.
+
 Contextual collection results retain record fields required by their callbacks.
 Structural callback parameters stay structural even when their fields also
 match a named record.
