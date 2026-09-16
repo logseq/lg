@@ -287,6 +287,12 @@ let add_record_field_constraint name keyword field_ty params =
       | Some existing when satisfies_predicate existing.ty inferred.ty -> Ok fields
       | Some existing when satisfies_predicate inferred.ty existing.ty ->
           Ok (inferred :: List.filter (fun field -> field.keyword <> inferred.keyword) fields)
+      | Some existing
+        when inferred_row_compatible existing.ty inferred.ty
+             || inferred_row_compatible inferred.ty existing.ty ->
+          Ok
+            ({ inferred with ty = refine_type existing.ty inferred.ty }
+             :: List.filter (fun field -> field.keyword <> inferred.keyword) fields)
       | Some existing when same_open_shape existing.ty inferred.ty ->
           Ok
             ( { inferred with ty = refine_type existing.ty inferred.ty }
@@ -359,6 +365,10 @@ let add_record_field_constraint name keyword field_ty params =
         | existing, inferred when satisfies_predicate existing inferred -> Ok fields
         | existing, inferred when satisfies_predicate inferred existing ->
             replace_field_type inferred
+        | existing, inferred
+          when inferred_row_compatible existing inferred
+               || inferred_row_compatible inferred existing ->
+            replace_field_type (refine_type existing inferred)
         | existing, inferred
           when statically_printable existing
                && Option.is_some (Types.printable_constraint_info inferred) ->

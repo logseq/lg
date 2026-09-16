@@ -75,6 +75,11 @@ fields of a concrete reference payload. Reference payload records must satisfy
 their required fields; inference never converts the mutable cell to a projected
 record reference. Accessors without such nested requirements stay generic.
 
+Structural and named record requirements on the same field merge into the named
+type when it satisfies the structural requirements. This works in either order
+and through nested fields, without dropping the named record's remaining fields
+or accepting incompatible field types.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record

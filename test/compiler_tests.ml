@@ -43689,6 +43689,58 @@ let test_named_record_constraints_keep_stronger_nested_evidence () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_record_fields_merge_structural_and_nominal_requirements () =
+  let source = {|
+(type-record config (graph-id :string) (token :string))
+
+(type-record graph (graph-id :string) (title :string))
+
+(type-record request (config :config))
+
+(defn has-graph? [config] (not= (:graph-id config) ""))
+
+(defn make-request [config] (record request (config config)))
+
+(defn prepare [pump]
+  (if (has-graph? (:config pump))
+    (make-request (:config pump))
+    (make-request (:config pump))))
+
+(defn prepare-reversed [pump]
+  (let [request (make-request (:config pump))]
+    (has-graph? (:config pump))
+    request))
+
+(type-record outer (pump :request))
+
+(defn prepare-nested [outer]
+  (has-graph? (:config (:pump outer)))
+  (make-request (:config (:pump outer))))
+
+(def pending (record request (config (record config (graph-id "graph") (token "secret")))))
+
+(println (:token (:config (prepare pending))))
+(println (:token (:config (prepare-reversed pending))))
+(println (:token (:config (prepare-nested (record outer (pump pending))))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "record_fields_merge_structural_and_nominal_requirements"
+    "secret\nsecret\nsecret\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun invalid ->
+    List.iter (fun target ->
+      match compile_string_with_stdlib ~target
+        (source ^ "\n(defn numeric-graph? [config] (= (:graph-id config) 42))\n" ^ invalid) with
+      | Error error
+        when string_contains_substring error.message "cannot infer"
+             || string_contains_substring error.message "field access has type" -> ()
+      | result -> ignore (expect_ok result);
+          failwith "incompatible nested record field was accepted")
+      [Lg.Target.Native; Lg.Target.Melange])
+    ["(defn bad [pump] (numeric-graph? (:config pump)) (make-request (:config pump)))";
+     "(defn bad [pump] (make-request (:config pump)) (numeric-graph? (:config pump)))";
+     "(defn bad [outer] (numeric-graph? (:config (:pump outer))) (make-request (:config (:pump outer))))"]
+
 let test_dynamic_map_row_preserves_static_generic_field () =
   let source =
     {|
@@ -55857,6 +55909,8 @@ let tests =
       test_defrecord_protocols_do_not_emit_dynamic_registrations );
     ( "named record constraints keep stronger nested evidence",
       test_named_record_constraints_keep_stronger_nested_evidence );
+    ( "record fields merge structural and nominal requirements",
+      test_record_fields_merge_structural_and_nominal_requirements );
     ( "dynamic map rows preserve static generic fields",
       test_dynamic_map_row_preserves_static_generic_field );
     ( "destructuring rejects missing map fields",
