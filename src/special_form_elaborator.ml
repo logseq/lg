@@ -629,6 +629,16 @@ let narrow_false_nil_predicates scope env condition body =
        (fun body name -> narrow_non_nil_name scope env name body)
        body
 
+let unwrap_option_storage expression =
+  let storage_ty = Types.constraint_value_type expression.ty in
+  match storage_ty with
+  | (TNullable _ | TOcaml_app ("option", [_]) | TNil)
+    when not (Types.equal storage_ty expression.ty) ->
+      { expression with ty = storage_ty;
+        semantic_expr = coerce_expression_to_type storage_ty expression.ty
+            expression.semantic_expr }
+  | _ -> expression
+
 let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     ~pack_constrained_value ~argument_compatible =
   let recur_type_observers = ref [] in
@@ -1718,6 +1728,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             [ sequence ] )))))
       | _ -> compile_expr scope env option_form
     in
+    let option_expression = Result.map unwrap_option_storage option_expression in
     match option_expression with
     | Error _ as err -> err
     | Ok option_expr
@@ -1940,6 +1951,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 (Env.with_expected_type (Some (TNullable TUnknown)) env)
                 option_form
         in
+        let option_expression = Result.map unwrap_option_storage option_expression in
         match option_expression with
         | Error _ as err -> err
         | Ok option_expr ->
@@ -3335,6 +3347,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       compile_expr scope
         (Env.with_expected_type (target_expected pairs) env)
         target_form
+      |> Result.map unwrap_option_storage
     with
     | Error _ as err -> err
     | Ok target -> (

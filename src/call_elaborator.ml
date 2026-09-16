@@ -536,7 +536,12 @@ let optional_payload = function
   | TNullable ty | TOcaml_app ("option", [ ty ]) -> Some ty
   | _ -> None
 
-let align_optional_inference template actual =
+let rec align_optional_inference template actual =
+  if Option.is_some (Types.nil_predicate_constraint_info template) then
+    (template, actual)
+  else match Types.nil_predicate_constraint_info actual with
+  | Some storage -> align_optional_inference template storage
+  | None ->
   match (optional_payload template, optional_payload actual) with
   | Some template, Some actual -> (template, actual)
   | Some template, None when not (Types.equal actual TNil) ->
@@ -601,6 +606,9 @@ let rec argument_compatible expected actual =
     true
   else if Option.is_some (Types.contains_constraint_info expected) then
     Collection_capability.accepts_contains actual
+  else if Option.is_some (Types.nil_predicate_constraint_info actual) then
+    argument_compatible expected
+      (Option.get (Types.nil_predicate_constraint_info actual))
   else if Option.is_some (Types.seqable_constraint_info expected) then
     match (Types.seqable_constraint_info expected, actual) with
     | Some ((`Optional | `Optional_sequential), _, _), TNil -> true
@@ -21028,6 +21036,8 @@ let create ~compile_expr =
                               _;
                             } )
                         when Option.is_none (optional_payload parameter_ty)
+                             && Option.is_none
+                                  (Types.nil_predicate_constraint_info parameter_ty)
                              && argument_compatible parameter_ty actual_ty ->
                           Type_inference.refine_type
                             (Types.constraint_value_type actual_ty) ret

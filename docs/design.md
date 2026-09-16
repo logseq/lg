@@ -85,6 +85,12 @@ membership on local values. Resolving a field to a set or map constrains its key
 type, while a vector constrains the key to an integer index. Keyword field access
 does not force the collection into a dynamic map.
 
+Repeated nil predicates preserve an existing nil-check constraint rather than
+adding an option around it. Matching and conditional binding inspect the known
+option stored beneath outer capability evidence, preserving any evidence inside
+the payload. Passing or returning such a value retains the complete option,
+including `Some false`, and evaluates the source expression once.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record

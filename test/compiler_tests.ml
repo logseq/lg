@@ -2367,6 +2367,62 @@ let test_if_some_and_when_some_bind_option_payloads () =
   assert_ocaml_runs "if_some_and_when_some_bind_option_payloads" "9\n8:0\n"
     ocaml_source
 
+let test_nil_predicates_preserve_conditional_option_payloads () =
+  let source = {|
+(defn advance [value] (inc value))
+
+(defn finish [accepted]
+  (let [status (if (some? accepted) (match accepted (Some t) t None 0) 0)]
+    (when-some [accepted accepted] (advance accepted))))
+
+(defn inspect-option [accepted]
+  (nil? accepted)
+  (if-some [value accepted] (advance value) 0))
+
+(defn forward-option [accepted]
+  (if-some [value accepted] (advance value) 0))
+
+(defn pass-option [accepted]
+  (some? accepted)
+  (forward-option accepted))
+
+(defn checked [value]
+  (nil? value)
+  value)
+
+(defn inspect-boolean [value]
+  (nil? value)
+  (if-some [value value] (if value 1 2) 3))
+
+(defn thread-option [value]
+  (nil? value)
+  (some-> value advance))
+
+(println (or (finish (Some 4)) 0))
+(println (or (finish nil) 0))
+(println (inspect-option (Some 6)))
+(println (inspect-option nil))
+(println (pass-option (Some 6)))
+(println (pass-option nil))
+(println (inspect-boolean (Some false)))
+(println (inspect-boolean nil))
+(println (or (thread-option (Some 8)) 0))
+(println (or (thread-option nil) 0))
+(let [calls (atom 0)]
+  (println (or (when-some [value (do (swap! calls inc) (checked (Some 10)))]
+                 (advance value)) 0))
+  (println @calls))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nil_predicates_preserve_conditional_option_payloads"
+    "5\n0\n7\n0\n7\n0\n2\n3\n9\n0\n11\n1\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target (source ^ "\n(finish (Some \"bad\"))") with
+    | Error _ -> ()
+    | Ok _ -> failwith "option predicate erased the concrete integer payload")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_if_some_preserves_seqable_capability_payloads () =
   let source =
     {|
@@ -52886,6 +52942,8 @@ let tests =
       test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",
       test_if_some_and_when_some_bind_option_payloads );
+    ( "nil predicates preserve conditional option payloads",
+      test_nil_predicates_preserve_conditional_option_payloads );
     ( "if-some preserves seqable capability payloads",
       test_if_some_preserves_seqable_capability_payloads );
     ( "when-some binding constraints remain static",

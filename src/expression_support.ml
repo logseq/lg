@@ -1148,6 +1148,9 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
             match Types.truthy_constraint_info ty with
             | Some value_ty -> unwrap_stored value_ty
             | None -> (
+                match Types.nil_predicate_constraint_info ty with
+                | Some value_ty -> unwrap_stored value_ty
+                | None -> (
                 match Types.printable_constraint_info ty with
                 | Some value_ty -> unwrap_stored value_ty
                 | None -> (
@@ -1165,7 +1168,7 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                             | None -> (
                     match Types.symbol_predicate_constraint_info ty with
                     | Some value_ty -> unwrap_stored value_ty
-                    | None -> expression)))))))
+                    | None -> expression))))))))
       in
       unwrap source_ty expression
   | TSeq target_inner, (TList source_inner | TVector source_inner) ->

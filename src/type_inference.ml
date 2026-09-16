@@ -5634,6 +5634,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | ( FSymbol name,
             ((TNullable _ | TOcaml_app ("option", [ _ ])) as ty) ) ->
             Ok (replace_param name ty params)
+        | FSymbol _, ty
+          when Option.is_some (Types.nil_predicate_constraint_info ty) ->
+            Ok params
         | FSymbol name, ty
           when (match ty with
                | TUnknown | TMeta _ | TVar _ -> false
