@@ -6658,6 +6658,41 @@ let test_record_set_fields_combine_seqable_and_membership_constraints () =
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 ;;
 
+let test_membership_on_record_fields_keeps_static_collections () =
+  let source = {|
+(type-record selection (selected :set<string>))
+
+(type-record index (entries :map<string;int>))
+
+(type-record row (cells :vector<string>))
+
+(defn selected? [state value] (contains? (:selected state) value))
+
+(defn has-entry? [state value] (contains? (:entries state) value))
+
+(defn in-bounds? [state position] (contains? (:cells state) position))
+
+(println (selected? (record selection (selected #{"a"})) "a"))
+(println (selected? (record selection (selected #{})) "a"))
+(println (has-entry? (record index (entries {"a" 1})) "a"))
+(println (has-entry? (record index (entries {})) "a"))
+(println (in-bounds? (record row (cells ["a"])) 0))
+(println (in-bounds? (record row (cells ["a"])) 1))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "membership_on_record_fields_keeps_static_collections"
+    "true\nfalse\ntrue\nfalse\ntrue\nfalse\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun invalid ->
+    List.iter (fun target ->
+      match compile_string_with_stdlib ~target (source ^ invalid) with
+      | Error _ -> ()
+      | Ok _ -> failwith "record membership accepted an incompatible key")
+      [Lg.Target.Native; Lg.Target.Melange])
+    ["(selected? (record selection (selected #{\"a\"})) 1)";
+     "(has-entry? (record index (entries {\"a\" 1})) 1)";
+     "(in-bounds? (record row (cells [\"a\"])) \"a\")"]
+
 let test_recursive_variant_identity_adaptation () =
   let dir = Filename.concat (test_dir ()) "recursive_json_fixture" in
   if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
@@ -53132,6 +53167,8 @@ let tests =
       test_loop_set_membership_preserves_inferred_elements );
     ( "record set fields combine seqable and membership constraints",
       test_record_set_fields_combine_seqable_and_membership_constraints );
+    ( "membership on record fields keeps static collections",
+      test_membership_on_record_fields_keeps_static_collections );
     ( "recursive variant identity adaptation",
       test_recursive_variant_identity_adaptation );
     ( "seqable tuple elements preserve capability payloads",

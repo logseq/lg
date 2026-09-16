@@ -580,6 +580,22 @@ let rec unify substitutions left right =
       ->
         unify_lists substitutions [ left_key; left_storage ]
           [ right_key; right_storage ]
+    | TConstraint (Contains_constraint { key; storage }),
+      ((TSet actual_key | TOcaml_app ("Lg_runtime.Runtime_map.t", [actual_key; _])) as collection)
+    | ((TSet actual_key | TOcaml_app ("Lg_runtime.Runtime_map.t", [actual_key; _])) as collection),
+      TConstraint (Contains_constraint { key; storage }) ->
+        Result.bind (unify substitutions key actual_key)
+          (fun substitutions -> unify substitutions storage collection)
+    | TConstraint (Contains_constraint { key; storage }), (TVector _ as collection)
+    | (TVector _ as collection), TConstraint (Contains_constraint { key; storage }) ->
+        Result.bind (unify substitutions key TInt)
+          (fun substitutions -> unify substitutions storage collection)
+    | TConstraint (Contains_constraint { key; storage }),
+      ((TMap_keys | TRecord _ | TNamed_record _) as collection)
+    | ((TMap_keys | TRecord _ | TNamed_record _) as collection),
+      TConstraint (Contains_constraint { key; storage }) ->
+        Result.bind (unify substitutions key TKeyword)
+          (fun substitutions -> unify substitutions storage collection)
     | ( TConstraint (Open_boundary_constraint left),
         TConstraint (Open_boundary_constraint right) ) ->
         unify substitutions left right

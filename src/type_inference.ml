@@ -6860,18 +6860,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol "__lg_contains";
-          FList [ FKeyword keyword; FSymbol name ];
-          key;
-        ] ->
-        let dynamic = Types.dynamic_constraint TUnknown in
-        Result.bind
-          (add_record_field_constraint name keyword
-             (Types.dynamic_map dynamic dynamic)
-             params)
-          (fun params -> infer_expected dynamic params key)
-    | FList
-        [
-          FSymbol "__lg_contains";
           FSymbol name;
           (FKeyword _ as key);
         ] -> (

@@ -80,6 +80,11 @@ type when it satisfies the structural requirements. This works in either order
 and through nested fields, without dropping the named record's remaining fields
 or accepting incompatible field types.
 
+Membership tests on record fields use the same static collection constraints as
+membership on local values. Resolving a field to a set or map constrains its key
+type, while a vector constrains the key to an integer index. Keyword field access
+does not force the collection into a dynamic map.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record
