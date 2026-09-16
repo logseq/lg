@@ -139,8 +139,9 @@ let resolve_host_record env = function
 let rec resolve_callback_record env = function
   | TNamed_record record as ty -> (
       match find_canonical_record env (Type_id.name record.type_id) with
-      | Some canonical -> TNamed_record canonical
-      | None -> ty)
+      | Some canonical when Type_id.equal canonical.type_id record.type_id ->
+          TNamed_record canonical
+      | Some _ | None -> ty)
   | TNullable inner -> TNullable (resolve_callback_record env inner)
   | TArray inner -> TArray (resolve_callback_record env inner)
   | TRef inner -> TRef (resolve_callback_record env inner)

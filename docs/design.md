@@ -365,6 +365,14 @@ Mutable reference updates infer the updater's ordinary application, including
 source inline expansion, and propagate its result back to the same cell.
 Captured vectors therefore retain host record identity across callback writes
 and later field reads without requiring parameter hints.
+Collection callbacks may refresh record metadata only for the same type
+identity. A matching short name must never substitute a different source or
+host record, even when their fields are identical.
+When a callback consumes an inferred structural row, argument adaptation reads
+the incoming host record's declared fields before planning the static field
+projection. Passing the callback by name must not require an explicit hint.
+An atom initializer receives the expected cell payload type, not the enclosing
+reference type, so collection-producing expressions keep their element types.
 
 A direct OCaml call can accept a positional LG function where a host callback
 has labelled parameters. The host signature supplies the labels and parameter

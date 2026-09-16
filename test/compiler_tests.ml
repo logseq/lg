@@ -15128,12 +15128,16 @@ let test_host_callback_atom_vector_preserves_nominal_identity () =
     (fun () ->
       write_file fixture {|
 type state = Applied | Queued
-type intent = Create_asset of { uuid : string }
+type intent = Create_asset of { uuid : string; title : string }
 type operation = { operation_id : string; base_t : int; state : state; intent : intent }
 type row = { uuid : string; title : string }
 let make_row uuid title = { uuid; title }
-let create ?stage () =
-  Option.iter (fun stage -> ignore (stage { operation_id = "operation"; base_t = 7; state = Applied; intent = Create_asset { uuid = "asset" } })) stage
+let outliner_op = function Create_asset _ -> "save"
+let create ?stage ?prepare ?rows () =
+  let operation = { operation_id = "operation"; base_t = 7; state = Applied; intent = Create_asset { uuid = "asset"; title = "Updated" } } in
+  Option.iter (fun stage -> ignore (stage operation)) stage;
+  Option.iter (fun prepare -> ignore (prepare operation : ((string * string), string) result)) prepare;
+  Option.iter (fun rows -> ignore (rows () : row list)) rows
 |};
       let command = Printf.sprintf "cd %s && ocamlc -c callback_vector_fixture.ml" (Filename.quote dir) in
       if Sys.command command <> 0 then failwith "could not compile callback vector fixture";
@@ -15142,19 +15146,33 @@ let create ?stage () =
       let source = {|
 (require [ocaml.Callback_vector_fixture :as host]
          [ocaml.Stdlib :as stdlib])
+(type-record row (uuid :string) (title :string))
+(defn other-operation [operation]
+  (match (:intent operation) (host/Create_asset _) "other"))
+(defn prepare-operation [operation]
+  (Ok (tuple (host/outliner-op (:intent operation)) "[]")))
 (let [staged (atom [])
       target (host/make-row "parent" "Parent")
-      projected (atom [target])
-      session (host/create :stage (fn [operation]
+      projected (atom (into [target] []))
+      session (host/create :rows (fn [] (apply list @projected))
+                           :stage (fn [operation]
                                     (swap! staged conj operation)
                                     (match (:intent operation)
                                       (host/Create_asset value)
-                                      (reset! projected [target (host/make-row (:uuid value) "Asset")]))
-                                    (Ok (stdlib/ignore 0))))]
+                                      (do
+                                        (reset! projected [target (host/make-row (:uuid value) "Asset")])
+                                        (swap! projected
+                                          (fn [rows]
+                                            (mapv (fn [row]
+                                                    (if (= (:uuid row) (:uuid value))
+                                                      (assoc row :title (:title value)) row)) rows)))))
+                                    (Ok (stdlib/ignore 0)))
+                           :prepare prepare-operation)]
   (let [operation (nth @staged 0)]
     (match (:intent operation)
       (host/Create_asset value) (println (= "asset" (:uuid value))))
-    (println (= (host/Applied) (:state operation)))))
+    (println (= (host/Applied) (:state operation)))
+    (println (= "Updated" (:title (nth @projected 1))))))
 |} in
       let compiled = compile_string_with_stdlib source |> expect_ok in
       write_file generated (String.concat "\n" [ native_stdlib_prelude (); strip_native_stdlib_prelude compiled ]);
@@ -15164,7 +15182,36 @@ let create ?stage () =
           [ Filename.concat dir "callback_vector_fixture.cmo";
             Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
         failwith "could not run callback vector code";
-      if read_file output <> "true\ntrue\n" then failwith "callback vector result mismatch";
+      if read_file output <> "true\ntrue\ntrue\n" then failwith "callback vector result mismatch";
+      let deletion = {|
+(require [ocaml.Callback_vector_fixture :as host]
+         [ocaml.Stdlib :as stdlib])
+(type-record row (uuid :string) (title :string))
+(defn make-row [uuid title] (assoc (host/make-row uuid title) :title title))
+(let [staged (atom [])
+      titles (vec (repeat 100 "Tail"))
+      tail (mapv (fn [index title] (make-row (str "tail-" index) title)) (range 100) titles)
+      projected (atom (into [(make-row "asset" "Asset")] tail))
+      session (host/create :rows (fn [] (apply list @projected))
+                           :stage (fn [operation]
+                                    (swap! staged conj operation)
+                                    (match (:intent operation)
+                                      (host/Create_asset value)
+                                      (swap! projected
+                                        (fn [rows] (filterv (fn [row] (not= (:uuid row) (:uuid value))) rows))))
+                                    (Ok (stdlib/ignore 0))))]
+  (println (= 100 (count @projected)))
+  (println (= 1 (count @staged))))
+|} in
+      let compiled = compile_string_with_stdlib deletion |> expect_ok in
+      write_file generated (String.concat "\n" [ native_stdlib_prelude (); strip_native_stdlib_prelude compiled ]);
+      if Sys.command (compile_only_command dir generated) <> 0 then
+        failwith "could not compile callback deletion code";
+      if Sys.command (run_compiled_module_command dir
+          [ Filename.concat dir "callback_vector_fixture.cmo";
+            Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
+        failwith "could not run callback deletion code";
+      if read_file output <> "true\ntrue\n" then failwith "callback deletion result mismatch";
       let incompatible = {|
 (require [ocaml.Callback_vector_fixture :as host])
 (let [staged (atom [])]

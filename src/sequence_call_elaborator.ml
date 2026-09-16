@@ -1502,7 +1502,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                 (typed_ir (TVector ret) mapped)
                           | TFn _ ->
                               Error.error
-                                "mapv function type does not match collection"
+                                ("mapv function type " ^ Types.source_name fn.ty
+                                 ^ " does not match collection element " ^ Types.source_name inner)
                           | _ -> Error.error "mapv expects a function"))))
     | fn_form :: (_ :: _ as collection_forms) ->
         compile_multi_map scope env ~vector:true fn_form collection_forms

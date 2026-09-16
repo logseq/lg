@@ -8081,8 +8081,13 @@ let create ~compile_expr =
                 | TFn _ -> Some ty
                 | _ -> if Type_solver.is_open ty then None else Some ty)
           in
+          let compile_argument =
+            match expected_type with
+            | Some (TFn _) -> compile_function_arg
+            | _ -> compile_expr
+          in
           match
-            compile_expr scope (Env.with_expected_type expected_type env) form
+            compile_argument scope (Env.with_expected_type expected_type env) form
           with
           | Error _ as err -> err
           | Ok argument ->
@@ -11721,7 +11726,12 @@ let create ~compile_expr =
           | _ -> Error.error "atom expects a value followed by option pairs"
         in
         let compile_reference value_form option_forms =
-          match compile_expr scope env value_form with
+          let value_env =
+            match Env.expected_type env with
+            | Some (TRef ty) -> Env.with_expected_type (Some ty) env
+            | _ -> Env.with_expected_type None env
+          in
+          match compile_expr scope value_env value_form with
           | Error _ as error -> error
           | Ok value ->
               let value_ty =
