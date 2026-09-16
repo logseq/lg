@@ -1,5 +1,5 @@
 let magic = "LG-COMPILER-STATE"
-let version = 31
+let version = 32
 let maximum_payload_bytes = 512 * 1024 * 1024
 
 let remove_if_present path =

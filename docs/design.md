@@ -376,6 +376,12 @@ reference type, so collection-producing expressions keep their element types.
 Anonymous reference updaters propagate their parameter constraints back to the
 cell and are checked with the same payload type as their input and result.
 Read-only predicates may project fields without narrowing the stored record.
+Generic collection results follow their declared type-variable relationships;
+an unresolved vector element must not be replaced with an arbitrary callback's
+return type. Concrete argument evidence refines callback context before an
+expected result shape supplies constraints, preserving the input record type.
+Mutable host record fields use the same checked assignment syntax as source
+records. Host metadata must confirm mutability and the stored field type.
 
 A direct OCaml call can accept a positional LG function where a host callback
 has labelled parameters. The host signature supplies the labels and parameter

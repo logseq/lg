@@ -15131,6 +15131,8 @@ type state = Applied | Queued
 type intent = Create_asset of { uuid : string; title : string }
 type operation = { operation_id : string; base_t : int; state : state; intent : intent }
 type row = { uuid : string; title : string }
+type cursor = { mutable queue : int list; mutable active : int option; read_only : int }
+let make_cursor () = { queue = [1; 2]; active = Some 1; read_only = 0 }
 let make_row uuid title = { uuid; title }
 let outliner_op = function Create_asset _ -> "save"
 let create ?stage ?prepare ?rows ?pending () =
@@ -15238,6 +15240,54 @@ let create ?stage ?prepare ?rows ?pending () =
             Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
         failwith "could not run callback replacement code";
       if read_file output <> "true\ntrue\n" then failwith "callback replacement result mismatch";
+      let selection = {|
+(require [ocaml.Callback_vector_fixture :as host]
+         [ocaml.Stdlib :as stdlib])
+(defn required-item [pred items]
+  (if-some [item (first (filterv pred items))]
+    item
+    (stdlib/failwith "missing item")))
+(let [row (required-item #(= "row" (:uuid %)) [(host/make-row "row" "Preserved")])]
+  (println (:title row)))
+(defn filtered [pred items] (filterv pred items))
+(defn transformed [f items] (mapv f items))
+(println (= [2] (filtered (fn [item] (= item 2)) [1 2])))
+(println (= ["1" "2"] (transformed (fn [item] (str item)) [1 2])))
+|} in
+      let compiled = compile_string_with_stdlib selection |> expect_ok in
+      write_file generated (String.concat "\n" [ native_stdlib_prelude (); strip_native_stdlib_prelude compiled ]);
+      if Sys.command (compile_only_command dir generated) <> 0 then
+        failwith "could not compile callback selection code";
+      if Sys.command (run_compiled_module_command dir
+          [ Filename.concat dir "callback_vector_fixture.cmo";
+            Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
+        failwith "could not run callback selection code";
+      if read_file output <> "Preserved\ntrue\ntrue\n" then failwith ("callback selection result mismatch: " ^ read_file output);
+      let mutation = {|
+(require [ocaml.Callback_vector_fixture :as host])
+(let [cursor (host/make-cursor)]
+  (set! (.-queue cursor) (list))
+  (set! (.-active cursor) nil)
+  (println (empty? (:queue cursor)))
+  (println (nil? (:active cursor))))
+|} in
+      let compiled = compile_string_with_stdlib mutation |> expect_ok in
+      write_file generated (String.concat "\n" [ native_stdlib_prelude (); strip_native_stdlib_prelude compiled ]);
+      if Sys.command (compile_only_command dir generated) <> 0 then
+        failwith "could not compile host mutation code";
+      if Sys.command (run_compiled_module_command dir
+          [ Filename.concat dir "callback_vector_fixture.cmo";
+            Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
+        failwith "could not run host mutation code";
+      if read_file output <> "true\ntrue\n" then failwith "host mutation result mismatch";
+      compile_string_with_stdlib {|
+(require [ocaml.Callback_vector_fixture :as host])
+(set! (.-read-only (host/make-cursor)) 3)
+|} |> expect_error_contains "not mutable";
+      compile_string_with_stdlib {|
+(require [ocaml.Callback_vector_fixture :as host])
+(set! (.-queue (host/make-cursor)) (list "invalid"))
+|} |> expect_error_contains "string";
       let incompatible = {|
 (require [ocaml.Callback_vector_fixture :as host])
 (let [staged (atom [])]

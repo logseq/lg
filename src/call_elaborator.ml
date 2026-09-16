@@ -8818,7 +8818,7 @@ let create ~compile_expr =
     match compile_expr scope env target_form with
     | Error _ as error -> error
     | Ok target -> (
-        match target.ty with
+        match Collection_capability.resolve_callback_record env target.ty with
         | TRecord fields | TNamed_record { fields; _ } -> (
             match find_field keyword fields with
             | Some ({ mutable_ = true; _ } as field) -> (
@@ -8856,7 +8856,7 @@ let create ~compile_expr =
                          stored_value))
             | Some _ -> Error.error ("field " ^ keyword ^ " is not mutable")
             | None -> Error.error ("unknown field " ^ keyword))
-        | _ -> Error.error "mutable field assignment expects a deftype value")
+        | _ -> Error.error "mutable field assignment expects a record value")
   and compile_call scope env name arg_forms =
     let name = Resolver.canonical_core_binding_name scope env name in
     let name =
@@ -18471,12 +18471,11 @@ let create ~compile_expr =
                   List.map (Type_solver.apply substitutions) parameter_tys
               | Error _ -> parameter_tys)
         in
-        let contextual_parameter_tys =
+        let contextual_signature =
           match fn.ty with
           | TFn (parameter_tys, return_ty)
             when List.length parameter_tys = List.length arg_forms ->
-              Some
-                (parameters_from_expected_return parameter_tys return_ty)
+              Some (parameter_tys, return_ty)
           | TOverloaded_fn arities ->
               select_contextual_overloaded_arity arities (List.length arg_forms)
               |> Option.map (fun (_, arity) ->
@@ -18491,9 +18490,13 @@ let create ~compile_expr =
                              - List.length arity.fixed_params)
                              (fun _ -> rest_ty)
                      in
-                     parameters_from_expected_return parameter_tys
-                       arity.return_ty)
+                     (parameter_tys, arity.return_ty))
           | _ -> None
+        in
+        let contextual_parameter_tys =
+          Option.map
+            (fun (parameters, result) -> parameters_from_expected_return parameters result)
+            contextual_signature
         in
         let arg_forms =
           match contextual_parameter_tys with
@@ -18507,6 +18510,7 @@ let create ~compile_expr =
           | Some parameter_tys ->
               let forms = Array.of_list arg_forms in
               let parameters = Array.of_list parameter_tys in
+              let templates = Array.of_list (fst (Option.get contextual_signature)) in
               let arguments = Array.make (Array.length forms) None in
               let deferred_callback index =
                 match parameters.(index) with
@@ -18573,7 +18577,7 @@ let create ~compile_expr =
                     match argument with
                     | None -> ()
                     | Some argument ->
-                        let expected = parameters.(index) in
+                        let expected = templates.(index) in
                         let inferred =
                           match
                             ( Types.seqable_constraint_element expected,
@@ -18599,7 +18603,9 @@ let create ~compile_expr =
                   compile_callbacks substitutions (index + 1)
                 else
                   let expected =
-                    Type_solver.apply substitutions parameters.(index)
+                    Type_inference.refine_type parameters.(index)
+                      (Type_solver.apply substitutions templates.(index))
+                    |> Collection_capability.resolve_callback_record env
                   in
                   Result.bind (compile_argument expected forms.(index))
                     (fun argument ->
@@ -20993,25 +20999,6 @@ let create ~compile_expr =
                 | Error _ as err -> err
                 | Ok arg_exprs -> (
                 let ret = materialize ret in
-                let callback_return =
-                  args
-                  |> List.find_map (fun argument ->
-                         match argument.ty with
-                         | TFn (_, TNullable return_ty) -> Some return_ty
-                         | TFn (_, return_ty)
-                           when not (Types.equal return_ty TUnknown) ->
-                             Some return_ty
-                         | _ -> None)
-                in
-                let ret =
-                  match (ret, callback_return) with
-                      | TNullable (TVector (TUnknown | TMeta _ | TVar _)), Some return_ty
-                        ->
-                      TNullable (TVector return_ty)
-                  | TVector (TUnknown | TMeta _ | TVar _), Some return_ty ->
-                      TVector return_ty
-                  | _ -> ret
-                in
                 let ret =
                   match (fn.return_param_index, ret) with
                   (* A declared generic map return, including a set of maps,
