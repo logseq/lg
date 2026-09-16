@@ -39,6 +39,16 @@ Contextual collection results retain record fields required by their callbacks.
 Structural callback parameters stay structural even when their fields also
 match a named record.
 
+The last operand of `or` is a fallback value, not a truthiness test. Its expected
+result type flows into callback calls without inferring optionality from an
+earlier operand. A callback returning `nil` remains absent when adapted to an
+optional result; it must not become `Some None`.
+
+Repeated names in sequential `let` bindings introduce independent lexical
+bindings. An initializer and earlier closures still refer to the preceding
+binding; type constraints from a later binding must not change that earlier
+value's type, including when the later binding destructures a tuple.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record

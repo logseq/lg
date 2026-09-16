@@ -14247,7 +14247,7 @@ let test_filtered_record_lookup_retains_predicate_fields () =
         title (or title
                   (when-some [page (first (filter #(= (:uuid %) (:page-id block)) (:breadcrumbs block)))]
                     (Some (:title page)))
-                  "fallback")]
+                  (:title block))]
     (record summary (uuid (:page-id block)) (title title))))
 
 (println (:title (page-title (record block (page-id "b") (journal nil) (title "fallback")
@@ -14260,6 +14260,59 @@ let test_filtered_record_lookup_retains_predicate_fields () =
   let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "filtered_record_lookup_retains_predicate_fields" "B\nfallback\n"
     native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_logical_or_infers_fallback_from_result_context () =
+  let source =
+    {|
+(type-record titled (title :string))
+
+(defn title-or [fallback preferred]
+  (let [title (or preferred (:title fallback))]
+    (record titled (title title))))
+
+(defn lookup-title [name]
+  (when (= name "cached") (Some name)))
+
+(defn use-optional [resolver]
+  (match (resolver "name")
+    (Some title) title
+    None "missing"))
+
+(defn resolve-title [fallback]
+  (use-optional (fn [name] (or (lookup-title name) (fallback "page")))))
+
+(println (:title (title-or (record titled (title "fallback")) nil)))
+(println (:title (title-or (record titled (title "fallback")) (Some "preferred"))))
+(println (resolve-title (fn [_] nil)))
+(println (resolve-title (fn [name] (Some name))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "logical_or_infers_fallback_from_result_context"
+    "fallback\npreferred\nmissing\npage\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sequential_let_rebindings_keep_independent_types () =
+  let source =
+    {|
+(defn render [input]
+  (let [value input
+        captured (fn [] (+ value 1))
+        value (str value)
+        value (tuple value (captured))
+        [value total] value]
+    (str value ":" total)))
+
+(println (render 41))
+(println (let [value (Some 42) value (or value 0)] (+ value 1)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "sequential_let_rebindings_keep_independent_types"
+    "41:42\n43\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -52809,6 +52862,10 @@ let tests =
       test_optional_callback_match_branches_keep_independent_types );
     ( "filtered record lookup retains predicate fields",
       test_filtered_record_lookup_retains_predicate_fields );
+    ( "logical or infers fallback from result context",
+      test_logical_or_infers_fallback_from_result_context );
+    ( "sequential let rebindings keep independent types",
+      test_sequential_let_rebindings_keep_independent_types );
     ( "structural record helper refines to nominal argument",
       test_structural_record_helper_refines_to_nominal_argument );
     ( "map projects named record elements for structural callbacks",

@@ -1974,6 +1974,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Option.iter (observe expected_ty) (string_assoc_opt name params))
           observe_constraint;
         constrain_symbol expected_ty params name
+    | FList (FSymbol "__lg_logical-or" :: forms) -> (
+        match List.rev forms with
+        | [] -> Ok params
+        | last :: _ ->
+            Result.bind (infer_expected expected_ty params last) (fun params ->
+                infer_truthy params (FList (FSymbol "__lg_logical-or" :: forms))))
     | FList (FSymbol "do" :: body_forms) -> (
         match List.rev body_forms with
         | result :: reversed_prefix ->
@@ -2943,14 +2949,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                              inferred_form_or_call_type ~lookup_function_ty params last
                            in
                            if Type_solver.is_open fallback_ty || Types.is_dynamic fallback_ty
-                           then Some ty
+                           then None
                            else Some fallback_ty
                        | _ -> Some ty)
             in
             let infer_last =
               match expected_result with
               | Some ty -> infer_expected ty params last
-              | None -> infer_truthy params last
+              | None -> infer_form params last
             in
             Result.bind infer_last (fun params ->
                 let result_ty = inferred_form_type params last in
@@ -2958,6 +2964,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (fun result condition ->
                     Result.bind result (fun params ->
                         match condition with
+                        | FSymbol name
+                          when not (Types.equal result_ty TBool) ->
+                            (match string_assoc_opt name params with
+                            | Some (TUnknown | TMeta _ | TVar _) ->
+                                constrain_symbol (TNullable result_ty) params name
+                            | _ -> infer_truthy params condition)
                         | FList [ FKeyword keyword; FSymbol name ] ->
                             add_record_field_constraint name keyword
                               (TNullable result_ty) params
@@ -3592,6 +3604,27 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | Error _ -> (TUnknown, TUnknown))
     | _ -> (TUnknown, TUnknown)
   and infer_let ?expected_body params bindings body_forms =
+    (* A repeated name starts a new lexical scope, not another constraint on the old value. *)
+    let rec split_rebinding names reversed_prefix = function
+      | pattern :: value :: rest as forms ->
+          let introduced = Destructure.pattern_names pattern in
+          if List.exists (fun name -> List.mem name names) introduced then
+            Some (List.rev reversed_prefix, forms)
+          else
+            split_rebinding (introduced @ names)
+              (value :: pattern :: reversed_prefix) rest
+      | _ -> None
+    in
+    let rebinding =
+      match bindings with
+      | FVector forms -> split_rebinding [] [] forms
+      | _ -> None
+    in
+    match rebinding with
+    | Some (prefix, rest) ->
+        infer_let ?expected_body params (FVector prefix)
+          [ FList (FSymbol "let" :: FVector rest :: body_forms) ]
+    | None ->
     let bound_names =
       let rec collect = function
         | pattern :: _value :: rest ->

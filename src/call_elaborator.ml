@@ -7214,6 +7214,7 @@ let adapt_nullable_callback env expected arg =
           let expected_callback_return = TNullable expected_return in
           let adapted_result =
             match optional_payload actual_return with
+            | _ when Types.equal actual_return TNil -> Ok result
             | Some _ ->
                 plan_and_emit_argument env ~expected:expected_callback_return
                   actual_result
