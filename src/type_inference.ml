@@ -3087,7 +3087,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FKeyword keyword; FSymbol name ] ->
         let field_ty =
           record_field_type params name keyword
-          |> Option.value ~default:(TNullable (Type_solver.fresh ()))
+          |> Option.value ~default:(Types.truthy_constraint (Type_solver.fresh ()))
         in
         add_record_field_constraint name keyword
           field_ty params

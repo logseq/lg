@@ -35,6 +35,11 @@ Truthiness checks preserve a callback's known return type. In `or`, a static
 fallback constrains an otherwise unknown callback result as optional instead
 of incorrectly forcing that callback to return a boolean.
 
+A keyword field used as a condition requires truthiness, not optional storage.
+The field can remain a boolean, option, or another statically typed value;
+using it in a condition must not prevent later record constraints from resolving
+its actual type.
+
 Contextual collection results retain record fields required by their callbacks.
 Structural callback parameters stay structural even when their fields also
 match a named record.

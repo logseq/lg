@@ -25030,6 +25030,53 @@ let test_assoc_callback_preserves_nominal_record_collection_fields () =
     "assoc_callback_preserves_nominal_record_collection_fields" "u\n"
     ocaml_source
 
+let test_keyword_conditions_do_not_infer_optional_storage () =
+  let source = {|
+(defn enabled? [value] (if (:enabled value) true false))
+
+(println (enabled? {:enabled true}))
+(println (enabled? {:enabled false}))
+(println (enabled? {:enabled nil}))
+(println (enabled? {:enabled (Some 3)}))
+(println (enabled? {:enabled 0}))
+(println (enabled? {:enabled ""}))
+(println (enabled? {:enabled [1]}))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "keyword_conditions_do_not_infer_optional_storage"
+    "true\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_swap_update_conj_preserves_record_element_context () =
+  let source = {|
+(type-record route (uuid :string) (zoom :bool) (state :int))
+
+(type-record navigation (routes :vector<route>))
+
+(type-record session (state :ref<navigation>))
+
+(defn state [session] @(:state session))
+
+(defn initial-state [route]
+  (if (:zoom route) (if (= (:uuid route) "") 0 3) 0))
+
+(defn push-route! [session route]
+  (count (:routes (state session)))
+  (let [current (initial-state route)]
+    (swap! (:state session) update :routes conj (assoc route :state current))))
+
+(def session (record session (state (atom (record navigation (routes []))))))
+
+(push-route! session (record route (uuid "abc") (zoom true) (state 99)))
+(push-route! session (record route (uuid "def") (zoom false) (state 99)))
+(println (count (:routes @(:state session))))
+(run! (fn [route] (println (str (:uuid route) ":" (:state route)))) (:routes @(:state session)))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "swap_update_conj_preserves_record_element_context"
+    "2\nabc:3\ndef:0\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_expression_callback_constrains_record_arguments () =
   let source = {|
 (type-record request (url :string))
@@ -54911,6 +54958,10 @@ let tests =
       test_assoc_adapts_record_collection_fields );
     ( "assoc callback preserves nominal record collection fields",
       test_assoc_callback_preserves_nominal_record_collection_fields );
+    ( "keyword conditions do not infer optional storage",
+      test_keyword_conditions_do_not_infer_optional_storage );
+    ( "swap update conj preserves record element context",
+      test_swap_update_conj_preserves_record_element_context );
     ( "expression callback constrains record arguments",
       test_expression_callback_constrains_record_arguments );
     ( "assoc nested record flows into callback",
