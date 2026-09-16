@@ -15097,6 +15097,75 @@ let test_external_ocaml_record_values_infer_fields_without_declaration () =
     "external_ocaml_record_values_infer_fields_without_declaration" "42:501\n"
     ocaml_source
 
+let test_external_record_atom_vector_preserves_nominal_identity () =
+  let source = {|
+(require [ocaml.package/unix]
+         [ocaml.Unix :as unix]
+         [ocaml.List :as host-list]
+         [ocaml.Stdlib :as stdlib])
+(let [records (atom [])]
+  (host-list/iter
+    (fn [value] (swap! records conj value) (stdlib/ignore 0))
+    (list (unix/stat ".")))
+  (let [value (nth @records 0)]
+    (match (:st-kind value)
+      (unix/S_DIR) (println "directory")
+      _ (println "other"))
+    (println (= (unix/S_DIR) (:st-kind value)))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "external_record_atom_vector" "directory\ntrue\n" output
+
+let test_host_callback_atom_vector_preserves_nominal_identity () =
+  let dir = Filename.temp_dir "lg-callback-vector-" "" in
+  let fixture = Filename.concat dir "callback_vector_fixture.ml" in
+  let generated = Filename.concat dir "callback_vector_generated.ml" in
+  let output = Filename.concat dir "result.out" in
+  Fun.protect
+    ~finally:(fun () ->
+      Sys.readdir dir |> Array.iter (fun name -> Sys.remove (Filename.concat dir name));
+      Unix.rmdir dir)
+    (fun () ->
+      write_file fixture {|
+type state = Applied | Queued
+type intent = Create_asset of { uuid : string }
+type operation = { operation_id : string; base_t : int; state : state; intent : intent }
+type row = { uuid : string; title : string }
+let make_row uuid title = { uuid; title }
+let create ?stage () =
+  Option.iter (fun stage -> ignore (stage { operation_id = "operation"; base_t = 7; state = Applied; intent = Create_asset { uuid = "asset" } })) stage
+|};
+      let command = Printf.sprintf "cd %s && ocamlc -c callback_vector_fixture.ml" (Filename.quote dir) in
+      if Sys.command command <> 0 then failwith "could not compile callback vector fixture";
+      Lg.Ocaml_signature.set_melange_target false;
+      Lg.Ocaml_signature.add_include_dirs [ dir ];
+      let source = {|
+(require [ocaml.Callback_vector_fixture :as host]
+         [ocaml.Stdlib :as stdlib])
+(let [staged (atom [])
+      target (host/make-row "parent" "Parent")
+      projected (atom [target])
+      session (host/create :stage (fn [operation]
+                                    (swap! staged conj operation)
+                                    (match (:intent operation)
+                                      (host/Create_asset value)
+                                      (reset! projected [target (host/make-row (:uuid value) "Asset")]))
+                                    (Ok (stdlib/ignore 0))))]
+  (let [operation (nth @staged 0)]
+    (match (:intent operation)
+      (host/Create_asset value) (println (= "asset" (:uuid value))))
+    (println (= (host/Applied) (:state operation)))))
+|} in
+      let compiled = compile_string_with_stdlib source |> expect_ok in
+      write_file generated (String.concat "\n" [ native_stdlib_prelude (); strip_native_stdlib_prelude compiled ]);
+      if Sys.command (compile_only_command dir generated) <> 0 then
+        failwith "could not compile generated callback vector code";
+      if Sys.command (run_compiled_module_command dir
+          [ Filename.concat dir "callback_vector_fixture.cmo";
+            Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
+        failwith "could not run callback vector code";
+      if read_file output <> "true\ntrue\n" then failwith "callback vector result mismatch")
+
 let test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
     {|
@@ -53326,6 +53395,10 @@ let tests =
       test_ocaml_record_values_support_included_module_types );
     ( "external OCaml record values infer fields without declaration",
       test_external_ocaml_record_values_infer_fields_without_declaration );
+    ( "external record atom vector preserves nominal identity",
+      test_external_record_atom_vector_preserves_nominal_identity );
+    ( "host callback atom vector preserves nominal identity",
+      test_host_callback_atom_vector_preserves_nominal_identity );
     ( "OCaml record values delegate qualified field typecheck to OCaml",
       test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml );
     ( "OCaml record values delegate field typecheck to OCaml",
