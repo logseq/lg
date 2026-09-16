@@ -19336,6 +19336,9 @@ module Public = Inner
 let make () : Public.t = `Children [`Leaf "abc"; `Children [`Leaf "de"]]
 let consume (value : Public.t) = Inner.size value
 let object_value () : Public.t = `Assoc ["type", `Leaf "abc"]
+let rec anonymous_value depth =
+  if depth = 0 then `Leaf "abc"
+  else `Assoc ["type", anonymous_value (depth - 1)]
 |};
       if Sys.command (Printf.sprintf "cd %s && ocamlc -c recursive_alias_fixture__Inner.ml && ocamlc -c recursive_alias_fixture.ml" (Filename.quote dir)) <> 0 then
         failwith "recursive alias fixture did not compile";
@@ -19383,6 +19386,10 @@ let object_value () : Public.t = `Assoc ["type", `Leaf "abc"]
 (println (match (fixture/object-value)
   (tag Assoc entries) (case (entry-value entries "type") "abc" 8 0)
   _ 0))
+(assert (match (fixture/anonymous-value 1)
+  (tag Assoc entries)
+  (if (some (fn [[key value]] (and (= key "type") (= value (tag Leaf "abc")))) entries) true false)
+  _ false))
 |} in
       let compiled = compile_string_with_stdlib source |> expect_ok in
       write_file generated
@@ -19395,6 +19402,14 @@ let object_value () : Public.t = `Assoc ["type", `Leaf "abc"]
            Filename.concat dir "recursive_alias_generated.cmo"] output_path) <> 0 then
         failwith "recursive alias generated code did not run";
       if read_file output_path <> "15\n5\n4\n3\n3\n7\n8\n" then failwith "recursive alias traversal changed";
+      (match compile_string_with_stdlib {|
+(require [ocaml.Recursive_alias_fixture :as fixture])
+(match (fixture/anonymous-value 1)
+  (tag Assoc entries) (mapv (fn [[_ value]] (+ value 1)) entries)
+  _ [])
+|} with
+       | Error _ -> ()
+       | Ok _ -> failwith "anonymous recursive payloads must not become integers");
       List.iter
         (fun value ->
           compile_string_with_stdlib
@@ -50377,7 +50392,8 @@ let test_ocaml_recursive_variant_metadata_terminates () =
     (Types.Tvariant row);
   match Lg_compiler_support.Ocaml_value.normalize recursive with
   | Variant (["Leaf", Some (Constructor ("int", []));
-              "Next", Some Opaque], true, _) -> ()
+              "Next", Some (Variable id)], true, _)
+    when id = Types.get_id recursive -> ()
   | _ -> failwith "recursive host rows must retain nonrecursive payload metadata"
 
 let test_polymorphic_variants_infer_rows_from_patterns () =

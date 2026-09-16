@@ -43,6 +43,12 @@ their payload representations differ, including nested tuples. Unqualified
 nullary constructors retain their nominal result type in emitted expressions
 so distinct namespaces may use the same OCaml constructor spelling.
 
+Anonymous recursive rows imported from OCaml retain an inference variable at
+each recursive back-edge instead of inventing an opaque source type. Generated
+callbacks are still checked against the original OCaml interface, so recursive
+payloads cannot be used at incompatible types. Named recursive aliases retain
+their canonical host identity.
+
 Destructured local bindings retain independent inference variables until their
 initializers and uses constrain them. In a mixed `let`, later initializer
 expressions constrain earlier destructured values as well as the final body.

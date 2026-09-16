@@ -106,7 +106,8 @@ let argument_label = function
 
 let rec normalize_with_path path type_expr =
   let id = Types.get_id type_expr in
-  if List.mem id path then Opaque
+  (* Keep anonymous recursive rows inferable at their checked host boundary. *)
+  if List.mem id path then Variable id
   else normalize_fresh (id :: path) type_expr
 and normalize_fresh path type_expr =
   let normalize = normalize_with_path path in
