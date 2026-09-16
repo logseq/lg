@@ -373,6 +373,9 @@ the incoming host record's declared fields before planning the static field
 projection. Passing the callback by name must not require an explicit hint.
 An atom initializer receives the expected cell payload type, not the enclosing
 reference type, so collection-producing expressions keep their element types.
+Anonymous reference updaters propagate their parameter constraints back to the
+cell and are checked with the same payload type as their input and result.
+Read-only predicates may project fields without narrowing the stored record.
 
 A direct OCaml call can accept a positional LG function where a host callback
 has labelled parameters. The host signature supplies the labels and parameter

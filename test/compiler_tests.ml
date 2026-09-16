@@ -15133,11 +15133,12 @@ type operation = { operation_id : string; base_t : int; state : state; intent : 
 type row = { uuid : string; title : string }
 let make_row uuid title = { uuid; title }
 let outliner_op = function Create_asset _ -> "save"
-let create ?stage ?prepare ?rows () =
+let create ?stage ?prepare ?rows ?pending () =
   let operation = { operation_id = "operation"; base_t = 7; state = Applied; intent = Create_asset { uuid = "asset"; title = "Updated" } } in
   Option.iter (fun stage -> ignore (stage operation)) stage;
   Option.iter (fun prepare -> ignore (prepare operation : ((string * string), string) result)) prepare;
-  Option.iter (fun rows -> ignore (rows () : row list)) rows
+  Option.iter (fun rows -> ignore (rows () : row list)) rows;
+  Option.iter (fun pending -> ignore (pending () : operation list)) pending
 |};
       let command = Printf.sprintf "cd %s && ocamlc -c callback_vector_fixture.ml" (Filename.quote dir) in
       if Sys.command command <> 0 then failwith "could not compile callback vector fixture";
@@ -15212,6 +15213,31 @@ let create ?stage ?prepare ?rows () =
             Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
         failwith "could not run callback deletion code";
       if read_file output <> "true\ntrue\n" then failwith "callback deletion result mismatch";
+      let replacement = {|
+(require [ocaml.Callback_vector_fixture :as host]
+         [ocaml.Stdlib :as stdlib])
+(defn pending? [operation]
+  (match (:state operation) (host/Applied) true (host/Queued) true))
+(let [staged (atom [])]
+  (host/create
+    :stage (fn [operation]
+             (swap! staged (fn [pending]
+                             (conj (filterv #(not= (:operation-id %) (:operation-id operation)) pending)
+                                   operation)))
+             (Ok (stdlib/ignore 0)))
+    :pending (fn [] (apply list (filterv pending? @staged))))
+  (println (= 1 (count @staged)))
+  (println (= "operation" (:operation-id (nth @staged 0)))))
+|} in
+      let compiled = compile_string_with_stdlib replacement |> expect_ok in
+      write_file generated (String.concat "\n" [ native_stdlib_prelude (); strip_native_stdlib_prelude compiled ]);
+      if Sys.command (compile_only_command dir generated) <> 0 then
+        failwith "could not compile callback replacement code";
+      if Sys.command (run_compiled_module_command dir
+          [ Filename.concat dir "callback_vector_fixture.cmo";
+            Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
+        failwith "could not run callback replacement code";
+      if read_file output <> "true\ntrue\n" then failwith "callback replacement result mismatch";
       let incompatible = {|
 (require [ocaml.Callback_vector_fixture :as host])
 (let [staged (atom [])]
@@ -15219,9 +15245,19 @@ let create ?stage ?prepare ?rows () =
   (swap! staged conj (host/make-row "row" "Different record"))
   (println (count @staged)))
 |} in
-      match compile_string_with_stdlib incompatible with
-      | Error _ -> ()
-      | Ok _ -> failwith "atom updates must not merge distinct host records")
+      let incompatible_updater = {|
+(require [ocaml.Callback_vector_fixture :as host])
+(let [staged (atom [])]
+  (host/create :stage (fn [operation] (swap! staged conj operation)))
+  (swap! staged (fn [pending] (conj pending (host/make-row "row" "Different record"))))
+  (println (count @staged)))
+|} in
+      List.iter
+        (fun source ->
+          match compile_string_with_stdlib source with
+          | Error _ -> ()
+          | Ok _ -> failwith "atom updates must not merge distinct host records")
+        [incompatible; incompatible_updater])
 
 let test_swap_inference_respects_local_updater_shadowing () =
   let source = {|

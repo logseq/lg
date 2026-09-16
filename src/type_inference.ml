@@ -5334,7 +5334,32 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         (FSymbol "__lg_swap!" :: reference :: update_fn
        :: arguments) ->
         Result.bind (infer_form params reference) (fun params ->
-            Result.bind (infer_form params update_fn) (fun params ->
+            let infer_updater =
+              match inferred_form_type params reference with
+              | (TRef _ | TUnknown | TMeta _ | TVar _) as reference_ty ->
+                  let payload_ty =
+                    match reference_ty with
+                    | TRef payload -> payload
+                    | _ -> Type_solver.fresh ()
+                  in
+                  (* Updater parameters constrain the cell, not just captured values. *)
+                  let payload_ty =
+                    match inferred_function_parameter_types params update_fn with
+                    | current :: _ -> refine_type payload_ty current
+                    | [] -> payload_ty
+                  in
+                  let argument_tys =
+                    List.map (inferred_form_type params) arguments
+                  in
+                  Result.bind
+                    (infer_expected (TRef payload_ty) params reference)
+                    (fun params ->
+                      infer_expected
+                        (TFn (payload_ty :: argument_tys, payload_ty))
+                        params update_fn)
+              | _ -> infer_form params update_fn
+            in
+            Result.bind infer_updater (fun params ->
                 let expected = inferred_form_type params reference in
                 let update_ty =
                   match update_fn with
