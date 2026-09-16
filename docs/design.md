@@ -55,7 +55,12 @@ Macro expansion retains the complete `let` scope rather than expanding its
 bindings and body independently; destructured names obey the same rules.
 
 Record updates propagate a known field type into the assigned value. Contextual
-`apply` results constrain the rest element through the function's variadic
+updates of unresolved expression receivers defer their storage choice instead
+of assuming a homogeneous map from the first assigned keyword. Callback result
+requirements can therefore identify a nested named record before elaboration;
+known map receivers retain map update semantics.
+
+Contextual `apply` results constrain the rest element through the function's variadic
 signature, including fixed arguments before the final collection. `concat`
 propagates a concrete expected element type to unresolved inputs, but does not
 replace known elements or spread partial callback rows into other collections.

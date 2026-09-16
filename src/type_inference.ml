@@ -4253,6 +4253,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (resolve_named_record
                      (inferred_form_or_call_type ~lookup_function_ty params target))) ->
           infer_form params target
+      | target, FKeyword _ :: _
+        when (match inferred_form_or_call_type ~lookup_function_ty params target with
+              | TUnknown | TMeta _ | TVar _ -> true
+              | _ -> false) ->
+          infer_form params target
       | target, key_form :: value_form :: _ ->
           let key_ty =
             inferred_form_or_call_type ~lookup_function_ty params key_form

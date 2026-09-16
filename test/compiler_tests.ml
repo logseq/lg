@@ -25030,6 +25030,61 @@ let test_assoc_callback_preserves_nominal_record_collection_fields () =
     "assoc_callback_preserves_nominal_record_collection_fields" "u\n"
     ocaml_source
 
+let test_assoc_nested_record_flows_into_callback () =
+  let source = {|
+(type-variant phase (Waiting) (Accepted :int))
+
+(type-record operation (id :string) (phase :phase))
+
+(type-record pending (operation :operation))
+
+(type-record active (pending :pending))
+
+(type-record host (stage :option<fn<operation;string>>))
+
+(defn finish [host active]
+  (if-some [stage (:stage host)]
+    (stage (assoc (:operation (:pending active)) :phase (Accepted 7)))
+    "absent"))
+
+(def original (record operation (id "kept") (phase Waiting)))
+
+(def entry (record active (pending (record pending (operation original)))))
+
+(def enabled (record host (stage (Some (fn [operation]
+  (str (:id operation) ":" (match (:phase operation) (Accepted n) n Waiting 0)))))))
+
+(println (finish enabled entry))
+(println (finish (record host (stage nil)) entry))
+(println (match (:phase original) Waiting "unchanged" (Accepted _) "changed"))
+
+(defn rename-entry [active]
+  (assoc (:operation (:pending active)) :phase (Accepted 9) :id "renamed"))
+
+(println (:id (rename-entry entry)))
+
+(type-record counters (counts :map<keyword;int>))
+
+(defn update-counts [^:counters entry]
+  (assoc (:counts entry) :a 2 :b 3))
+
+(println (get (update-counts (record counters (counts {:a 1}))) :b 0))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "assoc_nested_record_flows_into_callback"
+    "kept:7\nabsent\nunchanged\nrenamed\n3\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target (source ^ {|
+(defn invalid [host active]
+  (when-some [stage (:stage host)]
+    (stage (assoc (:operation (:pending active)) :phase "bad"))))
+(invalid enabled entry)
+|}) with
+    | Error _ -> ()
+    | Ok _ -> failwith "nested assoc accepted an incompatible record field")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_assoc_accepts_protocol_constrained_named_records () =
   let source =
     {|(refer-clojure-exclude replace-value)
@@ -54820,6 +54875,8 @@ let tests =
       test_assoc_adapts_record_collection_fields );
     ( "assoc callback preserves nominal record collection fields",
       test_assoc_callback_preserves_nominal_record_collection_fields );
+    ( "assoc nested record flows into callback",
+      test_assoc_nested_record_flows_into_callback );
     ( "assoc accepts protocol constrained named records",
       test_assoc_accepts_protocol_constrained_named_records );
     ( "nested named records resolve protocol receivers",
