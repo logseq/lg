@@ -1969,6 +1969,50 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | _ -> expected
   in
   let rec infer_expected expected_ty params = function
+    | (FList (FSymbol "__lg_apply" :: FSymbol name :: arguments) as form) -> (
+        match List.rev arguments, lookup_inference_function_type params name [] with
+        | collection :: reversed_fixed, Ok (TOverloaded_fn arities) ->
+            let fixed = List.rev reversed_fixed in
+            let candidates = List.filter (fun arity ->
+              Option.is_some arity.rest_param
+              && List.length arity.fixed_params <= List.length fixed) arities in
+            (match candidates with
+            | [arity] -> (
+                match Type_solver.unify Type_solver.empty arity.return_ty expected_ty with
+                | Error _ -> infer_form params form
+                | Ok substitutions ->
+                    let rest_ty = Type_solver.apply substitutions (Option.get arity.rest_param) in
+                    let fixed_types = List.map (Type_solver.apply substitutions) arity.fixed_params in
+                    let fixed_types = fixed_types @ List.init
+                      (List.length fixed - List.length fixed_types) (fun _ -> rest_ty) in
+                    Result.bind
+                      (List.fold_left2 (fun result expected argument ->
+                         Result.bind result (fun params -> infer_expected expected params argument))
+                         (Ok params) fixed_types fixed)
+                      (fun params ->
+                        let actual = inferred_form_or_call_type ~lookup_function_ty params collection in
+                        match static_seqable_element_type actual with
+                        | Some known when not (Type_solver.is_open known)
+                                          && (match known with TRecord _ -> false | _ -> true) ->
+                            infer_form params collection
+                        | _ -> infer_expected (Types.seqable_constraint rest_ty) params collection))
+            | _ -> infer_form params form)
+        | _ -> infer_form params form)
+    | FList (FSymbol "__lg_concat" :: collections) -> (
+        match expected_seqable_element_type expected_ty with
+        | Some element_ty when not (Type_solver.is_open element_ty)
+                               && (match element_ty with TRecord _ -> false | _ -> true) ->
+            List.fold_left
+              (fun result collection ->
+                Result.bind result (fun params ->
+                  let actual = inferred_form_or_call_type ~lookup_function_ty params collection in
+                  match static_seqable_element_type actual with
+                  | Some known when not (Type_solver.is_open known)
+                                    && (match known with TRecord _ -> false | _ -> true) ->
+                      infer_form params collection
+                  | _ -> infer_expected (Types.seqable_constraint element_ty) params collection))
+              (Ok params) collections
+        | Some _ | None -> infer_all params collections)
     | FSymbol name ->
         Option.iter (fun observe ->
             Option.iter (observe expected_ty) (string_assoc_opt name params))
@@ -2377,8 +2421,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           ":" ^ String.sub field_access 2 (String.length field_access - 2)
         in
         add_record_field_constraint name keyword (TRef expected_ty) params
-    | FList [ FSymbol "IDeref/-deref"; FSymbol reference ] -> (
+    | (FList [ FSymbol "IDeref/-deref"; FSymbol reference ] as form) -> (
         match string_assoc_opt reference params with
+        | _ when Option.is_some (Types.seqable_constraint_info expected_ty) ->
+            (* A sequence view does not determine the mutable cell's storage type. *)
+            infer_form params form
         | Some (TOcaml_app ("Lazy.t", [ _ ])) ->
             constrain_symbol
               (TOcaml_app ("Lazy.t", [ expected_ty ]))
@@ -4068,7 +4115,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     let rec infer_pairs params = function
       | [] -> Ok params
       | FKeyword keyword :: value_form :: rest -> (
-          match infer_form params value_form with
+          let infer_value =
+            match resolve_named_record (inferred_form_type params target) with
+            | TNamed_record record -> (
+                match Types.find_field keyword record.fields with
+                | Some field -> infer_expected field.ty params value_form
+                | None -> infer_form params value_form)
+            | _ -> infer_form params value_form
+          in
+          match infer_value with
           | Error _ as err -> err
           | Ok params -> (
               match target_name with

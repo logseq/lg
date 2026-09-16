@@ -14316,6 +14316,60 @@ let test_sequential_let_rebindings_keep_independent_types () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_filtered_record_concat_preserves_updated_field_type () =
+  let source =
+    {|
+(type-record summary (uuid :string) (title :string))
+
+(type-record block (uuid :string) (title :string) (page-id :string))
+
+(type-record context (blocks :list<block>) (pages :list<string>))
+
+(defn with-extra-blocks [context extra]
+  (let [present (set (map :uuid (:blocks context)))]
+    (assoc context :blocks
+      (apply list (concat (:blocks context)
+                         (filter #(not (contains? present (:uuid %))) extra))))))
+
+(def original (record block (uuid "a") (title "original") (page-id "page")))
+(def duplicate (record block (uuid "a") (title "duplicate") (page-id "page")))
+(def added (record block (uuid "b") (title "added") (page-id "page")))
+(def result (with-extra-blocks (record context (blocks (list original)) (pages (list "page"))) [duplicate added]))
+(println (mapv :title (:blocks result)))
+(println (count (:pages result)))
+(println (mapv :title (:blocks (with-extra-blocks result []))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "filtered_record_concat_preserves_updated_field_type"
+    "[\"original\" \"added\"]\n1\n[\"original\" \"added\"]\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_concat_preserves_concrete_branch_elements () =
+  let source =
+    {|
+(type-record item (uuid :string) (title :string) (score :float) (is-page :bool))
+
+(defn rows []
+  [(record item (uuid "a") (title "A") (score 0.5) (is-page true))])
+
+(defn rank [include]
+  (let [left (if include (rows) [])
+        right (rows)]
+    (mapv (fn [result] (+ (:score result) (if (:is-page result) 2.0 0.0)))
+      (concat left right))))
+
+(println (rank true))
+(println (rank false))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "contextual_concat_preserves_concrete_branch_elements"
+    "[2.5 2.5]\n[2.5]\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_custom_ideref_dispatches_nominal_return_values () =
   let source =
     {|
@@ -52866,6 +52920,10 @@ let tests =
       test_logical_or_infers_fallback_from_result_context );
     ( "sequential let rebindings keep independent types",
       test_sequential_let_rebindings_keep_independent_types );
+    ( "filtered record concat preserves updated field type",
+      test_filtered_record_concat_preserves_updated_field_type );
+    ( "contextual concat preserves concrete branch elements",
+      test_contextual_concat_preserves_concrete_branch_elements );
     ( "structural record helper refines to nominal argument",
       test_structural_record_helper_refines_to_nominal_argument );
     ( "map projects named record elements for structural callbacks",

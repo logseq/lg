@@ -49,6 +49,15 @@ bindings. An initializer and earlier closures still refer to the preceding
 binding; type constraints from a later binding must not change that earlier
 value's type, including when the later binding destructures a tuple.
 
+Record updates propagate a known field type into the assigned value. Contextual
+`apply` results constrain the rest element through the function's variadic
+signature, including fixed arguments before the final collection. `concat`
+propagates a concrete expected element type to unresolved inputs, but does not
+replace known elements or spread partial callback rows into other collections.
+Applying a sequence consumer to a dereferenced value does not infer a sequence
+adapter as the mutable cell's payload. Initialization and mutation determine
+the stored collection type; the consumer observes a sequence view of it.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record
