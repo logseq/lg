@@ -64,6 +64,12 @@ value, so unrelated records sharing one field name cannot choose its identity.
 Known map results retain map lookup semantics rather than acquiring record
 constraints.
 
+Record inference considers declared nested fields when choosing between
+compatible record candidates. A generic field is not evidence for the nested
+fields of a concrete reference payload. Reference payload records must satisfy
+their required fields; inference never converts the mutable cell to a projected
+record reference. Accessors without such nested requirements stay generic.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record

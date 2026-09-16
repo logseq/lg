@@ -14384,11 +14384,21 @@ let test_reference_state_collection_accessors_keep_nominal_elements () =
 (type-record app-state
   (routes :vector<route>) (graphs :vector<graph>) (config :option<config>))
 
+(type-record unrelated-state (routes :vector<string>))
+
+(type-record queued-state (routes :list<int>))
+
+(type-record request-state (routes :vector<request>))
+
+(type-record index (entries :ref<map<string;int>>))
+
 (type-record session (state :ref<app-state>))
 
 (type-record host (config :option<config>) (state :ref<int>))
 
 (defn state [session] @(:state session))
+
+(defn clear-index [index] (reset! (:entries index) {}))
 
 (defn active-route [session] (last (:routes (state session))))
 
@@ -14407,11 +14417,15 @@ let test_reference_state_collection_accessors_keep_nominal_elements () =
 (reset! (:state instance) (record app-state (routes []) (graphs []) (config nil)))
 (println (if-some [route (active-route instance)] (:uuid route) "missing"))
 (println (if-some [graph (selected-graph instance)] (:encrypted graph) false))
+(println (state (record host (config nil) (state (atom 7)))))
+(let [entries (atom {"one" 1})]
+  (clear-index (record index (entries entries)))
+  (println (count @entries)))
 |}
   in
   let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reference_state_collection_accessors_keep_nominal_elements"
-    "route\ntrue\nmissing\nfalse\n" native_source;
+    "route\ntrue\nmissing\nfalse\n7\n0\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   List.iter (fun target ->

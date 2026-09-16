@@ -28,7 +28,7 @@ let same_host_wrapper expected actual =
   same_outer
   && Types.assignable ~policy:Host_boundary ~expected ~actual
 
-let record_inference_compatible env ~allow_expected_dynamic expected_fields
+let rec record_inference_compatible env ~allow_expected_dynamic expected_fields
     actual_fields =
   expected_fields
   |> List.for_all (fun (expected : field) ->
@@ -36,6 +36,15 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
          | None ->
              Option.is_some (Types.find_record_extension_field actual_fields)
          | Some actual ->
+             (match expected.ty, actual.ty with
+             | TRef (TRecord (_ :: _ as fields)), TRef (TNamed_record record) ->
+                 record_inference_compatible env ~allow_expected_dynamic fields
+                   record.fields
+             | TRef (TRecord (_ :: _ as fields)), TRef (TRecord actual_fields) ->
+                 record_inference_compatible env ~allow_expected_dynamic fields
+                   actual_fields
+             | TRef (TRecord (_ :: _)), TRef _ -> false
+             | _ ->
              let expected_dynamic_compatible =
                match Types.dynamic_constraint_info expected.ty with
                | Some capability when not (Types.equal capability TUnknown) ->
@@ -74,7 +83,7 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
              || expected_contains_compatible
              || Types.equal expected.ty actual.ty
              || same_host_wrapper expected.ty actual.ty
-             || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
+             || Types.row_compatible ~expected:expected.ty ~actual:actual.ty))
 
 let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
     ?(required_protocols = []) scope env = function
@@ -319,8 +328,6 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
                     record_inference_compatible env
                       ~allow_expected_dynamic:allow_dynamic_fields fields
                       record.fields
-                    || Types.row_compatible ~expected:(TRecord fields)
-                         ~actual:binding.ty
                   in
                   if compatible
                   then Some record
@@ -336,16 +343,22 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
                      (TNamed_record record))
                  required_protocols)
       in
-      let direct_match_count record =
-        fields
-        |> List.fold_left
+      let rec direct_match_count fields actual_fields =
+        List.fold_left
              (fun count field ->
-               match find_field field.keyword record.fields with
+               match find_field field.keyword actual_fields with
                | Some actual when not (Types.is_record_extension_field actual) ->
-                   count + 1
+                   count + 1 + nested_match_count field.ty actual.ty
                | Some _ | None -> count)
-             0
+             0 fields
+      and nested_match_count expected actual =
+        match expected, actual with
+        | TRef expected, TRef actual -> nested_match_count expected actual
+        | TRecord expected, (TRecord actual | TNamed_record {fields = actual; _}) ->
+            direct_match_count expected actual
+        | _ -> 0
       in
+      let direct_match_count record = direct_match_count fields record.fields in
       let best_direct_matches =
         candidates
         |> List.fold_left
