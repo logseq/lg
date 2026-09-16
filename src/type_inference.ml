@@ -1193,6 +1193,22 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
+  | FList [ FKeyword keyword; target ] ->
+      let target_ty =
+        match inferred_form_type params target with
+        | ty when Type_solver.is_open ty ->
+            inferred_call_return_type ~lookup_function_ty params target
+        | ty -> ty
+      in
+      (match Types.record_fields target_ty with
+      | Some fields ->
+          (match Types.find_field keyword fields with
+          | Some field -> Expression_support.clj_function_type field.ty
+          | None -> TUnknown)
+      | None ->
+          (match Types.dynamic_map_types target_ty with
+          | Some (_, value_ty) -> TNullable value_ty
+          | None -> TUnknown))
   | FList
       [ FSymbol ("__lg_if-some" | "__lg_if-let");
         FVector [ FSymbol binding; option_form ]; then_form; else_form ] ->
@@ -7770,6 +7786,31 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                (fun result (_key, value) ->
                  Result.bind result (fun params -> infer_form params value))
                (Ok params)
+    | FList ((FList _ as callee) :: arguments) ->
+        Result.bind (infer_form params callee) (fun params ->
+            let callee_ty =
+              inferred_form_or_call_type ~lookup_function_ty params callee
+              |> Expression_support.clj_function_type
+            in
+            let signature =
+              match callee_ty with
+              | TFn (parameter_tys, _) when List.length parameter_tys = List.length arguments ->
+                  Some callee_ty
+              | TUnknown | TMeta _ | TVar _ ->
+                  Some (TFn (List.map (fun argument ->
+                      match inferred_form_or_call_type ~lookup_function_ty params argument with
+                      | TUnknown -> Type_solver.fresh ()
+                      | ty -> ty) arguments, Type_solver.fresh ()))
+              | _ -> None
+            in
+            match signature with
+            | Some (TFn (parameter_tys, _) as signature) ->
+                Result.bind (infer_expected signature params callee) (fun params ->
+                    List.fold_left2
+                      (fun result expected argument ->
+                        Result.bind result (fun params -> infer_expected expected params argument))
+                      (Ok params) parameter_tys arguments)
+            | _ -> infer_all params arguments)
     | FList forms -> infer_all params forms
     | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _ | FBool _
     | FKeyword _

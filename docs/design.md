@@ -74,6 +74,11 @@ value, so unrelated records sharing one field name cannot choose its identity.
 Known map results retain map lookup semantics rather than acquiring record
 constraints.
 
+Calls through expressions propagate their function parameter types into the
+arguments, just like calls through local names. Keyword lookup on a function
+result preserves a known callback signature; named record arguments stay static
+and the callee expression is evaluated once.
+
 Record inference considers declared nested fields when choosing between
 compatible record candidates. A generic field is not evidence for the nested
 fields of a concrete reference payload. Reference payload records must satisfy

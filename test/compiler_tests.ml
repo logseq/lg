@@ -25030,6 +25030,42 @@ let test_assoc_callback_preserves_nominal_record_collection_fields () =
     "assoc_callback_preserves_nominal_record_collection_fields" "u\n"
     ocaml_source
 
+let test_expression_callback_constrains_record_arguments () =
+  let source = {|
+(type-record request (url :string))
+
+(type-record response (body :string))
+
+(type-record transport (send :fn<request;response>))
+
+(type-record session (host :transport))
+
+(defn host [session] (:host session))
+
+(defn deliver [session request]
+  (:body ((:send (host session)) request)))
+
+(def client
+  (record session
+    (host (record transport
+      (send (fn [request] (record response (body (:url request)))))))))
+
+(println (deliver client (record request (url "preserved"))))
+
+(let [calls (atom 0)]
+  (println (:body ((do (swap! calls inc) (:send (host client)))
+                  (record request (url "once")))))
+  (println @calls))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "expression_callback_constrains_record_arguments" "preserved\nonce\n1\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target (source ^ "\n(deliver client 42)") with
+    | Error _ -> ()
+    | Ok _ -> failwith "expression callback erased its request argument type")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_assoc_nested_record_flows_into_callback () =
   let source = {|
 (type-variant phase (Waiting) (Accepted :int))
@@ -54875,6 +54911,8 @@ let tests =
       test_assoc_adapts_record_collection_fields );
     ( "assoc callback preserves nominal record collection fields",
       test_assoc_callback_preserves_nominal_record_collection_fields );
+    ( "expression callback constrains record arguments",
+      test_expression_callback_constrains_record_arguments );
     ( "assoc nested record flows into callback",
       test_assoc_nested_record_flows_into_callback );
     ( "assoc accepts protocol constrained named records",
