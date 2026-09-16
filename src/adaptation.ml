@@ -866,10 +866,13 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                         match sequence_element_type source with
                         | None -> Ok None
                         | Some actual_element
-                          when Option.is_some (Types.record_fields actual_element)
-                               && (match expected_element with
-                                   | TRecord _ -> true
-                                   | TNamed_record record -> not record.nominal
+                          when (Option.is_some (Types.record_fields actual_element)
+                                && (match expected_element with
+                                    | TRecord _ -> true
+                                    | TNamed_record record -> not record.nominal
+                                    | _ -> false))
+                               || (match expected_element, actual_element with
+                                   | TPoly_variant _, TPoly_variant _ -> true
                                    | _ -> false) ->
                             Result.map
                               (fun adaptation -> Some (actual_element, adaptation))

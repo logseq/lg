@@ -12400,9 +12400,10 @@ val optional_callback : apply:(?prefix:string -> string -> string) -> string -> 
 type operation = { operation_id : string; title : string }
 type marker = { operation_id : string }
 val collect : stage:(operation -> unit) -> pending:(unit -> operation list) -> int
-type node = [ `Assoc of (string * node) list | `Text of string | `Null ]
+type node = [ `Assoc of (string * node) list | `Text of string | `Null | `List of node list ]
 val node : unit -> node
 val children : unit -> node list
+val sequence : unit -> node
 |};
   write_file ml
     {|
@@ -12423,9 +12424,10 @@ let collect ~stage ~pending =
   stage { operation_id = "a"; title = "first" };
   stage { operation_id = "a"; title = "updated" };
   List.length (pending ())
-type node = [ `Assoc of (string * node) list | `Text of string | `Null ]
+type node = [ `Assoc of (string * node) list | `Text of string | `Null | `List of node list ]
 let node () = `Assoc [ "title", `Text "kept"; "child", `Null ]
 let children () = [ node () ]
+let sequence () = `List (children ())
 |};
   Fun.protect
     ~finally:(fun () ->
@@ -12504,6 +12506,27 @@ let children () = [ node () ]
             (let* [values result value (decode-node child)] (Ok (conj values value))))
           (Ok []) (fixture/children)))
 (println (match decoded-nodes (Ok values) (nth values 0) _ 0))
+(defn node-field [^:map<string;Unit_tail_fixture.node> fields key] (get fields key))
+(defn required-text [fields key]
+  (match (node-field fields key)
+    (Some (tag Text value)) (Ok value)
+    _ (Error "missing text")))
+(defn decode-title [node]
+  (match node
+    (tag Assoc entries)
+    (let [fields (into {} (reverse entries))]
+      (let* [title (required-text fields "title")]
+        (Ok title)))
+    _ (Error "not an object")))
+(defn decode-titles [input]
+  (match input
+    (tag List children)
+    (reduce (fn [result child]
+              (let* [values result value (decode-title child)] (Ok (conj values value))))
+            (Ok []) children)
+    _ (Error "not a list")))
+(def decoded-titles (decode-titles (fixture/sequence)))
+(println (match decoded-titles (Ok values) (nth values 0) _ "failed"))
 |}
       in
       let native_source = compile_string_with_stdlib source |> expect_ok in
@@ -12534,9 +12557,9 @@ let children () = [ node () ]
           failwith
             (Printf.sprintf "generated OCaml did not run, exit code %d" code));
       let actual = read_file output_path in
-      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n2\n" then
+      if actual <> "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n2\nkept\n" then
         failwith
-          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n2\n" actual))
+          (Printf.sprintf "expected %S, got %S" "base:7:name\nhello!\nhello!\nhel\nhello?\nhello?\nlabel:hello\nnone:hello:optional:hello\nnone:once:optional:once\n1\n1\n2\nkept\n" actual))
 
 let test_inferred_ocaml_calls_preserve_partial_labelled_functions () =
   let source =

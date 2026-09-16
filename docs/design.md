@@ -1033,6 +1033,11 @@ adapter beside the original collection; it must not erase a `vector<T>`,
 `list<T>`, `array<T>`, or another statically supported collection to dynamic
 storage while instantiating the signature.
 
+When the consumer requires a different static element representation, that
+sequence adapter performs the checked element conversion lazily. This includes
+polymorphic-variant payload adaptations, not only record projections.
+The original collection storage remains unchanged.
+
 Source interfaces may name that storage relationship as
 `seqable<Element; Storage>`. This is required for higher-order collection
 functions whose sequence witness crosses another source function boundary;
