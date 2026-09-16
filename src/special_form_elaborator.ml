@@ -1667,6 +1667,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                      Types.binding binding.ocaml_name binding.ty ))
           in
           let some_env = Env.add_bindings env_bindings env in
+          let some_env =
+            List.fold_left
+              (fun env (binding : Destructure.local_binding) ->
+                Env.without_source_callable ~scope binding.source_name env)
+              some_env bindings
+          in
           match compile_some some_env with
           | Error _ as error -> error
           | Ok expression ->
@@ -1950,6 +1956,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                              Types.binding binding.ocaml_name binding.ty ))
                   in
                   let some_env = Env.add_bindings env_bindings env in
+                  let some_env =
+                    List.fold_left
+                      (fun env (binding : Destructure.local_binding) ->
+                        Env.without_source_callable ~scope binding.source_name env)
+                      some_env bindings
+                  in
                   match
                     compile_expr scope (Env.with_expected_type None some_env)
                       then_form

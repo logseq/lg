@@ -9453,6 +9453,33 @@ let test_source_inline_macros_respect_lexical_shadowing () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/inline_shadow.cljc" source)
 
+let test_conditional_bindings_shadow_macros_only_in_present_branch () =
+  let source = {|
+(def increment (fn [value] (inc value)))
+
+(println (or (when-some [find (Some increment)] (find 1)) 0))
+(println (or (when-let [find (Some increment)] (find 2)) 0))
+(println (if-some [find (Some increment)] (find 3) 0))
+(println (if-let [find (Some increment)] (find 4) 0))
+(println (if-some [find (do (find {"key" 1} "key") (Some increment))]
+           (find 5) (if-some [[_ value] (find {"key" 99} "key")] value 0)))
+(println (if-some [find (if false (Some increment) nil)]
+           (find 0) (if-some [[_ value] (find {"key" 7} "key")] value 0)))
+(println (let [find (fn [value] (+ value 10))]
+           (if-let [find (if false (Some increment) nil)] (find 0) (find 2))))
+(println (if-some [[_ value] (find {"key" 8} "key")] value 0))
+(println (or (when-some [[find] (Some [increment])] (find 9)) 0))
+
+(defmacro invoke [left right] `(+ ~left ~right))
+
+(println (or (when-some [invoke (Some increment)] (invoke 10)) 0))
+(println (invoke 1 2))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "conditional_bindings_shadow_macros_only_in_present_branch"
+    "2\n3\n4\n5\n6\n7\n12\n8\n10\n11\n3\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_loop_keeps_protocol_evidence_with_nominal_state () =
   let source =
     {|
@@ -53314,6 +53341,8 @@ let tests =
       test_callbacks_keep_nominal_protocol_parameters_raw );
     ( "source inline macros respect lexical shadowing",
       test_source_inline_macros_respect_lexical_shadowing );
+    ( "conditional bindings shadow macros only in present branch",
+      test_conditional_bindings_shadow_macros_only_in_present_branch );
     ( "loop keeps protocol evidence with nominal state",
       test_loop_keeps_protocol_evidence_with_nominal_state );
     ( "dynamic var uses concrete generic alias signature",

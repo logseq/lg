@@ -49,6 +49,11 @@ bindings. An initializer and earlier closures still refer to the preceding
 binding; type constraints from a later binding must not change that earlier
 value's type, including when the later binding destructures a tuple.
 
+Conditional binding locals shadow source macros and inline macros only in the
+present branch. Initializers and absent branches use the enclosing environment.
+Macro expansion retains the complete `let` scope rather than expanding its
+bindings and body independently; destructured names obey the same rules.
+
 Record updates propagate a known field type into the assigned value. Contextual
 `apply` results constrain the rest element through the function's variadic
 signature, including fixed arguments before the final collection. `concat`

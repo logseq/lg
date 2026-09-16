@@ -1576,6 +1576,33 @@ let expand ?call_site ~scope ~compiler_env (definition : Macro_definition.t) arg
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
       Ok (FList forms)
+  | FList
+      (FSymbol ("__lg_when-let" | "__lg_when-some" | "__lg_some-thread" as name)
+       :: FVector [pattern; expression] :: body) ->
+      let body_env =
+        Destructure.pattern_names pattern
+        |> List.fold_left
+             (fun env name -> Env.without_source_callable ~scope name env)
+             compiler_env
+      in
+      Result.bind (expand_all ~scope ~compiler_env expression) (fun expression ->
+          Result.map
+            (fun body -> FList (FSymbol name :: FVector [pattern; expression] :: body))
+            (expand_all_forms ~scope ~compiler_env:body_env body))
+  | FList
+      [FSymbol ("__lg_if-let" | "__lg_if-some" as name);
+       FVector [pattern; expression]; then_form; else_form] ->
+      let body_env =
+        Destructure.pattern_names pattern
+        |> List.fold_left
+             (fun env name -> Env.without_source_callable ~scope name env)
+             compiler_env
+      in
+      let ( let* ) = Result.bind in
+      let* expression = expand_all ~scope ~compiler_env expression in
+      let* then_form = expand_all ~scope ~compiler_env:body_env then_form in
+      let* else_form = expand_all ~scope ~compiler_env else_form in
+      Ok (FList [FSymbol name; FVector [pattern; expression]; then_form; else_form])
   | (FList (FSymbol "let*" :: FVector bindings :: body_forms) as form) ->
       let rec contains_symbol name = function
         | FSymbol symbol -> symbol = name

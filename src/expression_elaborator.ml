@@ -273,11 +273,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
       then compile_let scope env bindings body_forms
       else
         Result.bind
-          (Macro_expander.expand_all_forms ~scope ~compiler_env:env forms)
+          (Macro_expander.expand_all ~scope ~compiler_env:env
+             (FList (FSymbol "let" :: forms)))
           (function
-            | expanded_bindings :: expanded_body_forms ->
+            | FList (FSymbol "let" :: expanded_bindings :: expanded_body_forms) ->
                 compile_let scope env expanded_bindings expanded_body_forms
-            | [] -> assert false)
+            | _ -> assert false)
   | FList (FSymbol "tag" :: FSymbol name :: payload) ->
       if not (Variant_row.valid_tag name) then Error.error "invalid polymorphic variant tag"
       else
