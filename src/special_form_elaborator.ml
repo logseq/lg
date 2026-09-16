@@ -4502,6 +4502,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   Type_inference.infer_params
                     ?expected_return_ty:(Env.expected_type env)
                     ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
+                    ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:env)
                     ~lookup_function_ty
                     ~lookup_closed_sum_candidates
                     ~lookup_closed_sum_constructors
@@ -4790,6 +4791,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       match
         Type_inference.infer_params ~lookup_function_ty
           ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
+          ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:env)
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
@@ -4837,6 +4839,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           let inferred =
             Type_inference.infer_params ~lookup_function_ty
               ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
+              ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:env)
               ~lookup_closed_sum_candidates
               ~lookup_closed_sum_constructors
               ~lookup_protocol_constraint ~lookup_dynamic_key_record_type

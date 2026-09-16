@@ -1955,6 +1955,7 @@ and prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
       match
         Type_inference.infer_params ~materialize_open_equality:true
           ~lookup_call_ty:(Expression_support.lookup_call_ty scope provisional_env)
+          ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:provisional_env)
           ~lookup_function_ty
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors

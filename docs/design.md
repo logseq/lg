@@ -360,6 +360,12 @@ values use the parameter's payload type. Label tokens are not positional
 arguments. These constraints apply to ordinary functions, local functions,
 callbacks, and record fields without requiring redundant source type hints.
 
+A host callback's unresolved result does not discard its known parameter types.
+Mutable reference updates infer the updater's ordinary application, including
+source inline expansion, and propagate its result back to the same cell.
+Captured vectors therefore retain host record identity across callback writes
+and later field reads without requiring parameter hints.
+
 A direct OCaml call can accept a positional LG function where a host callback
 has labelled parameters. The host signature supplies the labels and parameter
 order; optional callback parameters reach the LG function as `option` values.

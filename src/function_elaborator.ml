@@ -856,6 +856,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
       let infer_parameters parameters =
         Type_inference.infer_params ~materialize_open_equality
           ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
+          ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:env)
           ~lookup_function_ty
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors

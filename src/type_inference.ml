@@ -1606,6 +1606,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ?(lookup_closed_sum_constructors = fun _ -> [])
     ?(lookup_successful_call_refinement = fun _ -> None)
     ?(lookup_call_ty = fun _ _ -> None)
+    ?(expand_form = fun form -> Ok form)
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
@@ -5309,6 +5310,26 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         Result.bind (constrain_symbol reference_ty params reference)
           (fun params -> infer_expected element_ty params value)
+    | FList
+        (FSymbol "__lg_swap!" :: (FSymbol reference as reference_form)
+        :: (FSymbol updater as update_fn) :: arguments)
+      when (match string_assoc_opt reference params with
+            | Some (TRef _ | TUnknown | TMeta _ | TVar _) -> true
+            | Some _ -> false
+            | None -> (match lookup_function_ty reference with
+                | Ok (TRef _ | TUnknown | TMeta _ | TVar _) | Error _ -> true
+                | Ok _ -> false)) ->
+        (* Infer the same updater application that elaboration writes back to the cell. *)
+        let invocation =
+          FList (update_fn :: FList [FSymbol "IDeref/-deref"; reference_form] :: arguments)
+        in
+        Result.bind
+          (if string_mem_assoc updater params then Ok invocation else expand_form invocation)
+          (fun invocation ->
+            Result.bind (infer_form params invocation) (fun params ->
+                let result_ty = inferred_binding_form_type params invocation in
+                Result.bind (constrain_symbol (TRef result_ty) params reference)
+                  (fun params -> infer_expected result_ty params invocation)))
     | FList
         (FSymbol "__lg_swap!" :: reference :: update_fn
        :: arguments) ->

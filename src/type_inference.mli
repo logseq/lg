@@ -25,6 +25,7 @@ val infer_params :
   ?lookup_closed_sum_constructors:(Types.ty -> (string * Types.ty list) list) ->
   ?lookup_successful_call_refinement:(string -> (int * Types.ty) option) ->
   ?lookup_call_ty:(string -> Ast.form list -> Types.ty option) ->
+  ?expand_form:(Ast.form -> (Ast.form, Error.t) result) ->
   lookup_function_ty:(string -> (Types.ty, 'error) result) ->
   lookup_protocol_constraint:(string -> Types.ty option) ->
   lookup_dynamic_key_record_type:(Types.ty -> Types.ty option) ->

@@ -75,6 +75,7 @@ let constraints scope env members types expressions =
                     in
                     Type_inference.infer_params ~expected_return_ty:return_ty
                       ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
+                      ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:env)
                       ~observe_call ~observe_constraint
                       ~lookup_function_ty:(lookup_function_ty scope env)
                       ~lookup_protocol_constraint:

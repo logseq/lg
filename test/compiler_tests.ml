@@ -15164,7 +15164,27 @@ let create ?stage () =
           [ Filename.concat dir "callback_vector_fixture.cmo";
             Filename.concat dir "callback_vector_generated.cmo" ] output) <> 0 then
         failwith "could not run callback vector code";
-      if read_file output <> "true\ntrue\n" then failwith "callback vector result mismatch")
+      if read_file output <> "true\ntrue\n" then failwith "callback vector result mismatch";
+      let incompatible = {|
+(require [ocaml.Callback_vector_fixture :as host])
+(let [staged (atom [])]
+  (host/create :stage (fn [operation] (swap! staged conj operation)))
+  (swap! staged conj (host/make-row "row" "Different record"))
+  (println (count @staged)))
+|} in
+      match compile_string_with_stdlib incompatible with
+      | Error _ -> ()
+      | Ok _ -> failwith "atom updates must not merge distinct host records")
+
+let test_swap_inference_respects_local_updater_shadowing () =
+  let source = {|
+(let [value (atom 1)
+      conj (fn [current added] (+ current added))]
+  (swap! value conj 2)
+  (println @value))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "swap_local_updater_shadowing" "3\n" compiled
 
 let test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
@@ -53399,6 +53419,8 @@ let tests =
       test_external_record_atom_vector_preserves_nominal_identity );
     ( "host callback atom vector preserves nominal identity",
       test_host_callback_atom_vector_preserves_nominal_identity );
+    ( "swap inference respects local updater shadowing",
+      test_swap_inference_respects_local_updater_shadowing );
     ( "OCaml record values delegate qualified field typecheck to OCaml",
       test_ocaml_record_values_delegate_qualified_field_typecheck_to_ocaml );
     ( "OCaml record values delegate field typecheck to OCaml",

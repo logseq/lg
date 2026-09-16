@@ -8077,7 +8077,9 @@ let create ~compile_expr =
       | (label, form) :: rest, expected_type :: expected_rest -> (
           let expected_type =
             Option.bind expected_type (fun ty ->
-                if Type_solver.is_open ty then None else Some ty)
+                match ty with
+                | TFn _ -> Some ty
+                | _ -> if Type_solver.is_open ty then None else Some ty)
           in
           match
             compile_expr scope (Env.with_expected_type expected_type env) form

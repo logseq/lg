@@ -1321,6 +1321,7 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
           Type_inference.infer_params
             ?expected_return_ty:(method_return_type method_name)
             ~lookup_call_ty:(Expression_support.lookup_call_ty scope env)
+            ~expand_form:(Macro_expander.expand_all ~scope ~compiler_env:env)
             ~lookup_function_ty
             ~lookup_closed_sum_candidates
             ~lookup_closed_sum_constructors
