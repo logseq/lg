@@ -2585,6 +2585,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         ] ->
         let target_ty = TRecord [ make_field keyword expected_ty ] in
         infer_sequence_form target_ty params collection
+    | FList [ FKeyword keyword; target ] ->
+        let target_ty = inferred_form_or_call_type ~lookup_function_ty params target in
+        (match Types.dynamic_map_types target_ty with
+        | Some _ -> infer_form params target
+        | None -> infer_expected (TRecord [make_field keyword expected_ty]) params target)
       | FList
           [
             FSymbol "__lg_first";
@@ -6835,6 +6840,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 ("field_" ^ Names.sanitize_name keyword)
         in
         add_record_field_constraint name keyword field_ty params
+    | (FList [ FKeyword _; _ ] as form) ->
+        infer_expected (Type_solver.fresh ()) params form
     | FList [ FKeyword keyword; FSymbol name; default ] ->
         let field_ty = inferred_form_type params default in
         Result.bind

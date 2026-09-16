@@ -14370,6 +14370,56 @@ let test_contextual_concat_preserves_concrete_branch_elements () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_reference_state_collection_accessors_keep_nominal_elements () =
+  let source =
+    {|
+(type-record route (uuid :string))
+
+(type-record request (id :int) (state :string))
+
+(type-record graph (id :string) (encrypted :bool))
+
+(type-record config (graph-id :string))
+
+(type-record app-state
+  (routes :vector<route>) (graphs :vector<graph>) (config :option<config>))
+
+(type-record session (state :ref<app-state>))
+
+(type-record host (config :option<config>) (state :ref<int>))
+
+(defn state [session] @(:state session))
+
+(defn active-route [session] (last (:routes (state session))))
+
+(defn selected-graph [session]
+  (when-some [config (:config (state session))]
+    (first (filter #(= (:id %) (:graph-id config)) (:graphs (state session))))))
+
+(def instance
+  (record session (state (atom (record app-state
+    (routes [(record route (uuid "route"))])
+    (graphs [(record graph (id "graph") (encrypted true))])
+    (config (Some (record config (graph-id "graph")))))))))
+
+(println (if-some [route (active-route instance)] (:uuid route) "missing"))
+(println (if-some [graph (selected-graph instance)] (:encrypted graph) false))
+(reset! (:state instance) (record app-state (routes []) (graphs []) (config nil)))
+(println (if-some [route (active-route instance)] (:uuid route) "missing"))
+(println (if-some [graph (selected-graph instance)] (:encrypted graph) false))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "reference_state_collection_accessors_keep_nominal_elements"
+    "route\ntrue\nmissing\nfalse\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter (fun target ->
+    compile_string_with_stdlib ~target
+      (source ^ "\n(if-some [graph (selected-graph instance)] (inc (:id graph)) 0)\n")
+    |> expect_error_contains "expected int arguments")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_custom_ideref_dispatches_nominal_return_values () =
   let source =
     {|
@@ -52924,6 +52974,8 @@ let tests =
       test_filtered_record_concat_preserves_updated_field_type );
     ( "contextual concat preserves concrete branch elements",
       test_contextual_concat_preserves_concrete_branch_elements );
+    ( "reference state collection accessors keep nominal elements",
+      test_reference_state_collection_accessors_keep_nominal_elements );
     ( "structural record helper refines to nominal argument",
       test_structural_record_helper_refines_to_nominal_argument );
     ( "map projects named record elements for structural callbacks",

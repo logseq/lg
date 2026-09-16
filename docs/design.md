@@ -58,6 +58,12 @@ Applying a sequence consumer to a dereferenced value does not infer a sequence
 adapter as the mutable cell's payload. Initialization and mutation determine
 the stored collection type; the consumer observes a sequence view of it.
 
+Keyword access on a function result propagates the required field back into
+the function's result type. Multiple accesses constrain the same underlying
+value, so unrelated records sharing one field name cannot choose its identity.
+Known map results retain map lookup semantics rather than acquiring record
+constraints.
+
 Result payload constraints flow from match branches back into inferred
 callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record
