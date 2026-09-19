@@ -1839,14 +1839,24 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
           TArray element_ty
       | _ -> target_ty)
   | FList (callee :: arguments) ->
-      let actual_tys =
-        List.map
-          (fun argument ->
+      let inferred_argument_type = function
+        | FList (FSymbol "fn" :: (FVector _ as params_form) :: body_forms)
+        | FList
+            (FSymbol "fn" :: FSymbol _ :: (FVector _ as params_form)
+            :: body_forms) -> (
+            let lookup_binding name =
+              lookup_function_ty name |> Result.value ~default:TUnknown
+            in
+            inferred_inline_function_type ~lookup_function_ty ~lookup_binding
+              params params_form body_forms)
+        | argument -> (
             match inferred_form_type params argument with
             | ty when Type_solver.is_open ty ->
                 inferred_call_return_type ~lookup_function_ty params argument
             | ty -> ty)
-          arguments
+      in
+      let actual_tys =
+        List.map inferred_argument_type arguments
       in
       let instantiate parameter_tys return_ty =
         if List.length parameter_tys <> List.length actual_tys then TUnknown
@@ -1887,11 +1897,62 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
       | Ok _ | Error _ -> TUnknown)
   | _ -> TUnknown
 
+and inferred_inline_function_type ~lookup_function_ty ~lookup_binding params
+    params_form body_forms =
+  match (Destructure.parse_param_specs params_form, List.rev body_forms) with
+  | Ok specs, result :: _ ->
+      let parameter_tys =
+        List.map
+          (fun (spec : Destructure.param_spec) ->
+            Option.value spec.explicit_ty ~default:TUnknown)
+          specs
+      in
+      let local_bindings =
+        List.map2
+          (fun (spec : Destructure.param_spec) parameter_ty ->
+            let destructured =
+              if spec.destructured then
+                Destructure.pattern_names spec.pattern
+                |> List.map (fun name -> (name, TUnknown))
+              else []
+            in
+            (spec.source_name, parameter_ty) :: destructured)
+          specs parameter_tys
+        |> List.concat
+      in
+      let local_names = List.map fst local_bindings in
+      let local_params =
+        local_bindings
+        @ List.filter
+            (fun (name, _) -> not (string_mem name local_names))
+            params
+      in
+      let result_ty =
+        match inferred_form_type ~lookup_binding local_params result with
+        | ty when Type_solver.is_open ty -> (
+            match
+              inferred_call_return_type ~lookup_function_ty local_params
+                result
+            with
+            | TUnknown -> ty
+            | inferred -> inferred)
+        | ty -> ty
+      in
+      TFn (parameter_tys, result_ty)
+  | (Ok _ | Error _), _ -> TUnknown
+
 let inferred_form_or_call_type ~lookup_function_ty params form =
   let lookup_binding name =
     lookup_function_ty name |> Result.value ~default:TUnknown
   in
   match form, inferred_form_type ~lookup_binding params form with
+  | FList (FSymbol "fn" :: (FVector _ as params_form) :: body_forms), _
+  | FList
+      (FSymbol "fn" :: FSymbol _ :: (FVector _ as params_form)
+      :: body_forms),
+    _ ->
+      inferred_inline_function_type ~lookup_function_ty ~lookup_binding params
+        params_form body_forms
   | FSymbol name, TUnknown when not (string_mem_assoc name params) ->
       (match lookup_function_ty name with
       | Ok (TFn ([], result)) when Expression_support.is_constructor_name name ->
@@ -2756,6 +2817,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     (fun params ->
                       match return_ty with
                       | TUnknown | TMeta _ | TVar _ -> infer_form params result
+                      | TRecord _ as ty -> (
+                          match
+                            inferred_form_or_call_type ~lookup_function_ty params
+                              result
+                            |> resolve_named_record
+                          with
+                          | TNamed_record _ -> infer_form params result
+                          | _ -> infer_expected ty params result)
                       | ty -> infer_expected ty params result)
             in
             Result.map

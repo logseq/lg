@@ -48950,6 +48950,41 @@ let test_field_access_constrains_keyword_lookup_receiver () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_tuple_helper_preserves_callback_result_identity_across_destructuring () =
+  let source =
+    {|
+(defrecord Snapshot [^string db ^:vector<string> statuses])
+(defrecord Runtime [^Snapshot snapshot])
+
+(defn measure [f]
+  (tuple (f) 10))
+
+(defn runtime-db [runtime]
+  (:db (:snapshot runtime)))
+
+(defn operation-statuses [runtime]
+  (:statuses (:snapshot runtime)))
+
+(let [[expected projection-bytes]
+      (measure (fn [] (Snapshot. "db" ["applied"])))
+      [current restore-bytes]
+      (measure (fn [] (Runtime. (Snapshot. "db" ["applied"]))))]
+  (println
+    (str
+      (:db expected) ":"
+      (first (:statuses expected)) ":"
+      (runtime-db current) ":"
+      (first (operation-statuses current)) ":"
+      (< restore-bytes (* projection-bytes 2)))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "tuple_helper_preserves_callback_result_identity_across_destructuring"
+    "db:applied:db:applied:true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_sets_support_closed_transaction_operations () =
   let source =
     {|
@@ -58255,6 +58290,8 @@ let tests =
       test_set_literals_preserve_inferred_string_family_elements );
     ( "field access constrains keyword lookup receiver",
       test_field_access_constrains_keyword_lookup_receiver );
+    ( "tuple helper preserves callback result identity across destructuring",
+      test_tuple_helper_preserves_callback_result_identity_across_destructuring );
     ( "sets support closed transaction operations",
       test_sets_support_closed_transaction_operations );
     ("sets support closed row records", test_sets_support_closed_row_records);

@@ -19418,6 +19418,19 @@ let create ~compile_expr =
                 else if not (deferred_callback index) then
                   compile_callbacks substitutions (index + 1)
                 else
+                  let substitutions =
+                    let template =
+                      Type_solver.apply substitutions templates.(index)
+                    in
+                    if contains_unresolved_type template then
+                      match compile_argument template forms.(index) with
+                      | Ok argument ->
+                          Type_solver.unify substitutions templates.(index)
+                            argument.ty
+                          |> Result.value ~default:substitutions
+                      | Error _ -> substitutions
+                    else substitutions
+                  in
                   let collection_element_candidate () =
                     let candidates =
                       arguments |> Array.to_list
@@ -19461,8 +19474,12 @@ let create ~compile_expr =
                     | _ -> expected
                   in
                   let expected =
-                    Type_inference.refine_type parameters.(index)
-                      (Type_solver.apply substitutions templates.(index))
+                    let inferred =
+                      Type_solver.apply substitutions templates.(index)
+                    in
+                    if Type_solver.is_open inferred then
+                      Type_inference.refine_type parameters.(index) inferred
+                    else inferred
                     |> Collection_capability.resolve_callback_record env
                     |> refine_open_callback_params
                   in
