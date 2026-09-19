@@ -13809,8 +13809,7 @@ let create ~compile_expr =
             | expected -> expected
           in
           let compile_equality_args () =
-            match operator with
-            | "=" ->
+            if String.equal name "__lg_equal" then
                 let rec compile previous_ty compiled = function
                   | [] -> Ok (List.rev compiled)
                   | form :: rest ->
@@ -13823,7 +13822,7 @@ let create ~compile_expr =
                         (fun arg -> compile (Some arg.ty) (arg :: compiled) rest)
                 in
                 compile None [] arg_forms
-            | _ -> compile_args_for scope (Env.with_expected_type None env) arg_forms
+            else compile_args_for scope (Env.with_expected_type None env) arg_forms
           in
           match
             compile_equality_args ()
