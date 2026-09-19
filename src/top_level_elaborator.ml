@@ -2076,13 +2076,48 @@ and compile_definition scope env next_type form =
                 in
                 let ocaml_name = Names.sanitize_name source_name in
                 let receiver_name, params_form =
+                  let receiver_annotation = function
+                    | TNamed_record record -> "^" ^ Type_id.name record.type_id
+                    | ty -> "^" ^ Types.source_name ty
+                  in
                   match params with
-                  | FSymbol "_" :: remaining ->
+                  | FSymbol annotation :: FSymbol "_" :: remaining
+                    when String.starts_with ~prefix:"^" annotation ->
                       let receiver_name = "__lg_deftype_this" in
                       ( receiver_name,
-                        FVector (FSymbol receiver_name :: remaining) )
+                        FVector
+                          (FSymbol annotation :: FSymbol receiver_name
+                         :: remaining) )
+                  | FSymbol annotation :: FSymbol receiver_name :: _
+                    when String.starts_with ~prefix:"^" annotation ->
+                      (receiver_name, params_form)
+                  | FSymbol "_" :: remaining ->
+                      let receiver_name = "__lg_deftype_this" in
+                      let params =
+                        match receiver_ty with
+                        | TNamed_record _ ->
+                            FSymbol (receiver_annotation receiver_ty)
+                            :: FSymbol receiver_name :: remaining
+                        | _ -> FSymbol receiver_name :: remaining
+                      in
+                      (receiver_name, FVector params)
                   | FSymbol receiver_name :: _ -> (receiver_name, params_form)
                   | _ -> ("__lg_deftype_this", params_form)
+                in
+                let params_form =
+                  match (receiver_ty, params_form) with
+                  | TNamed_record _, FVector (FSymbol first :: _)
+                    when String.starts_with ~prefix:"^" first ->
+                      params_form
+                  | TNamed_record _, FVector params ->
+                      FVector
+                        (FSymbol
+                           (match receiver_ty with
+                           | TNamed_record record ->
+                               "^" ^ Type_id.name record.type_id
+                           | ty -> "^" ^ Types.source_name ty)
+                        :: params)
+                  | _ -> params_form
                 in
                 let rec unresolved_print_call = function
                   | FList (FSymbol name :: arguments) ->
@@ -2190,7 +2225,14 @@ and compile_definition scope env next_type form =
                     List.map rewrite_mutable_assignments body_forms
                   in
                   let parameter_names =
-                    Destructure.pattern_names params_form
+                    match Destructure.parse_param_specs params_form with
+                    | Ok specs ->
+                        specs
+                        |> List.concat_map
+                             (fun (spec : Destructure.param_spec) ->
+                               spec.source_name
+                               :: Destructure.pattern_names spec.pattern)
+                    | Error _ -> Destructure.pattern_names params_form
                   in
                 let field_bindings =
                   record.fields

@@ -1146,7 +1146,13 @@ and plan_callback ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
     in
     let actual_return = Type_solver.apply substitutions actual_return in
     let structural_callback_accepts_record structural incoming =
-      match (Types.record_fields structural, external_record_type incoming) with
+      let structural_fields =
+        match structural with
+        | TRecord fields | TNamed_record { fields; nominal = false; _ } ->
+            Some fields
+        | _ -> None
+      in
+      match (structural_fields, external_record_type incoming) with
       | Some structural_fields, TNamed_record incoming_record ->
           List.for_all
             (fun (structural_field : field) ->

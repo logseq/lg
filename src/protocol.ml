@@ -1224,9 +1224,14 @@ let defprotocol scope protocol_name method_forms =
   in
   loop [] [] method_forms
 
-let annotate_receiver receiver_ty = function
+let annotate_receiver receiver_ty =
+  let receiver_annotation = function
+    | TNamed_record record -> "^" ^ Type_id.name record.type_id
+    | ty -> "^" ^ source_name ty
+  in
+  function
   | FVector (FSymbol annotation :: FSymbol _name :: _rest as params)
-    when String.starts_with ~prefix:"^:" annotation -> (
+    when String.starts_with ~prefix:"^" annotation -> (
       match Type_annotation.of_param_annotation annotation with
       | Error _ as err -> err
       | Ok ty ->
@@ -1241,7 +1246,14 @@ let annotate_receiver receiver_ty = function
               ("protocol implementation receiver must be " ^ source_name receiver_ty))
   | FVector (FSymbol name :: rest) -> (
       match registry_receiver_id receiver_ty with
-      | Some _ -> Ok (FVector (FSymbol name :: rest))
+      | Some _ ->
+          (match receiver_ty with
+          | TNamed_record _ ->
+              Ok
+                (FVector
+                   (FSymbol (receiver_annotation receiver_ty)
+                   :: FSymbol name :: rest))
+          | _ -> Ok (FVector (FSymbol name :: rest)))
       | None ->
           Error.error
             ("protocol implementations do not support receiver type "

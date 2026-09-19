@@ -641,8 +641,23 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
       in
       let bind_record_fields params body_forms =
         match (receiver_ty, params) with
-        | TNamed_record record, FVector (FSymbol receiver_name :: _) ->
-            let parameter_names = Destructure.pattern_names params in
+        | TNamed_record record, FVector _ ->
+            let receiver_name, parameter_names =
+              match Destructure.parse_param_specs params with
+              | Ok ({ source_name = receiver_name; _ } :: specs) ->
+                  let parameter_names =
+                    specs
+                    |> List.concat_map (fun (spec : Destructure.param_spec) ->
+                           spec.source_name
+                           :: Destructure.pattern_names spec.pattern)
+                  in
+                  (receiver_name, receiver_name :: parameter_names)
+              | Ok [] | Error _ ->
+                  ( match params with
+                  | FVector (FSymbol receiver_name :: _) -> receiver_name
+                  | _ -> "__lg_deftype_this" ),
+                  Destructure.pattern_names params
+            in
             let bindings =
               record.fields
               |> List.filter (fun (field : field) ->
