@@ -351,6 +351,11 @@ dune exec test/compiler_tests.exe -- --filter "nil predicates"
 dune exec test/compiler_tests.exe -- --filter "optional protocol values can flow to seqable else branches"
 dune exec test/compiler_tests.exe -- --filter "homogeneous maps"
 dune exec test/compiler_tests.exe -- --filter "assoc-in updates nested maps"
+dune exec test/compiler_tests.exe -- --filter "protocol sequence returns support ordinary core calls"
+dune exec test/compiler_tests.exe -- --filter "protocol methods merge concrete static sequence returns"
+dune exec test/compiler_tests.exe -- --filter "recursive protocol sequence returns remain concrete"
+dune exec test/compiler_tests.exe -- --filter "protocol constraint patterns annotate only the stored value"
+dune exec test/compiler_tests.exe -- --filter "map normalizes mixed nullable protocol sequence returns"
 dune build stdlib/lg_stdlib_native.state
 dune build bin/lg_cli.exe
 CHAT_LG_BINARY=/Users/tiensonqin/Codes/projects/lg/_build/default/bin/lg_cli.exe \
