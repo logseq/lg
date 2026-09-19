@@ -5668,6 +5668,105 @@ let test_rrbvec_of_list_infers_unhinted_datascript_list_parameters () =
     failwith "unhinted Datascript list parameter should stay static";
   ignore ocaml
 
+let test_datascript_entity_attrs_keep_tx_value_payloads () =
+  let source =
+    {|
+(ns datascript-entity-attrs-tx-value
+  (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.package/melange-transit-core]
+            [ocaml.Datascript :as ds]
+            [ocaml.Int64 :as int64]
+            [ocaml.List :as list]
+            [ocaml.Transit_core.Json :as transit]))
+(declare transit-of-value)
+(defn stable-entity-ref [_db entity-ref] entity-ref)
+(defn transit-of-entity-ref [db entity-ref]
+  (match entity-ref
+    (ds/Entity_id eid)
+    (match (stable-entity-ref db entity-ref)
+      (ds/Entity_id stable-eid) (transit/Int stable-eid)
+      stable-ref (transit-of-entity-ref db stable-ref))
+    (ds/Temp_id temp-id) (transit/String temp-id)
+    (ds/CurrentTx) (transit/Keyword "db/current-tx")
+    (ds/Ident ident) (transit/Keyword ident)
+    (ds/Lookup_ref attr value)
+    (transit/Array (list (transit/Keyword attr) (transit-of-value db value)))))
+(defn ^:Transit_core.Json.value transit-of-value [db value]
+  (match value
+    (ds/Nil) (transit/Null)
+    (ds/Int number) (transit/Int number)
+    (ds/Float number) (transit/Float number)
+    (ds/String text) (transit/String text)
+    (ds/Symbol symbol) (transit/Symbol symbol)
+    (ds/Bool flag) (transit/Bool flag)
+    (ds/Keyword keyword) (transit/Keyword keyword)
+    (ds/Uuid uuid) (transit/Uuid uuid)
+    (ds/Instant instant) (transit/Date (int64/of-int instant))
+    (ds/Regex pattern) (transit/Tagged "regex" (transit/String pattern))
+    (ds/Ref eid) (transit-of-entity-ref db (stable-entity-ref db (ds/Entity_id eid)))
+    (ds/List values)
+    (transit/List (list/of-seq (map (fn [value] (transit-of-value db value)) values)))
+    (ds/Vector values)
+    (transit/Array (list/of-seq (map (fn [value] (transit-of-value db value)) values)))
+    (ds/Map entries)
+    (transit/Map
+      (list/of-seq
+        (map
+          (fn [[key value]]
+            (tuple (transit-of-value db key)
+                   (transit-of-value db value)))
+          entries)))
+    (ds/Set values)
+    (transit/Set (list/of-seq (map (fn [value] (transit-of-value db value)) values)))
+    (ds/Tuple values)
+    (transit/Array
+      (list/of-seq
+        (map
+          (fn [value]
+            (match value
+              None (transit/Null)
+              (Some item) (transit-of-value db item)))
+          values)))
+    (ds/TxRef) (transit/Keyword "db/current-tx")
+    (ds/Ref_to entity-ref) (transit-of-entity-ref db entity-ref)))
+(declare transit-of-entity)
+(defn transit-of-tx-value [db value]
+  (match value
+    (ds/One_value value)
+    (transit-of-value db value)
+    (ds/Many_values values)
+    (transit/Array
+      (list/of-seq
+        (map (fn [value] (transit-of-value db value)) values)))
+    (ds/One_entity entity)
+    (transit-of-entity db entity)
+    (ds/Many_entities entities)
+    (transit/Array
+      (list/of-seq
+        (map (fn [entity] (transit-of-entity db entity)) entities)))))
+(defn transit-of-entity [db entity]
+  (let [id
+        (match (:db-id entity)
+          (Some entity-ref)
+          (list (tuple (transit/Keyword "db/id")
+                       (transit-of-entity-ref db entity-ref)))
+          None (list))]
+    (transit/Map
+      (list/of-seq
+        (concat
+          id
+          (map
+            (fn [[attr value]]
+              (tuple (transit/Keyword attr)
+                     (transit-of-tx-value db value)))
+            (:attrs entity)))))))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "Datascript entity attrs should preserve tx_value payloads";
+  ignore ocaml
+
 let test_structural_record_helper_refines_to_nominal_argument () =
   let source =
     {|
@@ -54865,6 +54964,8 @@ let tests =
       test_mutual_datascript_result_payloads_infer_without_return_hints );
     ( "rrbvec of-list infers unhinted Datascript list parameters",
       test_rrbvec_of_list_infers_unhinted_datascript_list_parameters );
+    ( "Datascript entity attrs keep tx_value payloads",
+      test_datascript_entity_attrs_keep_tx_value_payloads );
     ( "record reference accessors preserve payload types",
       test_record_reference_accessors_preserve_payload_types );
     ( "optional callback match branches keep independent types",

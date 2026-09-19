@@ -89,6 +89,9 @@ port is still moving.
   `(let [entities (rrbvec/of-list entities)] ...)` may prove the inner binding
   is a vector, but it must not rewrite the outer function parameter from the
   list required by `rrbvec/of-list`.
+- Treat constructor-pattern payload names as lexical locals when deriving body
+  expectations. Evidence from `(ds/One_value value)` must constrain that branch
+  payload only, not a same-named outer parameter being matched.
 - Preserve guarded protocol evidence when body-derived parameter expectations
   refine a fallback capability such as `seqable<any>`. A function guarded with
   `satisfies?` must keep accepting either a protocol receiver or the statically
@@ -330,6 +333,7 @@ dune exec test/compiler_tests.exe -- --filter "forward result payload infers fro
 dune exec test/compiler_tests.exe -- --filter "forward Datascript result payload infers from typed accumulator"
 dune exec test/compiler_tests.exe -- --filter "mutual Datascript result payloads infer without return hints"
 dune exec test/compiler_tests.exe -- --filter "rrbvec of-list infers unhinted Datascript list parameters"
+dune exec test/compiler_tests.exe -- --filter "Datascript entity attrs keep tx_value payloads"
 dune exec test/compiler_tests.exe -- --filter "forward-declared functions work as collection callbacks"
 dune exec test/compiler_tests.exe -- --filter "optional protocol values can flow to seqable else branches"
 dune exec test/compiler_tests.exe -- --filter "sorted range queries match ClojureScript"

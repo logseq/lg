@@ -2971,6 +2971,20 @@ and compile_definition scope env next_type form =
       in
       let link_scc_forwarded_parameters env =
         let function_types = scc_inference_params env in
+        let source_name_matches name expected =
+          String.equal name expected
+          || String.ends_with ~suffix:("/" ^ expected) name
+        in
+        let rec pattern_bound_names = function
+          | FSymbol name -> if String.equal name "_" then [] else [ name ]
+          | FList [ FSymbol "__type-hint"; FSymbol _; pattern ] ->
+              pattern_bound_names pattern
+          | FVector forms -> List.concat_map pattern_bound_names forms
+          | FMap _ as pattern -> Destructure.pattern_names pattern
+          | FList (FSymbol _constructor :: payload_patterns) ->
+              List.concat_map pattern_bound_names payload_patterns
+          | _ -> []
+        in
         let function_type name =
           match List.assoc_opt name function_types with
           | Some ty -> Some ty
@@ -3022,6 +3036,22 @@ and compile_definition scope env next_type form =
                 walk_bindings bound substitutions bindings
               in
               List.fold_left (walk bound local_params) substitutions body_forms
+          | FList (FSymbol match_name :: target :: clauses)
+            when source_name_matches match_name "match"
+                 || source_name_matches match_name "__lg_match" ->
+              let substitutions = walk bound local_params substitutions target in
+              let rec walk_clauses substitutions = function
+                | pattern :: result :: rest ->
+                    let bound =
+                      pattern_bound_names pattern @ bound
+                    in
+                    walk_clauses
+                      (walk bound local_params substitutions result)
+                      rest
+                | [ pattern ] -> walk bound local_params substitutions pattern
+                | [] -> substitutions
+              in
+              walk_clauses substitutions clauses
           | FList (FSymbol name :: arguments) as form ->
               let substitutions =
                 if List.mem name bound then substitutions

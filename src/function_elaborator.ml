@@ -1103,6 +1103,23 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
             non_structural_record_like current
             && Option.is_some (Types.record_fields expected)
           in
+          let rec pattern_bound_names = function
+            | Ast.FSymbol name ->
+                if String.equal name "_" then [] else [ name ]
+            | Ast.FList
+                [
+                  Ast.FSymbol "__type-hint";
+                  Ast.FSymbol _;
+                  pattern;
+                ] ->
+                pattern_bound_names pattern
+            | Ast.FVector forms ->
+                List.concat_map pattern_bound_names forms
+            | Ast.FMap _ as pattern -> Destructure.pattern_names pattern
+            | Ast.FList (Ast.FSymbol _constructor :: payload_patterns) ->
+                List.concat_map pattern_bound_names payload_patterns
+            | _ -> []
+          in
           let rec directly_accesses_field parameter = function
             | Ast.FList
                 [ Ast.FSymbol field_access; target ]
@@ -1361,7 +1378,13 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                     | TTuple tys when List.length patterns = List.length tys ->
                         List.fold_left2 bind_pattern locals patterns tys
                     | _ -> locals)
-                | _ -> locals
+                | pattern ->
+                    pattern_bound_names pattern
+                    |> List.fold_left
+                         (fun locals name ->
+                           if String.equal name "_" then locals
+                           else (name, TUnknown) :: List.remove_assoc name locals)
+                         locals
               in
               let add_parameter_call locals acc name args =
                 if parameter_name name && not (List.mem_assoc name locals) then
