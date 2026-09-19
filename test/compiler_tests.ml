@@ -5563,7 +5563,7 @@ let test_mutual_datascript_result_payloads_infer_without_return_hints () =
       (encrypt-values-loop encrypt attr values total (inc index) (conj encrypted value))
       (Error message) (Error message))))
 (defn encrypt-values
-  [^:fn<string;result<string;string>> encrypt ^:string attr ^:list<Datascript.value> values]
+  [^:fn<string;result<string;string>> encrypt ^:string attr values]
   (let [values (rrbvec/of-list values)]
     (encrypt-values-loop encrypt attr values (count values) 0 empty-values)))
 (defn encrypt-entities-loop
@@ -5579,7 +5579,7 @@ let test_mutual_datascript_result_payloads_infer_without_return_hints () =
       (encrypt-entities-loop encrypt entities total (inc index) (conj encrypted entity))
       (Error message) (Error message))))
 (defn encrypt-entities
-  [^:fn<string;result<string;string>> encrypt ^:list<Datascript.tx_entity> entities]
+  [^:fn<string;result<string;string>> encrypt entities]
   (let [entities (rrbvec/of-list entities)]
     (encrypt-entities-loop encrypt entities (count entities) 0 empty-entities)))
 (defn encrypt-tx-value
@@ -5627,6 +5627,45 @@ let test_mutual_datascript_result_payloads_infer_without_return_hints () =
   let ocaml = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml "Runtime_dynamic" then
     failwith "mutual Datascript result payloads should stay static";
+  ignore ocaml
+
+let test_rrbvec_of_list_infers_unhinted_datascript_list_parameters () =
+  let source =
+    {|
+(ns datascript-rrbvec-list-parameter
+  (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.Datascript :as ds]
+            [ocaml.Rrbvec :as rrbvec]))
+(def ^:vector<Datascript.tx_entity> empty-entities [])
+(declare encrypt-entity)
+(defn encrypt-entities-loop
+  [^:vector<Datascript.tx_entity> entities
+   ^:int total
+   ^:int index
+   ^:vector<Datascript.tx_entity> encrypted]
+  (if (= index total)
+    (Ok (rrbvec/to-list encrypted))
+    (match (encrypt-entity (nth entities index))
+      (Ok entity)
+      (encrypt-entities-loop entities total (inc index) (conj encrypted entity))
+      (Error message) (Error message))))
+(defn encrypt-entities [entities]
+  (let [entities (rrbvec/of-list entities)]
+    (encrypt-entities-loop entities (count entities) 0 empty-entities)))
+(defn encrypt-tx-value [value]
+  (match value
+    (ds/Many_entities entities)
+    (match (encrypt-entities entities)
+      (Ok entities) (Ok (ds/Many_entities entities))
+      (Error message) (Error message))
+    _ (Ok value)))
+(defn encrypt-entity [^:Datascript.tx_entity entity]
+  (Ok entity))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "unhinted Datascript list parameter should stay static";
   ignore ocaml
 
 let test_structural_record_helper_refines_to_nominal_argument () =
@@ -54824,6 +54863,8 @@ let tests =
       test_forward_datascript_entity_reader_keeps_nominal_argument );
     ( "mutual Datascript result payloads infer without return hints",
       test_mutual_datascript_result_payloads_infer_without_return_hints );
+    ( "rrbvec of-list infers unhinted Datascript list parameters",
+      test_rrbvec_of_list_infers_unhinted_datascript_list_parameters );
     ( "record reference accessors preserve payload types",
       test_record_reference_accessors_preserve_payload_types );
     ( "optional callback match branches keep independent types",

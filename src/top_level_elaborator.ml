@@ -3033,7 +3033,8 @@ and compile_definition scope env next_type form =
                         List.fold_left2
                           (fun substitutions parameter_ty argument ->
                             match argument with
-                            | FSymbol argument_name -> (
+                            | FSymbol argument_name
+                              when not (List.mem argument_name bound) -> (
                                 match
                                   List.assoc_opt argument_name local_params
                                 with

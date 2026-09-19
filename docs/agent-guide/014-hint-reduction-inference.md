@@ -85,6 +85,10 @@ port is still moving.
   predeclared function type. The binding's public type and scheme must move
   together; otherwise a later call can instantiate a stale scheme and turn a
   refined `seq<Item>` result back into `seq<inference-variable>`.
+- Keep SCC forward-parameter evidence lexical. A call inside
+  `(let [entities (rrbvec/of-list entities)] ...)` may prove the inner binding
+  is a vector, but it must not rewrite the outer function parameter from the
+  list required by `rrbvec/of-list`.
 - Preserve guarded protocol evidence when body-derived parameter expectations
   refine a fallback capability such as `seqable<any>`. A function guarded with
   `satisfies?` must keep accepting either a protocol receiver or the statically
@@ -324,6 +328,8 @@ dune exec test/compiler_tests.exe -- --filter "result preserves returned record 
 dune exec test/compiler_tests.exe -- --filter "recursive result helpers infer from typed accumulator"
 dune exec test/compiler_tests.exe -- --filter "forward result payload infers from typed accumulator"
 dune exec test/compiler_tests.exe -- --filter "forward Datascript result payload infers from typed accumulator"
+dune exec test/compiler_tests.exe -- --filter "mutual Datascript result payloads infer without return hints"
+dune exec test/compiler_tests.exe -- --filter "rrbvec of-list infers unhinted Datascript list parameters"
 dune exec test/compiler_tests.exe -- --filter "forward-declared functions work as collection callbacks"
 dune exec test/compiler_tests.exe -- --filter "optional protocol values can flow to seqable else branches"
 dune exec test/compiler_tests.exe -- --filter "sorted range queries match ClojureScript"

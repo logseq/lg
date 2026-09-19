@@ -1262,7 +1262,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                   :: List.remove_assoc parameter acc
                 end
               in
-              let add_call acc name args =
+              let add_call locals acc name args =
                 let parameter_tys =
                   match lookup_function_ty name with
                   | Ok (TFn (parameter_tys, _))
@@ -1278,7 +1278,9 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                 | Some parameter_tys ->
                     List.fold_left2
                       (fun acc expected -> function
-                        | Ast.FSymbol argument when parameter_name argument ->
+                        | Ast.FSymbol argument
+                          when parameter_name argument
+                               && not (List.mem_assoc argument locals) ->
                             add_expected acc
                               (canonical_parameter_name argument)
                               expected
@@ -1362,7 +1364,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                 | _ -> locals
               in
               let add_parameter_call locals acc name args =
-                if parameter_name name then
+                if parameter_name name && not (List.mem_assoc name locals) then
                   let argument_tys =
                     List.map (fun arg -> form_type locals arg) args
                   in
@@ -1387,8 +1389,22 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                       | [] -> acc
                     in
                     visit_branches acc branches
+                | Ast.FList
+                    (Ast.FSymbol let_name :: Ast.FVector bindings :: body_forms)
+                  when symbol_has_source_name let_name "let"
+                       || symbol_has_source_name let_name "let*" ->
+                    let rec bind_pairs locals acc = function
+                      | pattern :: value :: rest ->
+                          let acc = visit locals acc value in
+                          let value_ty = form_type locals value in
+                          bind_pairs (bind_pattern locals pattern value_ty) acc rest
+                      | [] -> (locals, acc)
+                      | [ dangling ] -> (locals, visit locals acc dangling)
+                    in
+                    let body_locals, acc = bind_pairs locals acc bindings in
+                    List.fold_left (visit body_locals) acc body_forms
                 | Ast.FList (Ast.FSymbol name :: args as forms) ->
-                    let acc = add_call acc name args in
+                    let acc = add_call locals acc name args in
                     let acc = add_parameter_call locals acc name args in
                     List.fold_left (visit locals) acc forms
                 | Ast.FList forms | Ast.FVector forms ->
