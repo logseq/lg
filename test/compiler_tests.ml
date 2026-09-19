@@ -19372,6 +19372,18 @@ let test_map_destructuring_infers_tuple_entries_without_parameter_hints () =
     compiled;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_user_keep_shadowing_does_not_use_core_sequence_inference () =
+  let source = {|
+(refer-clojure-exclude keep)
+(defn keep [left right] (tuple left right))
+(assert (= (keep 1 "value") (tuple 1 "value")))
+|}
+  in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "user_keep_shadowing_does_not_use_core_sequence_inference" ""
+    compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_some_destructured_lookup_preserves_independent_tuple_positions () =
   let source = {|
 (defn lookup-value [entries name]
@@ -55950,6 +55962,8 @@ let tests =
       test_map_get_uses_optional_parameter_context );
     ( "map destructuring infers tuple entries without parameter hints",
       test_map_destructuring_infers_tuple_entries_without_parameter_hints );
+    ( "user keep shadowing does not use core sequence inference",
+      test_user_keep_shadowing_does_not_use_core_sequence_inference );
     ( "some preserves host tuple elements", test_some_preserves_host_tuple_elements );
     ( "contains propagates protocol set element to parameter",
       test_contains_propagates_protocol_set_element_to_parameter );

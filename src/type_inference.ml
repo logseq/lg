@@ -2052,6 +2052,26 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       inferred_call_return_type ~lookup_function_ty params form
     else direct_ty
   in
+  let core_keep_name name =
+    String.equal name "__lg_keep" || String.equal name "keep"
+    || String.equal name "clojure.core/keep"
+    || String.equal name "cljs.core/keep"
+  in
+  let core_keep_function_name name =
+    String.equal name "__lg_keep"
+    || (core_keep_name name
+       &&
+       match lookup_function_ty name with
+       | Ok (TFn (TFn _ :: _, _)) -> true
+       | Ok (TOverloaded_fn arities) ->
+           List.exists
+             (fun (arity : fn_arity) ->
+               match arity.fixed_params with
+               | TFn _ :: _ -> true
+               | _ -> false)
+             arities
+       | Ok _ | Error _ -> false)
+  in
   let specialize_accumulating_hof_parameter_types name parameter_types =
     if has_source_name name "group-by" then
       match parameter_types with
@@ -2059,6 +2079,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           match static_seqable_element_type collection_ty with
           | Some element_ty ->
               TFn ([ element_ty ], Type_solver.fresh ())
+              :: collection_ty :: rest
+          | None -> parameter_types)
+      | _ -> parameter_types
+    else if core_keep_function_name name then
+      match parameter_types with
+      | _callback_ty :: collection_ty :: rest -> (
+          match static_seqable_element_type collection_ty with
+          | Some element_ty ->
+              TFn
+                ( [ element_ty ],
+                  TNullable (Type_solver.fresh ()) )
               :: collection_ty :: rest
           | None -> parameter_types)
       | _ -> parameter_types
@@ -2557,6 +2588,29 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | Some _ | None ->
             infer_form params
               (FList [ FSymbol filter_name; predicate; collection ]))
+    | FList [ FSymbol keep_name; fn; collection ]
+      when core_keep_function_name keep_name ->
+        let result_ty =
+          expected_seqable_element_type expected_ty
+          |> Option.value ~default:(fresh_type_variable "keep_result")
+        in
+        let inferred_element_ty = inferred_unary_function_param params fn in
+        let inferred_element_ty =
+          match inferred_element_ty with
+          | TUnknown | TMeta _ | TVar _ ->
+              inferred_literal_collection_item params collection
+          | ty -> ty
+        in
+        let element_ty =
+          match inferred_element_ty with
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "keep_item"
+          | ty -> ty
+        in
+        Result.bind
+          (infer_sequence_form element_ty params collection)
+          (fun params ->
+            infer_expected (TFn ([ element_ty ], TNullable result_ty))
+              params fn)
     | FList [ FSymbol "__lg_into"; target; source ] -> (
         match into_source_element_type expected_ty with
         | Some element when not (Types.is_dynamic element) ->
@@ -3824,6 +3878,32 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           infer_all params args
       | Ok (TFn (param_tys, _ret)) when List.length param_tys = List.length args
         ->
+        let param_tys =
+          let from_signature =
+            specialize_accumulating_hof_parameter_types name param_tys
+          in
+          if core_keep_function_name name then
+            match (from_signature, args) with
+            | _callback_ty :: collection_param_ty :: rest, [ _callback; collection ] ->
+                let collection_ty =
+                  inferred_form_or_call_type ~lookup_function_ty params
+                    collection
+                in
+                let element_ty =
+                  match static_seqable_element_type collection_ty with
+                  | Some element_ty -> element_ty
+                  | None -> inferred_literal_collection_item params collection
+                in
+                (match element_ty with
+                | TUnknown | TMeta _ | TVar _ -> from_signature
+                | element_ty ->
+                    TFn
+                      ( [ element_ty ],
+                        TNullable (Type_solver.fresh ()) )
+                    :: collection_param_ty :: rest)
+            | _ -> from_signature
+          else from_signature
+        in
         let callback_substitutions =
           List.fold_left2
             (fun substitutions expected argument ->
@@ -5689,6 +5769,31 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             infer_expected
               (TFn ([ element_ty ], Types.truthy_constraint TUnknown))
               params predicate)
+    | FList [ FSymbol keep_name; fn; collection ]
+      when core_keep_function_name keep_name ->
+        let inferred_element_ty = inferred_unary_function_param params fn in
+        let inferred_element_ty =
+          match inferred_element_ty with
+          | TUnknown | TMeta _ | TVar _ ->
+              inferred_literal_collection_item params collection
+          | ty -> ty
+        in
+        let element_ty =
+          match inferred_element_ty with
+          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "keep_item"
+          | ty -> ty
+        in
+        let result_ty = fresh_type_variable "keep_result" in
+        Result.bind
+          (infer_sequence_form element_ty params collection)
+          (fun params ->
+            match fn with
+            | FSymbol name ->
+                constrain_symbol (TFn ([ element_ty ], TNullable result_ty))
+                  params name
+            | form ->
+                infer_expected (TFn ([ element_ty ], TNullable result_ty))
+                  params form)
     | FList
         (FSymbol "record" :: FSymbol record_type_name :: field_forms) ->
         let record_fields =
