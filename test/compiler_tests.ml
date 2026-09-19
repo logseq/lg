@@ -58288,8 +58288,6 @@ let unsupported_java_tests =
   [
     "Java exception constructors map to runtime exceptions";
     "Java exception constructors support empty messages";
-    "print-method defmethod writes custom record representations";
-    "Java Writer annotations work in ordinary functions";
   ]
 
 let run_tests tests =
