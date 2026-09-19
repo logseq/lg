@@ -356,6 +356,8 @@ dune exec test/compiler_tests.exe -- --filter "protocol methods merge concrete s
 dune exec test/compiler_tests.exe -- --filter "recursive protocol sequence returns remain concrete"
 dune exec test/compiler_tests.exe -- --filter "protocol constraint patterns annotate only the stored value"
 dune exec test/compiler_tests.exe -- --filter "map normalizes mixed nullable protocol sequence returns"
+dune exec test/compiler_tests.exe -- --filter "apply pr accepts lazy sequences"
+dune exec test/compiler_tests.exe -- --filter "apply pr accepts refined protocol sequences"
 dune build stdlib/lg_stdlib_native.state
 dune build bin/lg_cli.exe
 CHAT_LG_BINARY=/Users/tiensonqin/Codes/projects/lg/_build/default/bin/lg_cli.exe \

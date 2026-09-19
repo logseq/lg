@@ -58290,8 +58290,6 @@ let unsupported_java_tests =
     "Java exception constructors support empty messages";
     "print-method defmethod writes custom record representations";
     "Java Writer annotations work in ordinary functions";
-    "apply pr accepts lazy sequences";
-    "apply pr accepts refined protocol sequences";
   ]
 
 let run_tests tests =
