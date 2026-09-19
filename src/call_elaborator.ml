@@ -17151,8 +17151,10 @@ let create ~compile_expr =
             (fun argument ->
               {
                 argument with
-                ty =
-                  Function_elaborator.infer_named_record scope env argument.ty;
+                  ty =
+                    (match argument.ty with
+                    | TNamed_record _ -> argument.ty
+                    | ty -> Function_elaborator.infer_named_record scope env ty);
               })
             args
         in

@@ -2,6 +2,31 @@ open Types
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
+let find_counted env receiver_ty =
+  match Receiver_id.of_type receiver_ty with
+  | None -> None
+  | Some receiver ->
+      (match
+         Protocol_registry.find_implementation_or_default
+           Core_protocols.counted_id Core_protocols.count_method_id receiver
+           (Compiler_environment.protocols env)
+       with
+      | Some _ as implementation -> implementation
+      | None -> (
+          match Compiler_environment.protocol_evidence env with
+          | Some evidence ->
+              Protocol_registry.find_implementation_or_default
+                Core_protocols.counted_id Core_protocols.count_method_id
+                receiver evidence
+          | None -> None))
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })
+
 let identifier_holds_packed_constraint name =
   String.starts_with ~prefix:"__lg_constrained_argument" name
   || String.starts_with ~prefix:"__lg_erased_seqable_item" name
@@ -822,8 +847,7 @@ let rec count_expr env collection =
            (apply "Lg_runtime.Runtime_transient.set_count"
               [ collection.semantic_expr ]))
   | _ ->
-  let protocols = Compiler_environment.protocols env in
-  match Core_protocols.find_counted collection.ty protocols with
+  match find_counted env collection.ty with
   | Some implementation ->
       Ok
         (match collection.ty with
@@ -854,8 +878,7 @@ let rec count_expr env collection =
            ^ Types.source_name collection.ty))
 
 let is_counted env collection =
-  Core_protocols.find_counted collection.ty (Compiler_environment.protocols env)
-  |> Option.is_some
+  find_counted env collection.ty |> Option.is_some
 
 let first_expr env collection =
   match to_seq_expr env collection with

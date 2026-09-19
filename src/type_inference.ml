@@ -2098,10 +2098,53 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
+  let record_constructor_type name =
+    let clojure_record_constructor_name name =
+      String.length name > 2 && name.[0] = '-' && name.[1] = '>'
+    in
+    let constructor_type_name name =
+      if String.ends_with ~suffix:"." name then
+        Some (String.sub name 0 (String.length name - 1))
+      else
+        match String.rindex_opt name '/' with
+        | Some separator ->
+            let qualifier = String.sub name 0 (separator + 1) in
+            let member =
+              String.sub name (separator + 1)
+                (String.length name - separator - 1)
+            in
+            if clojure_record_constructor_name member then
+              Some
+                (qualifier
+                ^ String.sub member 2 (String.length member - 2))
+            else None
+        | None when clojure_record_constructor_name name ->
+            Some (String.sub name 2 (String.length name - 2))
+        | None -> None
+    in
+    match constructor_type_name name with
+    | None -> None
+    | Some type_name -> (
+        match resolve_named_record (TOcaml ("__lg_record:" ^ type_name)) with
+        | TNamed_record record ->
+            Some
+              (TFn
+                 ( List.map
+                     (fun (field : field) -> field.ty)
+                     (Types.record_constructor_fields record.fields),
+                   TNamed_record record ))
+        | _ -> None)
+  in
   let lookup_function_ty name =
     match string_assoc_opt name params with
     | Some ty -> Ok ty
-    | None -> lookup_function_ty name
+    | None -> (
+        match lookup_function_ty name with
+        | Ok _ as result -> result
+        | Error _ as error -> (
+            match record_constructor_type name with
+            | Some ty -> Ok ty
+            | None -> error))
   in
   let lookup_loop_initializer_type =
     let lookup = lookup_function_ty in
