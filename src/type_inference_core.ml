@@ -537,6 +537,12 @@ and refine_nonmatching_type existing inferred =
     when Option.is_some (host_record_type host) ->
       let named = Option.get (host_record_type host) in
       refine_type named structural
+  | TRecord (_ :: _), ((TOcaml _ | TOcaml_app _) as host)
+    ->
+      host
+  | ((TOcaml _ | TOcaml_app _) as host), TRecord (_ :: _)
+    ->
+      host
   | TRecord existing, TRecord inferred ->
       TRecord (merge_record_fields existing inferred)
   | (TMeta _ | TVar _), inferred -> inferred
@@ -544,12 +550,36 @@ and refine_nonmatching_type existing inferred =
   | ( TFn (existing_params, existing_return),
       TFn (inferred_params, inferred_return) )
     when List.length existing_params = List.length inferred_params ->
+      let refine_parameter existing inferred =
+        match (existing, inferred) with
+        | TRecord (_ :: _), ((TOcaml _ | TOcaml_app _) as host)
+        | ((TOcaml _ | TOcaml_app _) as host), TRecord (_ :: _) ->
+            host
+        | _ -> refine_type existing inferred
+      in
       TFn
-        ( List.map2 refine_type existing_params inferred_params,
+        ( List.map2 refine_parameter existing_params inferred_params,
           refine_type existing_return inferred_return )
   | existing, _ -> existing
 
 and inferred_row_compatible structural named =
+  let rec compatible expected actual =
+    Types.row_compatible ~expected ~actual
+    ||
+    match (Types.seqable_constraint_info expected, actual) with
+    | Some (_, expected_element, _), TList actual_element
+    | Some (_, expected_element, _), TVector actual_element
+    | Some (_, expected_element, _), TSet actual_element
+    | Some (_, expected_element, _), TSeq actual_element
+    | Some (_, expected_element, _), TArray actual_element ->
+        compatible expected_element actual_element
+    | Some (_, expected_element, _), TOcaml_app (name, [ actual_element ])
+      when Types.is_next_seq_type_name name ->
+        compatible expected_element actual_element
+    | Some (_, expected_element, _), TString ->
+        compatible expected_element TChar
+    | _ -> false
+  in
   match (structural, named) with
   | TRecord fields, TNamed_record record ->
       let fields =
@@ -560,7 +590,11 @@ and inferred_row_compatible structural named =
             | Some actual -> { field with ty = refine_type field.ty actual.ty })
           fields
       in
-      Types.row_compatible ~expected:(TRecord fields) ~actual:named
+      fields
+      |> List.for_all (fun (field : field) ->
+             match Types.find_field field.keyword record.fields with
+             | Some actual -> compatible field.ty actual.ty
+             | None -> field.keyword = Types.record_extension_keyword)
   | _ -> false
 
 and merge_record_fields existing inferred =
@@ -680,6 +714,7 @@ let fn_arity_of_function = function
 
 let function_types_unify left right =
   Result.is_ok (Type_solver.unify Type_solver.empty left right)
+  || Result.is_ok (Type_solver.unify Type_solver.empty (refine_type left right) right)
   || edn_function_call_compatible left right
 
 let should_accumulate_overloaded_function_call existing_ty expected_ty =
@@ -745,6 +780,10 @@ let rec constrain_symbol expected_ty params name =
           when edn_function_call_compatible instantiated expected_ty ->
             Ok params
         | Error _ -> (
+            let refined = refine_type instantiated expected_ty in
+            if not (Types.equal refined instantiated) then
+              Ok (replace_param name refined params)
+            else
             match
               if can_accumulate_overloaded_function_parameter name then
                 overload_incompatible_function_call instantiated expected_ty

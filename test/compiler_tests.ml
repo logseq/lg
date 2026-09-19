@@ -5652,6 +5652,46 @@ let test_structural_record_helper_refines_to_nominal_argument () =
     failwith "structural helper should refine to the nominal OCaml record";
   ignore ocaml
 
+let test_forward_datascript_entity_reader_keeps_nominal_argument () =
+  let source =
+    {|
+(ns datascript-forward-entity-reader
+  (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.Datascript :as ds]
+            [ocaml.List :as list]))
+(type-variant json
+  (JsonInt :int)
+  (JsonString :string)
+  (JsonArray :list<json>))
+(declare entity-score)
+(defn ^:json tx-value-score [db value]
+  (match value
+    (ds/One_value _) (JsonString "value")
+    (ds/Many_values values) (JsonInt (count values))
+    (ds/One_entity entity) (entity-score db entity)
+    (ds/Many_entities entities)
+    (JsonArray (list/of-seq (map (fn [entity] (entity-score db entity)) entities)))))
+(defn entity-score [db entity]
+  (let [id-score
+        (match (:db-id entity)
+          (Some _) 1
+          None 0)]
+    (JsonInt
+     (+
+      id-score
+      (count
+      (map
+       (fn [entry]
+         (tx-value-score db (Stdlib/snd entry)))
+       (:attrs entity)))))))
+|}
+  in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml "Runtime_dynamic" then
+    failwith "forward Datascript entity readers should keep nominal records";
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_map_projects_named_record_elements_for_structural_callbacks () =
   let source =
     {|
@@ -14297,6 +14337,46 @@ let test_nullable_refinement_preserves_the_existing_boundary_identity () =
   expect host_option
     (Lg.Type_inference_core.refine_type
        (TOcaml_app ("option", [ TUnknown ])) source_option)
+
+let test_structural_host_boundary_refinement_preserves_host_identity () =
+  let open Lg.Types in
+  let structural =
+    TRecord
+      [
+        make_field ":db-id" (TNullable (TOcaml "Datascript.entity_ref"));
+        make_field ":attrs"
+          (seqable_constraint (TTuple [ TString; Lg.Type_solver.fresh () ]));
+      ]
+  in
+  let host = TOcaml "Datascript.tx_entity" in
+  let refined = Lg.Type_inference_core.refine_type structural host in
+  if not (equal host refined) then
+    failwith
+      ("structural host-boundary refinement must keep host identity, got "
+     ^ source_name refined);
+  let fn_refined =
+    Lg.Type_inference_core.refine_type
+      (TFn ([ TOcaml "Datascript.db"; structural ], TVar "result"))
+      (TFn ([ TOcaml "Datascript.db"; host ], TVar "result"))
+  in
+  let expected = TFn ([ TOcaml "Datascript.db"; host ], TVar "result") in
+  if not (equal expected fn_refined) then
+    failwith
+      ("function parameter refinement must keep host identity, got "
+     ^ source_name fn_refined);
+  let transit_refined =
+    Lg.Type_inference_core.refine_type
+      (TFn ([ TOcaml "Datascript.db"; structural ], TOcaml "Transit_core.Json.value"))
+      (TFn ([ TOcaml "Datascript.db"; host ], Lg.Type_solver.fresh ()))
+  in
+  let expected =
+    TFn
+      ([ TOcaml "Datascript.db"; host ], TOcaml "Transit_core.Json.value")
+  in
+  if not (equal expected transit_refined) then
+    failwith
+      ("host-return function refinement must keep host parameter identity, got "
+     ^ source_name transit_refined)
 
 let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml
     () =
@@ -54728,6 +54808,8 @@ let tests =
       test_forward_result_payload_infers_from_typed_accumulator );
     ( "forward Datascript result payload infers from typed accumulator",
       test_forward_datascript_result_payload_infers_from_typed_accumulator );
+    ( "forward Datascript entity reader keeps nominal argument",
+      test_forward_datascript_entity_reader_keeps_nominal_argument );
     ( "mutual Datascript result payloads infer without return hints",
       test_mutual_datascript_result_payloads_infer_without_return_hints );
     ( "record reference accessors preserve payload types",
@@ -55490,6 +55572,8 @@ let tests =
       test_source_option_annotations_remain_nullable_until_lowering );
     ( "nullable refinement preserves the existing boundary identity",
       test_nullable_refinement_preserves_the_existing_boundary_identity );
+    ( "structural host boundary refinement preserves host identity",
+      test_structural_host_boundary_refinement_preserves_host_identity );
     ( "syntax ergonomics: threading and option binding forms compile",
       test_threading_and_option_binding_forms_compile );
     ( "some thread preserves optional record field rows",
