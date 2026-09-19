@@ -19422,7 +19422,13 @@ let create ~compile_expr =
                     let template =
                       Type_solver.apply substitutions templates.(index)
                     in
-                    if contains_unresolved_type template then
+                    if
+                      contains_unresolved_type template
+                      &&
+                      match template with
+                      | TFn ([], _) -> true
+                      | _ -> false
+                    then
                       match compile_argument template forms.(index) with
                       | Ok argument ->
                           Type_solver.unify substitutions templates.(index)
