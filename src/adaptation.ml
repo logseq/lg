@@ -1123,11 +1123,6 @@ and plan_overloaded_callback ~row_type_name_for ~protocol_satisfies
 
 and plan_callback ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
     expected actual expected_params expected_return actual_params actual_return =
-  let thunk_host_shape_identity =
-    match (expected_params, actual_params) with
-    | [], [ TUnit ] | [ TUnit ], [] -> Types.equal expected_return actual_return
-    | _ -> false
-  in
   let normalize_thunk_parameters = function [] -> [ TUnit ] | params -> params in
   let expected_params = normalize_thunk_parameters expected_params in
   let actual_params = normalize_thunk_parameters actual_params in
@@ -1193,8 +1188,6 @@ and plan_callback ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
         Result.map
           (fun result_adaptation ->
             if
-              (Types.equal expected actual || thunk_host_shape_identity)
-              &&
               List.for_all
                 (function Identity -> true | _ -> false)
                 argument_adaptations

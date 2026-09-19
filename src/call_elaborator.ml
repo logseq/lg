@@ -4426,6 +4426,16 @@ let rec adapt_value_to_type env expected actual =
           Semantic_ir.Let
               ([ (Semantic_ir.PVar source_name, actual.semantic_expr) ], adapted))
       (adapt_arities [] expected_arities)
+  else if
+    match (expected, actual.ty) with
+    | TFn _, TFn _
+      when not (function_needs_representation_adapter expected actual.ty)
+           && (Result.is_ok (Type_solver.unify Type_solver.empty actual.ty expected)
+              || Result.is_ok
+                   (Type_solver.unify Type_solver.empty expected actual.ty)) ->
+        true
+    | _ -> false
+  then Ok actual.semantic_expr
   else if function_needs_type_adapter expected actual.ty then
     match (expected, actual.ty) with
     | TFn (expected_params, expected_return), TFn (actual_params, actual_return)

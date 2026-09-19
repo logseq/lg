@@ -1613,13 +1613,34 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                                                true
                                            | Some _ | None -> false)
                                        | _ -> false)
-                               then
-                                 let refined =
-                                   match (ty, inferred_ty) with
-                                   | TNamed_record _, inferred
-                                     when Option.is_some
-                                            (Types.protocol_constraint_info
-                                               inferred) ->
+                              then
+                                let refined =
+                                  match (ty, inferred_ty) with
+                                  | ( TConstraint
+                                        (Seqable_constraint
+                                          ({ element = expected_element; _ } as
+                                           expected_seqable)),
+                                      inferred )
+                                    when Option.is_some
+                                           (Types.seqable_constraint_info
+                                              inferred) ->
+                                      let _, inferred_element, _ =
+                                        Types.seqable_constraint_info inferred
+                                        |> Option.get
+                                      in
+                                      TConstraint
+                                        (Seqable_constraint
+                                           {
+                                             expected_seqable with
+                                             element =
+                                               Type_inference.refine_type
+                                                 expected_element
+                                                 inferred_element;
+                                           })
+                                  | TNamed_record _, inferred
+                                    when Option.is_some
+                                           (Types.protocol_constraint_info
+                                              inferred) ->
                                        Type_inference.refine_type ty
                                          (Types.constraint_value_type inferred)
                                    | TNamed_record _, inferred

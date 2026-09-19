@@ -918,21 +918,11 @@ let declared_value_constraint ty =
          | Type_solver.Metavariable _ -> None)
     |> List.sort_uniq String.compare
   in
-  (* Inferred holes are shared free variables, not explicit quantifiers.
-     OCaml generalizes them only when the value restriction allows it. *)
-  let inference_variables =
-    Type_solver.variables ty
-    |> List.filter_map (function
-         | Type_solver.Declared _ -> None
-         | Type_solver.Metavariable id ->
-             let rec available name =
-               if List.mem name type_variables then available (name ^ "_")
-               else name
-             in
-             Some (id, available ("lg_inferred_" ^ string_of_int id)))
-  in
+  (* Inferred holes are not part of the declared universal contract. Leave
+     them anonymous so OCaml applies the value restriction to the expression
+     instead of treating omitted source types as promised type variables. *)
   let annotation =
-    core_type ~inference_variables ~type_variables ty
+    core_type ~type_variables ty
     |> Ast_helper.Typ.poly ~loc (List.map str type_variables)
   in
   Pvc_constraint { locally_abstract_univars = []; typ = annotation }
