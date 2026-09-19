@@ -1355,7 +1355,16 @@ let declaration_bindings ast env =
         declared_names (name :: declared) rest
     | _ :: rest -> declared_names declared rest
   in
-  let declared = declared_names [] ast |> Declared_names.of_list in
+  let recursive_declared_names =
+    Dependency_graph.recursive_groups ast
+    |> List.concat_map (fun indices ->
+           indices
+           |> List.concat_map (fun index ->
+                List.nth ast index |> Dependency_graph.provided_names))
+  in
+  let declared =
+    declared_names recursive_declared_names ast |> Declared_names.of_list
+  in
   let final_name name =
     match String.rindex_opt name '/' with
     | None -> name
@@ -1380,6 +1389,80 @@ let declaration_bindings ast env =
   |> List.map (fun (key, (binding : Types.binding)) ->
          if binding.forward_declared then (key, binding)
          else (key, { binding with forward_declared = true }))
+  |> fun bindings ->
+  let declared_name name =
+    Declared_names.mem name declared
+    || Declared_names.mem (final_name name) declared
+  in
+  let compiler_binding_named name =
+    Compiler_environment.binding_entries_named (final_name name) env
+    |> List.find_map (fun (_key, binding) -> Some binding)
+  in
+  let param_types params parameter_tys =
+    match Destructure.parse_param_specs params with
+    | Error _ -> None
+    | Ok specs when List.length specs = List.length parameter_tys ->
+        Some
+          (List.map2
+             (fun (spec : Destructure.param_spec) ty -> (spec.source_name, ty))
+             specs parameter_tys)
+    | Ok _ -> None
+  in
+  let forwarded_signature = function
+    | Ast.FList
+        (Ast.FSymbol ("defn" | "defn-") :: Ast.FSymbol name
+        :: (Ast.FVector _ as params) :: body_forms) -> (
+        match (compiler_binding_named name, List.rev body_forms) with
+        | Some { ty = Types.TFn (parameter_tys, return_ty); _ },
+          Ast.FList (Ast.FSymbol callee :: arguments) :: _
+          when declared_name callee -> (
+            match param_types params parameter_tys with
+            | Some local_params
+              when List.length arguments = List.length local_params ->
+                let argument_tys =
+                  arguments
+                  |> List.map (function
+                       | Ast.FSymbol argument_name ->
+                           List.assoc_opt argument_name local_params
+                       | _ -> None)
+                in
+                if List.for_all Option.is_some argument_tys then
+                  Some
+                    ( callee,
+                      Types.TFn
+                        (List.filter_map Fun.id argument_tys, return_ty) )
+                else None
+            | Some _ | None -> None)
+        | _ -> None)
+    | _ -> None
+  in
+  let refine_binding bindings (name, forwarded_ty) =
+    match
+      bindings
+      |> List.find_opt (fun (key, _) -> key_has_suffix key name)
+    with
+    | None -> bindings
+    | Some (target_key, (binding : Types.binding)) -> (
+        match Type_solver.unify Type_solver.empty binding.ty forwarded_ty with
+        | Error _ -> bindings
+        | Ok substitutions ->
+            let refined_ty = Type_solver.apply substitutions forwarded_ty in
+            List.map
+              (fun (candidate, (candidate_binding : Types.binding)) ->
+                if String.equal candidate target_key then
+                  ( candidate,
+                    {
+                      candidate_binding with
+                      ty = refined_ty;
+                      scheme = None;
+                      forward_declared = true;
+                    } )
+                else (candidate, candidate_binding))
+              bindings)
+  in
+  ast
+  |> List.filter_map forwarded_signature
+  |> List.fold_left refine_binding bindings
   |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
 
 let stabilization_ast ?(signed_names = []) ast =

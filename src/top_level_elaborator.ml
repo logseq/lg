@@ -890,6 +890,13 @@ let recursive_type_annotation scope env name =
   | Some (TFn _ as signature) -> Some signature
   | Some _ | None -> None
 
+let linked_parameter_return parameter_tys return_ty =
+  List.find_opt
+    (fun parameter_ty ->
+      String.equal (Types.source_name parameter_ty)
+        (Types.source_name return_ty))
+    parameter_tys
+
 let prepare_function scope env name params body_forms =
   let signature =
     sidecar_function_signature scope env name
@@ -913,12 +920,38 @@ let prepare_function scope env name params body_forms =
                parts.body))
   | Some _ -> Error.error ("function signature expected for " ^ name)
   | None ->
+      let forward_signature =
+        match Env.find_opt (Names.scoped_key scope name) env with
+        | Some { ty = TFn (parameter_tys, return_ty); forward_declared = true; _ }
+          ->
+            Some (parameter_tys, return_ty)
+        | Some _ | None -> None
+      in
+      let forward_param_overrides =
+        match forward_signature with
+        | Some (parameter_tys, _) -> List.map Option.some parameter_tys
+        | None -> []
+      in
+      let forward_return_ty =
+        match forward_signature with
+        | Some (parameter_tys, return_ty) ->
+            linked_parameter_return parameter_tys return_ty
+        | None -> None
+      in
       Result.bind
-        (prepare_fn ~materialize_open_equality:true scope env params body_forms)
+        (prepare_fn ~param_type_overrides:forward_param_overrides
+           ?expected_return_ty:forward_return_ty
+           ~materialize_open_equality:true scope env params body_forms)
         (fun (parts : Expression_support.compiled_fn_parts) ->
-          match parts.return_param_index_hint with
-          | None -> Ok parts
-          | Some index -> (
+          let parts =
+            match forward_return_ty with
+            | Some return_ty ->
+                { parts with body = typed_ir return_ty parts.body.semantic_expr }
+            | None -> parts
+          in
+          match (forward_return_ty, parts.return_param_index_hint) with
+          | Some _, _ | None, None -> Ok parts
+          | None, Some index -> (
               match List.nth_opt parts.param_bindings index with
               | None -> Ok parts
               | Some (_, parameter) ->
@@ -2938,50 +2971,28 @@ and compile_definition scope env next_type form =
       in
       let link_scc_forwarded_parameters env =
         let function_types = scc_inference_params env in
-        let rec symbol_occurrences name = function
-          | FSymbol candidate when String.equal name candidate -> 1
-          | FList forms | FVector forms ->
-              List.fold_left
-                (fun count form -> count + symbol_occurrences name form)
-                0 forms
-          | FMap entries ->
-              List.fold_left
-                (fun count (key, value) ->
-                  count + symbol_occurrences name key
-                  + symbol_occurrences name value)
-                0 entries
-          | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
-          | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
-              0
+        let function_type name =
+          match List.assoc_opt name function_types with
+          | Some ty -> Some ty
+          | None -> (
+              match Env.find_opt (Names.scoped_key scope name) env with
+              | Some (binding : binding) -> Some binding.ty
+              | None -> (
+                  match Env.find_opt name env with
+                  | Some (binding : binding) -> Some binding.ty
+                  | None -> None))
         in
-        let rec forwarded_occurrences name = function
-          | FList (FSymbol function_name :: arguments) ->
-              let direct =
-                if List.mem_assoc function_name function_types then
-                  List.fold_left
-                    (fun count -> function
-                      | FSymbol candidate when String.equal name candidate ->
-                          count + 1
-                      | _ -> count)
-                    0 arguments
-                else 0
-              in
-              List.fold_left
-                (fun count form -> count + forwarded_occurrences name form)
-                direct arguments
-          | FList forms | FVector forms ->
-              List.fold_left
-                (fun count form -> count + forwarded_occurrences name form)
-                0 forms
-          | FMap entries ->
-              List.fold_left
-                (fun count (key, value) ->
-                  count + forwarded_occurrences name key
-                  + forwarded_occurrences name value)
-                0 entries
-          | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
-          | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
-              0
+        let scc_return_type name =
+          match List.assoc_opt name function_types with
+          | Some (TFn (_, return_ty)) -> Some return_ty
+          | Some _ | None -> None
+        in
+        let unify_scc_return substitutions name expected_ty =
+          match scc_return_type name with
+          | Some return_ty ->
+              Type_solver.unify substitutions return_ty expected_ty
+              |> Result.value ~default:substitutions
+          | None -> substitutions
         in
         let rec walk bound local_params substitutions = function
           | FList (FSymbol "quote" :: _) -> substitutions
@@ -3015,19 +3026,31 @@ and compile_definition scope env next_type form =
               let substitutions =
                 if List.mem name bound then substitutions
                 else
-                  match List.assoc_opt name function_types with
+                  match function_type name with
                   | Some (TFn (parameter_tys, _))
                     when List.length parameter_tys = List.length arguments ->
+                      let substitutions =
+                        List.fold_left2
+                          (fun substitutions parameter_ty argument ->
+                            match argument with
+                            | FSymbol argument_name -> (
+                                match
+                                  List.assoc_opt argument_name local_params
+                                with
+                                | Some argument_ty ->
+                                    Type_solver.unify substitutions
+                                      parameter_ty argument_ty
+                                    |> Result.value ~default:substitutions
+                                | None -> substitutions)
+                            | _ -> substitutions)
+                          substitutions parameter_tys arguments
+                      in
                       List.fold_left2
-                        (fun substitutions parameter_ty argument ->
-                          match argument with
-                          | FSymbol argument_name -> (
-                              match List.assoc_opt argument_name local_params with
-                              | Some argument_ty ->
-                                  Type_solver.unify substitutions parameter_ty
-                                    argument_ty
-                                  |> Result.value ~default:substitutions
-                              | None -> substitutions)
+                        (fun substitutions parameter_ty -> function
+                          | FList (FSymbol callee :: _)
+                            when not (List.mem callee bound) ->
+                              unify_scc_return substitutions callee
+                                parameter_ty
                           | _ -> substitutions)
                         substitutions parameter_tys arguments
                   | Some _ | None -> substitutions
@@ -3066,25 +3089,20 @@ and compile_definition scope env next_type form =
                           (fun (spec : Destructure.param_spec) ty ->
                             (spec.source_name, ty))
                           specs parameter_tys
-                        |> List.filter (fun (parameter_name, _) ->
-                               let total =
-                                 List.fold_left
-                                   (fun count form ->
-                                     count
-                                     + symbol_occurrences parameter_name form)
-                                   0 body_forms
-                               in
-                               total > 0
-                               && total
-                                  = List.fold_left
-                                      (fun count form ->
-                                        count
-                                        + forwarded_occurrences parameter_name
-                                            form)
-                                      0 body_forms)
                       in
-                      List.fold_left (walk [] local_params) substitutions
-                        body_forms
+                      let substitutions =
+                        List.fold_left (walk [] local_params) substitutions
+                          body_forms
+                      in
+                      (match
+                         ( Env.find_opt (Names.scoped_key scope name) env,
+                           List.rev body_forms )
+                       with
+                      | ( Some { ty = TFn (_, return_ty); _ },
+                          FList (FSymbol callee :: _) :: _ )
+                        when not (List.mem_assoc callee local_params) ->
+                          unify_scc_return substitutions callee return_ty
+                      | _ -> substitutions)
                   | _ -> substitutions)
               | _ -> substitutions)
             Type_solver.empty function_definitions
@@ -3326,6 +3344,17 @@ and compile_definition scope env next_type form =
               | Some (TFn (parameter_tys, _)) -> Some parameter_tys
               | Some _ | None -> None
             in
+            let linked_predeclared_return_ty =
+              match (explicit_return_ty, predeclared_type) with
+              | None, Some (TFn (parameter_tys, return_ty)) ->
+                  linked_parameter_return parameter_tys return_ty
+              | Some _, _ | None, (Some _ | None) -> None
+            in
+            let expected_return_ty =
+              match declared_return_ty with
+              | Some _ as return_ty -> return_ty
+              | None -> linked_predeclared_return_ty
+            in
             let prepared =
               match (recursive, params, declared_return_ty) with
               | true, FVector _, Some return_ty ->
@@ -3354,8 +3383,7 @@ and compile_definition scope env next_type form =
                       (active_scc_inference_params env)
                     ~refine_inferred_env ~refine_open_overrides
                     ~materialize_open_equality:false
-                    ?expected_return_ty:declared_return_ty
-                    scope env params body_forms
+                    ?expected_return_ty scope env params body_forms
             in
             match prepared with
             | Error error ->
