@@ -960,7 +960,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                    |> List.map (fun name ->
                           ( name,
                             List.assoc_opt name hints
-                            |> Option.value ~default:TUnknown ))
+                            |> Option.value ~default:(Type_solver.fresh ()) ))
                  else []
                in
                (spec.source_name, param_ty) :: destructured)
@@ -1522,10 +1522,18 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
           let rec refine_destructured_type pattern ty =
             let refine_from_local name ty =
               let inferred_ty = lookup_inferred name in
-              Type_solver.unify Type_solver.empty ty inferred_ty
-              |> Result.map (fun substitutions ->
-                     Type_solver.apply substitutions ty)
-              |> Result.value ~default:ty
+              let refine ty inferred_ty =
+                Type_solver.unify Type_solver.empty ty inferred_ty
+                |> Result.map (fun substitutions ->
+                       Type_solver.apply substitutions ty)
+                |> Result.value ~default:ty
+              in
+              match (ty, inferred_ty) with
+              | TNullable payload_ty, (TUnknown | TMeta _ | TVar _) ->
+                  TNullable (refine payload_ty inferred_ty)
+              | TOcaml_app ("option", [ payload_ty ]), (TUnknown | TMeta _ | TVar _) ->
+                  TOcaml_app ("option", [ refine payload_ty inferred_ty ])
+              | _ -> refine ty inferred_ty
             in
             match (pattern, ty) with
             | Ast.FSymbol name, ty -> refine_from_local name ty

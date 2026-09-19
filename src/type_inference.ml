@@ -3731,7 +3731,23 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | None -> infer_form params last
             in
             Result.bind infer_last (fun params ->
-                let result_ty = inferred_form_type params last in
+                let result_ty =
+                  match inferred_form_type params last with
+                  | TUnknown | TMeta _ | TVar _ ->
+                      inferred_form_or_call_type ~lookup_function_ty params last
+                  | ty -> ty
+                in
+                let optional_operand_ty =
+                  match result_ty with
+                  | TNullable _ | TOcaml_app ("option", [ _ ]) -> result_ty
+                  | _ -> TNullable result_ty
+                in
+                let truthy_operand_ty =
+                  match result_ty with
+                  | TUnknown | TMeta _ | TVar _ ->
+                      Types.truthy_constraint optional_operand_ty
+                  | _ -> optional_operand_ty
+                in
                 List.fold_left
                   (fun result condition ->
                     Result.bind result (fun params ->
@@ -3740,11 +3756,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                           when not (Types.equal result_ty TBool) ->
                             (match string_assoc_opt name params with
                             | Some (TUnknown | TMeta _ | TVar _) ->
-                                constrain_symbol (TNullable result_ty) params name
+                                constrain_symbol truthy_operand_ty params name
                             | _ -> infer_truthy params condition)
                         | FList [ FKeyword keyword; FSymbol name ] ->
                             add_record_field_constraint name keyword
-                              (TNullable result_ty) params
+                              truthy_operand_ty params
+                        | FList
+                            [
+                              FSymbol "__lg_get";
+                              FSymbol name;
+                              FKeyword keyword;
+                            ] ->
+                            add_record_field_constraint name keyword
+                              truthy_operand_ty params
                         | FList (FSymbol name :: _)
                           when string_mem_assoc name params
                                && not (Types.equal result_ty TBool)

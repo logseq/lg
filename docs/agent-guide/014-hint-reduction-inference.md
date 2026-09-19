@@ -249,7 +249,8 @@ but still need the full record immediately afterward.
 
 ## Current Compiler Suite Audit
 
-The chat gate is green at `2b4305d8`:
+The chat gate is green after the latest `:as` open-map inference fix
+(run id `OL1L27R7`, 705 tests):
 
 ```sh
 opam exec --switch=5.5 -- dune build @core/runtest
@@ -259,9 +260,6 @@ The latest full compiler suite audit still shows failures outside the chat gate.
 They should be handled by class, not by loosening type rules:
 
 - Real semantic regressions to fix next:
-  - `map destructuring as preserves open map access`: `:as` open-map access
-    prints `<value>` because `:value` and `:restored` payload evidence is not
-    reflected in the function's public return type.
   - `Clojure collection protocol names dispatch statically`: collection
     protocol name dispatch returns incorrect counts, indicating static protocol
     dispatch identity is still being lost.
@@ -275,6 +273,11 @@ They should be handled by class, not by loosening type rules:
     refinement still loses `Datascript.tx_entity` host identity.
   - `nested update infers optional map value collections`: optional nested map
     update still tries to pack `set<any>` across a dynamic boundary.
+- Fixed in the current follow-up:
+  - `map destructuring as preserves open map access`: `:as` open-map access now
+    keeps `:value` and `:restored` payload evidence connected through the
+    function parameter row, and open `or` operands carry a truthiness witness
+    only while the fallback remains unresolved.
 - Expected-rejection diagnostic mismatches:
   - `letfn rejects invalid groups`
   - `seq instance validation rejects heterogeneous storage`

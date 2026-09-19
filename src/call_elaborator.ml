@@ -21146,6 +21146,41 @@ let create ~compile_expr =
                     (fun substitutions expected argument ->
                       match Types.record_fields expected with
                       | Some fields -> (
+                          let has_static_source_field =
+                            match Types.find_record_extension_field fields with
+                            | Some field ->
+                                Types.is_static_record_source_field field
+                            | None -> false
+                          in
+                          let substitutions =
+                            match (has_static_source_field, Types.record_fields argument.ty) with
+                            | true, Some actual_fields ->
+                                List.fold_left
+                                  (fun substitutions
+                                       (expected_field : field) ->
+                                    match
+                                      Types.find_field expected_field.keyword
+                                        actual_fields
+                                    with
+                                    | None -> substitutions
+                                    | Some actual_field ->
+                                        let expected_ty =
+                                          optional_payload expected_field.ty
+                                          |> Option.value
+                                               ~default:expected_field.ty
+                                        in
+                                        let actual_ty =
+                                          optional_payload actual_field.ty
+                                          |> Option.value
+                                               ~default:actual_field.ty
+                                        in
+                                        Type_solver.unify substitutions
+                                          expected_ty actual_ty
+                                        |> Result.value
+                                             ~default:substitutions)
+                                  substitutions fields
+                            | true, None | false, _ -> substitutions
+                          in
                           match Types.find_record_extension_field fields with
                           | Some field
                             when Types.is_static_record_source_field field ->
