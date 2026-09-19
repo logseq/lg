@@ -807,7 +807,11 @@ let rec inferred_form_type ?(lookup_binding = fun _ -> TUnknown) params = functi
   | FSymbol name -> (
       match string_assoc_opt name params with
       | Some ty -> ty
-      | None -> lookup_binding name)
+      | None -> (
+          match lookup_binding name with
+          | TFn ([], result) when Expression_support.is_constructor_name name ->
+              result
+          | ty -> ty))
   | FList [ FSymbol field_access; FSymbol receiver ]
     when String.starts_with ~prefix:".-" field_access ->
       let keyword =
@@ -2357,6 +2361,22 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | Error _ -> inferred)
       | _ -> inferred
   in
+  let source_sequence_filter_name name =
+    (has_source_name name "filter"
+    || has_source_name name "filterv"
+    || has_source_name name "remove")
+    &&
+    match lookup_function_ty name with
+    | Ok (TFn (TFn _ :: _, _)) -> true
+    | Ok (TOverloaded_fn arities) ->
+        List.exists
+          (fun (arity : fn_arity) ->
+            match arity.fixed_params with
+            | TFn _ :: _ -> true
+            | _ -> false)
+          arities
+    | Ok _ | Error _ -> false
+  in
   let branch_expected_type params expected branch other =
     let branch_is_nullable =
       match inferred_form_type params branch with
@@ -2526,9 +2546,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (fun params -> infer_sequence_form element_ty params collection)
         | Some _ | None -> infer_form params (FList [ FSymbol map_name; fn; collection ]))
     | FList [ FSymbol filter_name; predicate; collection ]
-      when has_source_name filter_name "filter"
-           || has_source_name filter_name "filterv"
-           || has_source_name filter_name "remove" -> (
+      when source_sequence_filter_name filter_name -> (
         match expected_seqable_element_type expected_ty with
         | Some element_ty when not (Types.is_dynamic element_ty) ->
             Result.bind
@@ -5651,9 +5669,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | _ -> ());
             infer_form params value)
     | FList [ FSymbol filter_name; predicate; collection ]
-      when has_source_name filter_name "filter"
-           || has_source_name filter_name "filterv"
-           || has_source_name filter_name "remove" ->
+      when source_sequence_filter_name filter_name ->
         let collection_ty =
           inferred_form_or_call_type ~lookup_function_ty params collection
         in

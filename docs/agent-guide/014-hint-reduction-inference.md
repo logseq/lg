@@ -363,6 +363,9 @@ dune exec test/compiler_tests.exe -- --filter "apply pr accepts refined protocol
 dune exec test/compiler_tests.exe -- --filter "print-method defmethod writes custom record representations"
 dune exec test/compiler_tests.exe -- --filter "Buffer annotations work in ordinary functions"
 dune exec test/compiler_tests.exe -- --filter "chat migration fixture preserves inferred rows"
+dune exec test/compiler_tests.exe -- --filter "sidebar pages preserves entity summary rows"
+dune exec test/compiler_tests.exe -- --filter "repeat named function preserves nullary variant arguments"
+dune exec test/compiler_tests.exe -- --filter "excluded core name uses local function in callback body"
 dune build stdlib/lg_stdlib_native.state
 dune build bin/lg_cli.exe
 CHAT_LG_BINARY=/Users/tiensonqin/Codes/projects/lg/_build/default/bin/lg_cli.exe \

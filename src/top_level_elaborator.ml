@@ -617,6 +617,13 @@ let rec unresolved_record_hint = function
 let rec form_mentions_symbol name = function
   | FSymbol candidate -> candidate = name
   | FList (FSymbol ("quote" | "clojure.core/quote") :: _) -> false
+  | FList (FSymbol "record" :: FSymbol _ :: fields) ->
+      List.exists
+        (function
+          | FList (_field_name :: values) ->
+              List.exists (form_mentions_symbol name) values
+          | field -> form_mentions_symbol name field)
+        fields
   | FList forms | FVector forms -> List.exists (form_mentions_symbol name) forms
   | FMap pairs ->
       List.exists

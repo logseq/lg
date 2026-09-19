@@ -6360,6 +6360,116 @@ let test_chat_migration_fixture_preserves_inferred_rows () =
     (compile_with_stdlib Lg.Target.Melange
        "test/chat_migration_fixture.cljc" source)
 
+let test_sidebar_pages_preserves_entity_summary_rows () =
+  let model = {|
+(ns sidebar-model)
+(type-record entity-summary (uuid :string) (title :string))
+|} in
+  let graph = {|
+(ns sidebar-graph (:require [sidebar-model :as model]))
+(type-record sidebar-pages
+  (favorites :vector<model/entity-summary>)
+  (recent-pages :vector<model/entity-summary>))
+
+(defn page-summary [eid]
+  (when (> eid 0)
+    (record model/entity-summary (uuid (str eid)) (title (str "page-" eid)))))
+
+(defn sidebar-pages [favorite-eids recent-eids]
+  (let [favorites (mapv second
+                    (sort-by first
+                      (keep (fn [eid]
+                              (when-some [page (page-summary eid)]
+                                (tuple (str eid) page)))
+                            favorite-eids)))
+        favorite-uuids (set (map :uuid favorites))
+        recent (vec
+                 (take 15
+                   (keep (fn [eid]
+                           (when-some [page (page-summary eid)]
+                             (when (not (contains? favorite-uuids (:uuid page)))
+                               page)))
+                         recent-eids)))]
+    (record sidebar-pages
+      (favorites favorites)
+      (recent-pages recent))))
+
+(def pages (sidebar-pages [1] [1 2]))
+(println (str (count (:favorites pages)) ":" (count (:recent-pages pages))))
+|}
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, model =
+      Lg.Compiler.compile_chunk ~target stdlib.state model |> expect_ok
+    in
+    let _, graph =
+      Lg.Compiler.compile_chunk ~target state graph |> expect_ok
+    in
+    stdlib.ocaml_source ^ "\n" ^ model ^ "\n" ^ graph
+  in
+  let native = compile Lg.Target.Native in
+  assert_ocaml_runs "sidebar_pages_preserves_entity_summary_rows" "1:1\n"
+    native;
+  ignore (compile Lg.Target.Melange)
+
+let test_repeat_named_function_preserves_nullary_variant_arguments () =
+  let source = {|
+(ns flashcard-repeat-fixture (:refer-clojure :exclude [repeat]))
+
+(type-variant flashcard-rating
+  Again
+  Hard
+  Good
+  Easy)
+
+(type-record fsrs-card
+  (lapses :int)
+  (last-rating :option<flashcard-rating>))
+
+(defn repeat [card rating]
+  (record fsrs-card
+    (lapses (+ (:lapses card) (if (= rating Again) 1 0)))
+    (last-rating (Some rating))))
+
+(def reviewed (repeat (record fsrs-card (lapses 0) (last-rating None)) Again))
+(println (:lapses reviewed))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/flashcard_repeat_fixture.cljc" source
+  in
+  assert_ocaml_runs
+    "repeat_named_function_preserves_nullary_variant_arguments" "1\n" native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/flashcard_repeat_fixture.cljc" source)
+
+let test_excluded_core_name_uses_local_function_in_callback_body () =
+  let source = {|
+(ns pending-remove-fixture (:refer-clojure :exclude [remove]))
+
+(defn remove [path operation-id]
+  (str path ":" operation-id))
+
+(defn confirm [path operation-ids]
+  (run! (fn [operation-id] (remove path operation-id)) operation-ids))
+
+(confirm "queue" ["a" "b"])
+(println "ok")
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/pending_remove_fixture.cljc" source
+  in
+  assert_ocaml_runs
+    "excluded_core_name_uses_local_function_in_callback_body" "ok\n" native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/pending_remove_fixture.cljc" source)
+
 let test_nested_ref_record_accessor_constraints_merge () =
   let source = {|
 (type-record snapshot (db :string))
@@ -54668,6 +54778,12 @@ let tests =
       test_sampled_signals_keep_independent_nominal_payloads );
     ( "chat migration fixture preserves inferred rows",
       test_chat_migration_fixture_preserves_inferred_rows );
+    ( "sidebar pages preserves entity summary rows",
+      test_sidebar_pages_preserves_entity_summary_rows );
+    ( "repeat named function preserves nullary variant arguments",
+      test_repeat_named_function_preserves_nullary_variant_arguments );
+    ( "excluded core name uses local function in callback body",
+      test_excluded_core_name_uses_local_function_in_callback_body );
     ( "nested ref record accessor constraints merge",
       test_nested_ref_record_accessor_constraints_merge );
     ( "later ref record update preserves prior fields",

@@ -2235,7 +2235,13 @@ let lookup_function_ty scope env name =
               | None -> Error.error ("unknown function " ^ name))))
 
 let lookup_call_ty scope env name forms =
-  Option.bind (Resolver.ocaml_call_target scope env name) (fun target ->
+  let source_binding_shadows_call_target =
+    match Env.find_opt (Names.scoped_key scope name) env with
+    | Some { host_reference = None; _ } -> true
+    | Some _ | None -> false
+  in
+  if source_binding_shadows_call_target then None
+  else Option.bind (Resolver.ocaml_call_target scope env name) (fun target ->
       match
         (Ocaml_signature.value_signature target,
          Ocaml_signature.parse_argument_forms forms)

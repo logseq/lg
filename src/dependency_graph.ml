@@ -76,6 +76,7 @@ let rec symbols form =
 let rec value_symbols form =
   match form with
   | FList (FSymbol "ffi" :: _) -> []
+  | FList (FSymbol ("quote" | "clojure.core/quote") :: _) -> []
   | FList (FSymbol "record" :: FSymbol _ :: fields) ->
       fields
       |> List.concat_map (function

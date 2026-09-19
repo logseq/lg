@@ -168,6 +168,14 @@ used to inspect it. Branch adaptation converts both Result alternatives when
 their payload representations differ, including nested tuples. Unqualified
 nullary constructors retain their nominal result type in emitted expressions
 so distinct namespaces may use the same OCaml constructor spelling.
+Function recursion and value dependency analysis use value references only:
+quoted symbols, record type names, and record field names are data or type
+positions, not calls to same-named functions.
+
+Core sequence-operation inference is gated by the resolved callable shape.
+Source bindings and `:refer-clojure :exclude` shadow core helpers such as
+`remove`; special filter/remove callback inference must not rewrite those local
+functions or their parameters.
 
 Anonymous recursive rows imported from OCaml retain an inference variable at
 each recursive back-edge instead of inventing an opaque source type. Generated

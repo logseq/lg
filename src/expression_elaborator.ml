@@ -2447,7 +2447,7 @@ and compile_fn ?(param_type_overrides = []) ?preferred_record
 and compile_named_fn scope env name params body_forms =
   let recursive =
     body_forms
-    |> List.concat_map Dependency_graph.symbols
+    |> List.concat_map Dependency_graph.value_symbols
     |> List.exists (String.equal name)
   in
   if not recursive then compile_fn scope env params body_forms
