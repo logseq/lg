@@ -6282,6 +6282,84 @@ let test_sampled_signals_keep_independent_nominal_payloads () =
   assert_ocaml_runs "sampled_signals_keep_independent_nominal_payloads" "row-1\n" output;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_chat_migration_fixture_preserves_inferred_rows () =
+  let source = {|
+(ns chat-migration-fixture (:require [ocaml.String :as bytes]))
+
+(type-record signal [value] (current :ref<value>))
+(type-record chat-model (search-open :bool) (rows :vector<outliner-row>))
+(type-record outliner-row (uuid :string) (title :string) (depth :int))
+(type-record candidate (label :string) (value :string))
+
+(defprotocol RowSource
+  (-rows [source]))
+
+(def ^:set<string> empty-labels #{})
+
+(defn sample [source] @(:current source))
+
+(defn row-uuid [row]
+  (let [_depth (:depth row)]
+    (:uuid row)))
+
+(defn root-visible? [current]
+  (not (:search-open current)))
+
+(defn row-visible? [current row]
+  (and (root-visible? current)
+       (= (row-uuid row) "row-1")))
+
+(defn active-row [model-source row-source]
+  (let [current (sample model-source)
+        row (sample row-source)]
+    (if (row-visible? current row)
+      (row-uuid row)
+      "")))
+
+(defn duplicated-labels [candidates]
+  (let [by-label (group-by #(bytes/lowercase-ascii (:label %)) candidates)]
+    (into empty-labels
+          (keep (fn [[label values]]
+                  (when (> (count (set (map :value values))) 1)
+                    label))
+                by-label))))
+
+(defn row-candidate [row]
+  (record candidate
+    (label (:title row))
+    (value (:uuid row))))
+
+(defrecord StaticRows [^:vector<outliner-row> rows]
+  RowSource
+  (-rows [source]
+    (filter (fn [row] (not= "" (:uuid row))) (:rows source))))
+
+(def first-row
+  (record outliner-row (uuid "row-1") (title "Roadmap") (depth 0)))
+(def second-row
+  (record outliner-row (uuid "row-2") (title "roadmap") (depth 1)))
+(def rows [first-row second-row])
+(def model-source
+  (record signal
+    (current (atom (record chat-model (search-open false) (rows rows))))))
+(def row-source (record signal (current (atom first-row))))
+(def static-source (StaticRows. rows))
+
+(println (active-row model-source row-source))
+(println (contains? (duplicated-labels (mapv row-candidate rows)) "roadmap"))
+(println (count (vec (-rows static-source))))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/chat_migration_fixture.cljc" source
+  in
+  assert_ocaml_runs "chat_migration_fixture_preserves_inferred_rows"
+    "row-1\ntrue\n2\n" native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/chat_migration_fixture.cljc" source)
+
 let test_nested_ref_record_accessor_constraints_merge () =
   let source = {|
 (type-record snapshot (db :string))
@@ -54588,6 +54666,8 @@ let tests =
       test_keyword_callbacks_preserve_mutable_signal_item_types );
     ( "sampled signals keep independent nominal payloads",
       test_sampled_signals_keep_independent_nominal_payloads );
+    ( "chat migration fixture preserves inferred rows",
+      test_chat_migration_fixture_preserves_inferred_rows );
     ( "nested ref record accessor constraints merge",
       test_nested_ref_record_accessor_constraints_merge );
     ( "later ref record update preserves prior fields",

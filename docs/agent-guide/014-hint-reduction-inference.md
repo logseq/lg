@@ -288,6 +288,8 @@ The implemented tests cover these chat-shaped cases:
 - hash-map `update` preserving ClojureScript missing-key semantics for named
   updaters that test the old value with `nil?`, while keeping extra updater
   arguments statically adapted instead of requiring call-site hints.
+- a representative chat migration fixture combining signal sampling, outliner
+  rows, duplicate-label grouping, and protocol-returned row sequences.
 
 Each migration-facing positive case should compile for Native and Melange. Cases
 that guard runtime behavior also execute the Native output.
@@ -360,6 +362,7 @@ dune exec test/compiler_tests.exe -- --filter "apply pr accepts lazy sequences"
 dune exec test/compiler_tests.exe -- --filter "apply pr accepts refined protocol sequences"
 dune exec test/compiler_tests.exe -- --filter "print-method defmethod writes custom record representations"
 dune exec test/compiler_tests.exe -- --filter "Buffer annotations work in ordinary functions"
+dune exec test/compiler_tests.exe -- --filter "chat migration fixture preserves inferred rows"
 dune build stdlib/lg_stdlib_native.state
 dune build bin/lg_cli.exe
 CHAT_LG_BINARY=/Users/tiensonqin/Codes/projects/lg/_build/default/bin/lg_cli.exe \
@@ -402,9 +405,6 @@ Remaining work is now compiler-suite level:
   wording failures. Treat those as separate design audits before changing code;
 - keep reducing newly discovered hints only when the surrounding static context
   is already present and trustworthy;
-- add a small representative chat fixture that can run next to the synthetic
-  compiler tests so future inference changes do not depend only on ad-hoc seed
-  scripts.
 
 If the fullgate exposes a new blocker, diagnose it as a new narrow inference
 hole first. Do not widen anonymous-record sharing or introduce dynamic escape
