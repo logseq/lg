@@ -1439,6 +1439,54 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                [ target.semantic_expr; key; default ]))
                         (adapt_transient_value result_value_ty default))
       in
+      let compile_optional_map_adapter_get target key default =
+        match
+          Env.find_optional_map_adapter
+            (Types.constraint_value_type target.ty) env
+        with
+        | None -> None
+        | Some (key_ty, value_ty, adapter) ->
+            let map_name = "__lg_optional_adapter_map" in
+            let map =
+              typed_ir (Types.dynamic_map key_ty value_ty)
+                (Semantic_ir.Ident map_name)
+            in
+            Some
+              (Result.bind (compile_runtime_map_get map key default)
+                 (fun lookup ->
+                   let missing =
+                     match default with
+                     | None when Types.is_dynamic lookup.ty ->
+                         Ok
+                           (Semantic_ir.Ident
+                              "Lg_runtime.Runtime_dynamic.nil")
+                     | None -> Ok (Semantic_ir.Constructor ("None", None))
+                     | Some (_, true)
+                       when (match lookup.ty with
+                            | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                                true
+                            | _ -> false) ->
+                         Ok (Semantic_ir.Constructor ("None", None))
+                     | Some (default, _) ->
+                         adapt_transient_value lookup.ty default
+                   in
+                   Result.map
+                     (fun missing ->
+                       typed_ir lookup.ty
+                         (Semantic_ir.Match
+                            ( Semantic_ir.Apply
+                                ( Semantic_ir.Ident adapter,
+                                  [ target.semantic_expr ] ),
+                              [
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  missing );
+                                ( Semantic_ir.PConstructor
+                                    ( "Some",
+                                      Some (Semantic_ir.PVar map_name) ),
+                                  lookup.semantic_expr );
+                              ] )))
+                     missing))
+      in
       let string_index_is_valid target index =
         Semantic_ir.Infix
           ( "&&",
@@ -1496,6 +1544,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target -> (
               let target = unwrap_protocol_value target in
               match target.ty with
+              | _
+                when Option.is_some
+                       (compile_optional_map_adapter_get target
+                          (typed_ir TKeyword (Semantic_ir.String keyword))
+                          None) ->
+                  Option.get
+                    (compile_optional_map_adapter_get target
+                       (typed_ir TKeyword (Semantic_ir.String keyword))
+                       None)
               | TNullable record_ty | TOcaml_app ("option", [ record_ty ]) -> (
                   let record_ty =
                     Collection_capability.resolve_callback_record env record_ty
@@ -1780,6 +1837,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok index -> (
               let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
+              | _, _
+                when Option.is_some
+                       (compile_optional_map_adapter_get target index None) ->
+                  Option.get
+                    (compile_optional_map_adapter_get target index None)
               | TString, TInt ->
                   Ok
                     (typed_ir (TNullable TChar)
@@ -2015,6 +2077,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok default -> (
               let target = unwrap_protocol_value target in
               match target.ty with
+              | _
+                when Option.is_some
+                       (compile_optional_map_adapter_get target
+                          (typed_ir TKeyword (Semantic_ir.String keyword))
+                          (Some (default, default_form = FSymbol "nil"))) ->
+                  Option.get
+                    (compile_optional_map_adapter_get target
+                       (typed_ir TKeyword (Semantic_ir.String keyword))
+                       (Some (default, default_form = FSymbol "nil")))
               | (TNullable (TNamed_record record)
                 | TOcaml_app ("option", [ TNamed_record record ])) ->
                   let value_name = "__lg_optional_lookup_value" in
@@ -2143,6 +2214,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok index, Ok default -> (
               let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
+              | _, _
+                when Option.is_some
+                       (compile_optional_map_adapter_get target index
+                          (Some (default, default_form = FSymbol "nil"))) ->
+                  Option.get
+                    (compile_optional_map_adapter_get target index
+                       (Some (default, default_form = FSymbol "nil")))
               | TString, TInt when Types.equal default.ty TChar ->
                   Ok
                     (typed_ir TChar
@@ -4592,6 +4670,50 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                    (Error.error
                       "contains? expects a static membership witness")
         | TNil, _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
+        | _, _
+          when Option.is_some
+                 (Env.find_optional_map_adapter
+                    (Types.constraint_value_type target.ty) env) ->
+            let key_ty, _, adapter =
+              Option.get
+                (Env.find_optional_map_adapter
+                   (Types.constraint_value_type target.ty) env)
+            in
+            if
+              not
+                (Types.assignable ~policy:Host_boundary ~expected:key_ty
+                   ~actual:value.ty)
+            then
+              Error.error
+                ("contains? value type must match map key type: expected "
+               ^ source_name key_ty ^ ", got " ^ source_name value.ty)
+            else
+              let key =
+                if Types.is_dynamic key_ty && not (Types.is_dynamic value.ty)
+                then pack_dynamic_value env key_ty value
+                else Ok value.semantic_expr
+              in
+              Result.map
+                (fun key ->
+                  let map_name = "__lg_optional_adapter_map" in
+                  typed_ir TBool
+                    (Semantic_ir.Match
+                       ( Semantic_ir.Apply
+                           ( Semantic_ir.Ident adapter,
+                             [ target.semantic_expr ] ),
+                         [
+                           ( Semantic_ir.PConstructor ("None", None),
+                             Semantic_ir.Bool false );
+                           ( Semantic_ir.PConstructor
+                               ("Some", Some (Semantic_ir.PVar map_name)),
+                             Semantic_ir.Apply
+                               ( Semantic_ir.Ident
+                                   (runtime_map_operation
+                                      (runtime_map_key_type key_ty value.ty)
+                                      "mem"),
+                                 [ Semantic_ir.Ident map_name; key ] ) );
+                         ] )))
+                key
         | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
           when Types.equal element_type TUnknown
                || Types.same_shape element_type value.ty ->

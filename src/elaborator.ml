@@ -63,7 +63,7 @@ let deferred_type_variables ty =
           (fun variables (field : Types.field) -> collect variables field.ty)
           variables fields
     | Types.TNamed_record record ->
-        List.rev_append record.type_parameters variables
+        List.fold_left collect variables record.type_arguments
     | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
     | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool
     | Types.TUnit | Types.TOcaml _ ->

@@ -2611,8 +2611,42 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan
       let key_ty, value_ty =
         Types.contains_constraint_info expected |> Option.get
       in
+      let contains_adapter =
+        match
+          Env.find_optional_map_adapter
+            (Types.constraint_value_type argument.ty) env
+        with
+        | Some (map_key_ty, _, adapter)
+          when (not (Types.is_dynamic map_key_ty))
+               && Types.assignable ~policy:Host_boundary ~expected:map_key_ty
+                    ~actual:key_ty ->
+            let key_name = "__lg_optional_map_contains_key" in
+            let map_name = "__lg_optional_map_contains_map" in
+            Ok
+              (Semantic_ir.Fun
+                 ( [ Semantic_ir.PVar key_name ],
+                   Semantic_ir.Match
+                     ( Semantic_ir.Apply
+                         ( Semantic_ir.Ident adapter,
+                           [ argument.semantic_expr ] ),
+                       [
+                         ( Semantic_ir.PConstructor ("None", None),
+                           Semantic_ir.Bool false );
+                         ( Semantic_ir.PConstructor
+                             ("Some", Some (Semantic_ir.PVar map_name)),
+                           Semantic_ir.Apply
+                             ( Semantic_ir.Ident
+                                 "Lg_runtime.Runtime_map.mem",
+                               [
+                                 Semantic_ir.Ident map_name;
+                                 Semantic_ir.Ident key_name;
+                               ] ) );
+                       ] ) ))
+        | Some _ | None ->
+            Collection_capability.contains_adapter ~key_ty argument
+      in
       Result.bind
-        (Collection_capability.contains_adapter ~key_ty argument)
+        contains_adapter
         (fun witness ->
           let packed =
             match (value_ty, row_type_name) with
@@ -2925,6 +2959,9 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan
             in
             match implementations with
             | None -> (
+                if Types.is_guarded_protocol_constraint expected then
+                  Ok (Semantic_ir.Constructor ("None", None))
+                else
                 match Types.constraint_value_type argument.ty with
                 | TNamed_record record ->
                     Error.error
@@ -9412,12 +9449,29 @@ let create ~compile_expr =
           || String.starts_with ~prefix:"cljs_core_mapcat"
                binding.ocaml_name)
     in
+    let core_map_predicate =
+      String.equal name "map?"
+      &&
+      (qualified_core
+      ||
+      match lookup_binding scope env name with
+      | Error _ -> false
+      | Ok binding ->
+          String.starts_with ~prefix:"clojure_core_map_" binding.ocaml_name
+          || String.starts_with ~prefix:"cljs_core_map_" binding.ocaml_name)
+    in
     if cljs_test_report_call_symbol scope env name then
       compile_cljs_test_report_call scope env arg_forms
     else if core_mapcat then (
       match compile_mapcat scope env arg_forms with
       | Ok _ as result -> result
       | Error _ -> compile_named_function_call scope env name arg_forms)
+    else if core_map_predicate then (
+      match arg_forms with
+      | [ value ] ->
+          compile_expr scope env
+            (FList [ FSymbol "satisfies?"; FSymbol "IMap"; value ])
+      | _ -> Error.error "map? expects 1 argument")
     else
     match lookup_binding scope env name with
     | Ok binding
@@ -19032,6 +19086,10 @@ let create ~compile_expr =
           | Some core -> String.equal fn.ocaml_name core.ocaml_name
           | None -> false
         in
+        let is_core_map_predicate =
+          String.equal fn.ocaml_name "clojure_core_map_"
+          || String.equal fn.ocaml_name "cljs_core_map_"
+        in
         let fn = Types.instantiate_binding fn in
         let fn_value = binding_runtime_value fn in
         let fn =
@@ -19052,6 +19110,15 @@ let create ~compile_expr =
           is_core_binding "mapv"
           && List.length arg_forms >= 1
         then compile_mapv scope env arg_forms
+        else if
+          is_core_map_predicate
+          && List.length arg_forms = 1
+        then
+          match arg_forms with
+          | [ value ] ->
+              compile_expr scope env
+                (FList [ FSymbol "satisfies?"; FSymbol "IMap"; value ])
+          | _ -> assert false
         else if
           is_core_binding "reduce"
           && (List.length arg_forms = 2 || List.length arg_forms = 3)

@@ -1572,6 +1572,21 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                                  && Option.is_none
                                       (Types.protocol_constraint_info ty)
                                then
+                                 let rec storage_type ty =
+                                   let value_ty =
+                                     Types.constraint_value_type ty
+                                   in
+                                   if Types.equal value_ty ty then ty
+                                   else storage_type value_ty
+                                 in
+                                 let storage_ty = storage_type inferred_ty in
+                                 if
+                                   Types.assignable ~policy:Host_boundary
+                                     ~expected:ty ~actual:storage_ty
+                                 then
+                                   ( spec,
+                                     Type_inference.refine_type ty storage_ty )
+                                 else
                                  let value_ty =
                                    match
                                      Types.protocol_constraint_info inferred_ty
@@ -1641,8 +1656,15 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                                     when Option.is_some
                                            (Types.protocol_constraint_info
                                               inferred) ->
+                                      let rec storage_type ty =
+                                        let value_ty =
+                                          Types.constraint_value_type ty
+                                        in
+                                        if Types.equal value_ty ty then ty
+                                        else storage_type value_ty
+                                      in
                                        Type_inference.refine_type ty
-                                         (Types.constraint_value_type inferred)
+                                         (storage_type inferred)
                                    | TNamed_record _, inferred
                                      when Types.is_dynamic inferred ->
                                        ty
