@@ -1052,11 +1052,64 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
             |> List.filter_map (fun (spec : Destructure.param_spec) ->
                    if spec.destructured then Some spec.source_name else None)
           in
+          let field_access_target_name = function
+            | Ast.FSymbol name -> Some name
+            | Ast.FList
+                [
+                  Ast.FSymbol "__type-hint";
+                  Ast.FSymbol _;
+                  Ast.FSymbol name;
+                ] ->
+                Some name
+            | _ -> None
+          in
+          let rec hinted_field_access_parameters = function
+            | Ast.FList
+                [
+                  Ast.FSymbol field_access;
+                  Ast.FList
+                    [
+                      Ast.FSymbol "__type-hint";
+                      Ast.FSymbol _;
+                      Ast.FSymbol target;
+                    ];
+                ]
+              when String.starts_with ~prefix:".-" field_access ->
+                [ target ]
+            | Ast.FList forms | Ast.FVector forms ->
+                List.concat_map hinted_field_access_parameters forms
+            | Ast.FMap pairs ->
+                List.concat_map
+                  (fun (key, value) ->
+                    hinted_field_access_parameters key
+                    @ hinted_field_access_parameters value)
+                  pairs
+            | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _
+            | Ast.FString _
+            | Ast.FRegex _ | Ast.FBool _ | Ast.FKeyword _ | Ast.FSymbol _
+            | Ast.FCoreSymbol _ ->
+                []
+          in
+          let hinted_field_access_parameters =
+            body_forms
+            |> List.concat_map hinted_field_access_parameters
+            |> List.sort_uniq String.compare
+          in
+          let non_structural_record_like = function
+            | TRecord _ -> false
+            | ty -> Option.is_some (Types.record_fields ty)
+          in
+          let preserves_record_identity ~current ~expected =
+            non_structural_record_like current
+            && Option.is_some (Types.record_fields expected)
+          in
           let rec directly_accesses_field parameter = function
             | Ast.FList
-                [ Ast.FSymbol field_access; Ast.FSymbol target ]
+                [ Ast.FSymbol field_access; target ]
               when String.starts_with ~prefix:".-" field_access
-                   && String.equal parameter target ->
+                   && Option.equal String.equal
+                        (field_access_target_name target)
+                        (Some parameter) ->
                 true
             | Ast.FList forms | Ast.FVector forms ->
                 List.exists (directly_accesses_field parameter) forms
@@ -1103,6 +1156,10 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
               | ty -> infer_named_record scope env ty
             else
               match ty with
+              | ty
+                when List.mem name hinted_field_access_parameters
+                     && non_structural_record_like ty ->
+                  ty
               | TNullable (TRecord fields) ->
                   let structural = infer_structural_fields fields in
                   if List.mem name directly_accessed_parameters then
@@ -1355,13 +1412,22 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                        |> Option.value ~default:TUnknown
                      in
                      let refined =
-                       match Types.protocol_constraint_info current with
-                       | Some (_, _, value_ty)
+                       match
+                         ( Types.protocol_constraint_info current,
+                           current,
+                           expected )
+                       with
+                       | ( Some (_, _, value_ty),
+                           _,
+                           _ )
                          when Option.is_none
                                 (Types.protocol_constraint_info expected) ->
                            Types.protocol_constraint_with_value current
                              (Type_inference.refine_type value_ty expected)
-                       | Some _ | None ->
+                       | None, current, expected
+                         when preserves_record_identity ~current ~expected ->
+                           current
+                       | Some _, _, _ | None, _, _ ->
                            Type_inference.refine_type current expected
                      in
                      (name, refined))
@@ -1394,6 +1460,10 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                             Types.protocol_constraint_with_value ty
                               (Type_inference.refine_type value_ty
                                  expected_value_ty)
+                        | None, _
+                          when preserves_record_identity ~current:ty
+                                 ~expected ->
+                            ty
                         | Some _, Some _ | None, _ ->
                             Type_inference.refine_type ty expected
                       in
@@ -1500,7 +1570,12 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                          collapse_static_record_protocols env inferred_ty
                        in
                        let inferred_ty =
-                         infer_parameter_named_record scope env inferred_ty
+                         if
+                           List.mem spec.source_name
+                             hinted_field_access_parameters
+                           && non_structural_record_like inferred_ty
+                         then inferred_ty
+                         else infer_parameter_named_record scope env inferred_ty
                        in
                        let inferred_ty =
                          match inferred_ty with

@@ -90,6 +90,11 @@ port is still moving.
   `satisfies?` must keep accepting either a protocol receiver or the statically
   checked fallback storage, instead of letting the fallback overwrite the
   optional protocol wrapper.
+- Treat explicit record hints on field receivers as authoritative parameter
+  evidence. A body such as `#{(.-value ^StringHolder holder)}` may infer the
+  set element from the hinted field without requiring a separate parameter hint,
+  but later structural call-site expectations must not demote the parameter from
+  the hinted record identity to a local anonymous row.
 - Keep source-owned sorted collection protocols statically typed. `ISorted`
   method sidecars preserve the relationship between entries, keys, and storage,
   while `persistent-tree-set` uses typed helpers for comparator, equality,
@@ -366,6 +371,11 @@ dune exec test/compiler_tests.exe -- --filter "chat migration fixture preserves 
 dune exec test/compiler_tests.exe -- --filter "sidebar pages preserves entity summary rows"
 dune exec test/compiler_tests.exe -- --filter "repeat named function preserves nullary variant arguments"
 dune exec test/compiler_tests.exe -- --filter "excluded core name uses local function in callback body"
+dune exec test/compiler_tests.exe -- --filter "set literals preserve inferred string family elements"
+dune exec test/compiler_tests.exe -- --filter "set literals preserve inferred keyword elements"
+dune exec test/compiler_tests.exe -- --filter "qualified record hints survive forward protocol dependencies"
+dune exec test/compiler_tests.exe -- --filter "mutual recursion propagates parameterized record results"
+dune exec test/compiler_tests.exe -- --filter "mutual recursion propagates call result constraints"
 dune build stdlib/lg_stdlib_native.state
 dune build bin/lg_cli.exe
 CHAT_LG_BINARY=/Users/tiensonqin/Codes/projects/lg/_build/default/bin/lg_cli.exe \
