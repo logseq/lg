@@ -283,6 +283,31 @@ let update_overloaded_implementation env method_name receiver_ty
         ("multi-arity protocol implementation " ^ method_name
        ^ " must compile to a fixed-arity function")
 
+let method_return_needs_context env method_ty =
+  let rec contains_contextual_closed_sum ty =
+    Env.variant_constructors ty env <> []
+    ||
+    match ty with
+    | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
+    | TSet inner | TSeq inner ->
+        contains_contextual_closed_sum inner
+    | TOcaml_app (_, arguments) | TTuple arguments ->
+        List.exists contains_contextual_closed_sum arguments
+    | _ -> false
+  in
+  let expected_return_ty =
+    match method_ty with
+    | TFn (_, return_ty) -> Some return_ty
+    | TOverloaded_fn [ arity ] -> Some arity.return_ty
+    | _ -> None
+  in
+  Option.fold ~none:false
+    ~some:(fun return_ty ->
+      match return_ty with
+      | TFn _ | TOverloaded_fn _ -> true
+      | _ -> contains_contextual_closed_sum return_ty)
+    expected_return_ty
+
 let compile_defprotocol ?location scope env next_type protocol_name method_forms =
   match define ?location scope env protocol_name method_forms with
   | Error _ as err -> err
@@ -685,33 +710,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                           Types.instantiate_receiver_method_type receiver_ty
                             marker.ty
                         in
-                        let rec contains_contextual_closed_sum ty =
-                          Env.variant_constructors ty env <> []
-                          ||
-                          match ty with
-                          | TNullable inner | TArray inner | TRef inner
-                          | TList inner | TVector inner | TSet inner | TSeq inner
-                            ->
-                              contains_contextual_closed_sum inner
-                          | TOcaml_app (_, arguments) | TTuple arguments ->
-                              List.exists contains_contextual_closed_sum
-                                arguments
-                          | _ -> false
+                        let use_return_context =
+                          method_return_needs_context env expected_method_ty
                         in
-                        let expected_return_ty =
-                          match expected_method_ty with
-                          | TFn (_, return_ty) -> Some return_ty
-                          | TOverloaded_fn [ arity ] -> Some arity.return_ty
-                          | _ -> None
-                        in
-                          let use_return_context =
-                            Option.fold ~none:false
-                              ~some:(fun return_ty ->
-                                match return_ty with
-                                | TFn _ | TOverloaded_fn _ -> true
-                                | _ -> contains_contextual_closed_sum return_ty)
-                              expected_return_ty
-                          in
                         let method_env =
                           if use_return_context then
                             Env.with_expected_type (Some expected_method_ty) env

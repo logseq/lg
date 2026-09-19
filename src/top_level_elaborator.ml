@@ -2262,12 +2262,20 @@ and compile_definition scope env next_type form =
                     | Some protocol_name -> (
                         match protocol_method_type protocol_name with
                         | Some method_ty ->
+                            let expected_method_ty =
+                              Types.instantiate_receiver_method_type receiver_ty
+                                method_ty
+                            in
+                            let use_return_context =
+                              Protocol_elaborator.method_return_needs_context env
+                                expected_method_ty
+                            in
                             ( Env.with_expected_type
-                                (Some
-                                   (Types.instantiate_receiver_method_type
-                                      receiver_ty method_ty))
+                                (if use_return_context then
+                                   Some expected_method_ty
+                                 else None)
                                 env,
-                              true )
+                              use_return_context )
                         | None -> (env, false))
                     | None -> (env, false)
                   in

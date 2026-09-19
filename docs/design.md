@@ -1088,6 +1088,12 @@ witness construction, and direct implementation lookup must normalize both to
 the source `:seq` receiver. Compiler-owned protocols keep their explicit host
 receiver identities and are not changed by this source-protocol normalization.
 
+An open protocol method return is an interface constraint, not permission to
+erase a concrete implementation return. Direct record/type implementations
+infer their body return first and register that concrete function type unless
+the declared return actually needs contextual construction, such as a function
+return or a closed variant value.
+
 A protocol method whose result preserves its receiver type declares `:self`
 as its return annotation. The compiler substitutes the statically witnessed
 receiver type at each call; it must not merge concrete implementations into a
