@@ -118,14 +118,6 @@ let record_ref_field_value_type_for_target params target keyword =
   | Some receiver -> record_ref_field_value_type params receiver keyword
   | None -> None
 
-let constrain_hinted_symbol_target resolve_named_record target params =
-  match hinted_symbol_target resolve_named_record target with
-  | Some (name, Some hinted_ty) ->
-      Result.map (fun params -> (name, params))
-        (constrain_symbol hinted_ty params name)
-  | Some (name, None) -> Ok (name, params)
-  | None -> Error.error "expected a symbol target"
-
 let record_mutable_field_value_type params receiver keyword =
   match string_assoc_opt receiver params with
   | None -> None
@@ -2984,10 +2976,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let keyword =
           ":" ^ String.sub field_access 2 (String.length field_access - 2)
         in
-        Result.bind
-          (constrain_hinted_symbol_target resolve_named_record target params)
-          (fun (name, params) ->
-            add_record_field_constraint name keyword (TRef expected_ty) params)
+        let field_ty = TRef expected_ty in
+        (match hinted_symbol_target resolve_named_record target with
+        | Some (name, Some hinted_ty) ->
+            Result.bind (constrain_symbol hinted_ty params name) (fun params ->
+                add_record_field_constraint name keyword field_ty params)
+        | Some (name, None) ->
+            add_record_field_constraint name keyword field_ty params
+        | None ->
+            infer_expected (TRecord [ make_field keyword field_ty ]) params
+              target)
     | FList
         [ FSymbol "IDeref/-deref"; FList [ FKeyword keyword; FSymbol receiver ] ] ->
         add_record_field_constraint receiver keyword (TRef expected_ty) params
@@ -3195,10 +3193,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let field_ty =
           if Types.is_dynamic expected_ty then TUnknown else expected_ty
         in
-        Result.bind
-          (constrain_hinted_symbol_target resolve_named_record target params)
-          (fun (name, params) ->
-            add_record_field_constraint name keyword field_ty params)
+        (match hinted_symbol_target resolve_named_record target with
+        | Some (name, Some hinted_ty) ->
+            Result.bind (constrain_symbol hinted_ty params name) (fun params ->
+                add_record_field_constraint name keyword field_ty params)
+        | Some (name, None) ->
+            add_record_field_constraint name keyword field_ty params
+        | None ->
+            infer_expected (TRecord [ make_field keyword field_ty ]) params
+              target)
     | FList
         [
           (FSymbol "__lg_get" | FCoreSymbol Core_get);
@@ -6278,10 +6281,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           ":"
           ^ String.sub field_access 2 (String.length field_access - 2)
         in
-        Result.bind
-          (constrain_hinted_symbol_target resolve_named_record target params)
-          (fun (name, params) ->
-            add_record_field_constraint name keyword TUnknown params)
+        (match hinted_symbol_target resolve_named_record target with
+        | Some (name, Some hinted_ty) ->
+            Result.bind (constrain_symbol hinted_ty params name) (fun params ->
+                add_record_field_constraint name keyword TUnknown params)
+        | Some (name, None) ->
+            add_record_field_constraint name keyword TUnknown params
+        | None ->
+            infer_expected (TRecord [ make_field keyword TUnknown ]) params
+              target)
     | FList [ FSymbol "instance?"; FSymbol type_name; FSymbol value ] -> (
         match resolve_named_record (TOcaml type_name) with
         | TNamed_record _ as record_ty ->

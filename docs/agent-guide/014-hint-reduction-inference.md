@@ -5,11 +5,13 @@ migration without weakening LG's static typing contract.
 
 Status: implemented for the migration slices that blocked chat live-sync,
 outliner, mobile graph, graph runtime, RPC, graph-store seed compilation,
-entity-sync runtime behavior, and stdlib native-state rebuilding. The formal
-chat `@core/runtest` gate passed after the return-payload fix. The broader
-compiler suite still has unrelated remaining failures from the active inference
-refactor, so this document should be treated as the current implementation plan
-plus guardrails, not as a claim that every compiler regression is resolved.
+entity-sync runtime behavior, and stdlib native-state rebuilding. The current
+chat `@core/runtest` gate exposed a later RPC blocker where native field access
+on an expression receiver, such as `(:model s)`, was incorrectly rejected after
+hinted record receivers became parameter evidence. The broader compiler suite
+still has unrelated remaining failures from the active inference refactor, so
+this document should be treated as the current implementation plan plus
+guardrails, not as a claim that every compiler regression is resolved.
 
 Related design contract: `docs/design.md`.
 
@@ -102,6 +104,10 @@ port is still moving.
   set element from the hinted field without requiring a separate parameter hint,
   but later structural call-site expectations must not demote the parameter from
   the hinted record identity to a local anonymous row.
+- Treat native field access receiver hints as parameter evidence only when the
+  receiver is a symbol or hinted symbol. Expression receivers, such as
+  `(:model s)`, receive a structural record-field expectation so existing
+  expression inference can push that context inward.
 - Keep source-owned sorted collection protocols statically typed. `ISorted`
   method sidecars preserve the relationship between entries, keys, and storage,
   while `persistent-tree-set` uses typed helpers for comparator, equality,
@@ -247,6 +253,8 @@ The implemented tests cover these chat-shaped cases:
 - destructured tuple lookup preserving independent positions;
 - callback `assoc` preserving nominal record collection fields;
 - computed record fields receiving field context;
+- native field access on keyword-lookup expression receivers pushing field
+  context into the lookup target;
 - `if-some` plus `assoc` reusing a structural row without generating map access;
 - membership key inference from literal sets;
 - returned record parameters preserving nominal call-site fields.
@@ -334,6 +342,7 @@ dune exec test/compiler_tests.exe -- --filter "forward Datascript result payload
 dune exec test/compiler_tests.exe -- --filter "mutual Datascript result payloads infer without return hints"
 dune exec test/compiler_tests.exe -- --filter "rrbvec of-list infers unhinted Datascript list parameters"
 dune exec test/compiler_tests.exe -- --filter "Datascript entity attrs keep tx_value payloads"
+dune exec test/compiler_tests.exe -- --filter "field access constrains keyword lookup receiver"
 dune exec test/compiler_tests.exe -- --filter "forward-declared functions work as collection callbacks"
 dune exec test/compiler_tests.exe -- --filter "optional protocol values can flow to seqable else branches"
 dune exec test/compiler_tests.exe -- --filter "sorted range queries match ClojureScript"
