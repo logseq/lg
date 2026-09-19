@@ -16195,6 +16195,60 @@ let create ~compile_expr =
                 Result.bind
                   (compile_function_arg scope env xform_form)
                   (fun inferred_xform ->
+                    let normalize_transformer_input collection_element input_ty =
+                      match Types.seqable_constraint_info input_ty with
+                      | None -> input_ty
+                      | Some (requirement, element, storage) ->
+                          let element =
+                            match static_seqable_element_type collection_element with
+                            | Some actual
+                              when Type_solver.is_open element
+                                   || Types.is_dynamic element ->
+                                actual
+                            | Some actual ->
+                                Type_inference_core.refine_type element actual
+                            | None -> element
+                          in
+                          let storage =
+                            if
+                              Type_solver.is_open storage
+                              || Option.is_some
+                                   (Types.seqable_constraint_info storage)
+                            then collection_element
+                            else storage
+                          in
+                          let requirement =
+                            match requirement with
+                            | `Required -> Required
+                            | `Optional -> Optional
+                            | `Optional_sequential -> Optional_sequential
+                          in
+                          TConstraint
+                            (Seqable_constraint
+                               { requirement; element; storage })
+                    in
+                    let normalize_xform_input collection_element = function
+                      | TFn ([ downstream ], TOverloaded_fn transformed_arities) ->
+                          let transformed_arities =
+                            List.map
+                              (fun (arity : fn_arity) ->
+                                match arity.fixed_params with
+                                | [ accumulator; input ] ->
+                                    {
+                                      arity with
+                                      fixed_params =
+                                        [
+                                          accumulator;
+                                          normalize_transformer_input
+                                            collection_element input;
+                                        ];
+                                    }
+                                | _ -> arity)
+                              transformed_arities
+                          in
+                          TFn ([ downstream ], TOverloaded_fn transformed_arities)
+                      | ty -> ty
+                    in
                     let expected_xform_ty =
                       match
                         ( inferred_xform.ty,
@@ -16215,8 +16269,13 @@ let create ~compile_expr =
                               | Ok substitutions ->
                                   Type_solver.apply substitutions
                                     inferred_xform.ty
-                              | Error _ -> inferred_xform.ty)
-                          | _ -> inferred_xform.ty)
+                                  |> normalize_xform_input collection_element
+                              | Error _ ->
+                                  normalize_xform_input collection_element
+                                    inferred_xform.ty)
+                          | _ ->
+                              normalize_xform_input collection_element
+                                inferred_xform.ty)
                       | _ -> inferred_xform.ty
                     in
                     Result.bind
@@ -16244,6 +16303,10 @@ let create ~compile_expr =
                         | [ _; output_ty ], [ _; input_ty ]
                           when argument_compatible input_ty
                                  collection_element ->
+                            let input_ty =
+                              normalize_transformer_input collection_element
+                                input_ty
+                            in
                             let input_name =
                               "__lg_transformer_sequence_input"
                             in
