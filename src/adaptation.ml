@@ -289,20 +289,20 @@ let plan_row_projection ~plan_field type_name expected_fields actual =
                 | Error error -> Error error)
             | None when optional_type expected.ty ->
                 build (Missing_optional_field expected :: field_plans) rest
-            | None when Option.is_some (Types.truthy_constraint_info expected.ty) ->
-                Result.bind
-                  (plan_field expected.ty TNil)
-                  (fun adaptation ->
-                    build
-                      (Missing_constrained_field { expected; adaptation }
-                      :: field_plans)
-                      rest)
             | None when Types.is_record_extension_field expected ->
                 Result.bind
                   (plan_field expected.ty source_ty)
                   (fun adaptation ->
                     build
                       (Missing_extension_field { expected; adaptation }
+                      :: field_plans)
+                      rest)
+            | None when Option.is_some (Types.truthy_constraint_info expected.ty) ->
+                Result.bind
+                  (plan_field expected.ty TNil)
+                  (fun adaptation ->
+                    build
+                      (Missing_constrained_field { expected; adaptation }
                       :: field_plans)
                       rest)
             | None -> Error (Missing_row_field expected.keyword))

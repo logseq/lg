@@ -124,6 +124,11 @@ type when it satisfies the structural requirements. This works in either order
 and through nested fields, without dropping the named record's remaining fields
 or accepting incompatible field types.
 
+An open-row extension field keeps its extension role even when its payload has
+truthiness, sequence, protocol, or other capability evidence. Adapting a missing
+extension field uses the complete static source row as the extension payload,
+then constructs the required capability witness at that boundary.
+
 Membership tests on record fields use the same static collection constraints as
 membership on local values. Resolving a field to a set or map constrains its key
 type, while a vector constrains the key to an integer index. Keyword field access
