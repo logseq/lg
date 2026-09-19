@@ -228,6 +228,19 @@ let allocate_function_local_records env next_type
   let current_env = ref env in
   let current_next_type = ref next_type in
   let items = ref [] in
+  let local_record_cache = ref [] in
+  let same_record_fields left right =
+    List.length left = List.length right
+    && List.for_all2
+         (fun (left : field) (right : field) ->
+           String.equal left.keyword right.keyword
+           && String.equal left.ocaml_name right.ocaml_name
+           && left.mutable_ = right.mutable_
+           && left.runtime_map = right.runtime_map
+           && Types.row_compatible ~expected:left.ty ~actual:right.ty
+           && Types.row_compatible ~expected:right.ty ~actual:left.ty)
+         left right
+  in
   let rec materialize_type = function
     | TPoly_variant _ as ty -> Semantic_type.map_children materialize_type ty
     | TRecord fields when Types.is_homogeneous_record fields ->
@@ -243,27 +256,37 @@ let allocate_function_local_records env next_type
               { field with ty = materialize_type field.ty })
             fields
         in
-        let allocation =
-          allocate_anonymous_record ~owner:"" !current_env !current_next_type
-            fields
-        in
-        current_env := allocation.env;
-        current_next_type := allocation.next_type;
-        if allocation.fresh then
-          items :=
-            !items
-            @ [
-                Type_def
-                  {
-                    type_id = allocation.record.type_id;
-                    type_name = allocation.record.type_name;
-                    type_parameters = allocation.record.type_parameters;
-                    fields = allocation.record.fields;
-                    nominal = false;
-                    location = None;
-                  };
-              ];
-        TNamed_record allocation.record
+        (match
+           !local_record_cache
+           |> List.find_map (fun (cached_fields, record) ->
+                  if same_record_fields cached_fields fields then Some record
+                  else None)
+         with
+        | Some record -> TNamed_record record
+        | None ->
+            let allocation =
+              allocate_anonymous_record ~owner:"" !current_env
+                !current_next_type fields
+            in
+            current_env := allocation.env;
+            current_next_type := allocation.next_type;
+            local_record_cache :=
+              (fields, allocation.record) :: !local_record_cache;
+            if allocation.fresh then
+              items :=
+                !items
+                @ [
+                    Type_def
+                      {
+                        type_id = allocation.record.type_id;
+                        type_name = allocation.record.type_name;
+                        type_parameters = allocation.record.type_parameters;
+                        fields = allocation.record.fields;
+                        nominal = false;
+                        location = None;
+                      };
+                  ];
+            TNamed_record allocation.record)
     | TNullable ty -> TNullable (materialize_type ty)
     | TArray ty -> TArray (materialize_type ty)
     | TRef ty -> TRef (materialize_type ty)
@@ -2189,54 +2212,74 @@ and compile_definition scope env next_type form =
                       (FSymbol "let" :: FVector field_bindings :: body_forms);
                   ]
                 in
-                let param_type_overrides =
-                  match (current_interface, method_name, params) with
-                  | Some "IPrintWithWriter", "-pr-writer", [ _; _; _ ] ->
-                      [
+                  let protocol_method_type protocol_name =
+                    match
+                      Protocol_elaborator.marker scope env protocol_name
+                        method_name
+                    with
+                    | Error _ -> None
+                    | Ok marker ->
+                        let method_ty =
+                          match marker.ty with
+                          | TOverloaded_fn arities ->
+                              arities
+                              |> List.find_opt (fun (candidate : fn_arity) ->
+                                     Option.is_none candidate.rest_param
+                                     && List.length candidate.fixed_params
+                                        = arity)
+                              |> Option.map (fun candidate ->
+                                     TFn
+                                       ( candidate.fixed_params,
+                                         candidate.return_ty ))
+                              |> Option.value ~default:marker.ty
+                          | method_ty -> method_ty
+                        in
+                        Some method_ty
+                  in
+                  let param_type_overrides =
+                    match (current_interface, method_name, params) with
+                    | Some "IPrintWithWriter", "-pr-writer", [ _; _; _ ] ->
+                        [
                         Some receiver_ty;
                         Some (TOcaml "Buffer.t");
                         Some TNil;
                       ]
-                  | Some "ILookup", "-lookup", _receiver :: arguments ->
-                      Some receiver_ty
-                      :: List.map
-                           (fun _ -> Some (Type_solver.fresh ()))
-                           arguments
-                  | Some protocol_name, _, _ -> (
-                      match
-                        Protocol_elaborator.marker scope env protocol_name
-                          method_name
-                      with
-                      | Ok marker ->
-                          let method_ty =
-                            match marker.ty with
-                            | TOverloaded_fn arities ->
-                                arities
-                                |> List.find_opt (fun (candidate : fn_arity) ->
-                                       Option.is_none candidate.rest_param
-                                       && List.length candidate.fixed_params
-                                          = arity)
-                                |> Option.map (fun candidate ->
-                                       TFn
-                                         ( candidate.fixed_params,
-                                           candidate.return_ty ))
-                                |> Option.value ~default:marker.ty
-                            | method_ty -> method_ty
-                          in
-                          Protocol_elaborator.protocol_parameter_overrides
-                            receiver_ty method_ty
-                      | Error _ -> [ Some receiver_ty ])
-                  | None, _, _ -> [ Some receiver_ty ]
-                in
-                if skip_unresolved_print then
-                  compile_methods
-                    (Env.remove (Names.scoped_key scope source_name) env)
+                    | Some "ILookup", "-lookup", _receiver :: arguments ->
+                        Some receiver_ty
+                        :: List.map
+                             (fun _ -> Some (Type_solver.fresh ()))
+                             arguments
+                    | Some protocol_name, _, _ -> (
+                        match protocol_method_type protocol_name with
+                        | Some method_ty ->
+                            Protocol_elaborator.protocol_parameter_overrides
+                              receiver_ty method_ty
+                        | None -> [ Some receiver_ty ])
+                    | None, _, _ -> [ Some receiver_ty ]
+                  in
+                  let method_env, use_open_context =
+                    match current_interface with
+                    | Some protocol_name -> (
+                        match protocol_method_type protocol_name with
+                        | Some method_ty ->
+                            ( Env.with_expected_type
+                                (Some
+                                   (Types.instantiate_receiver_method_type
+                                      receiver_ty method_ty))
+                                env,
+                              true )
+                        | None -> (env, false))
+                    | None -> (env, false)
+                  in
+                  if skip_unresolved_print then
+                    compile_methods
+                      (Env.remove (Names.scoped_key scope source_name) env)
                     items current_interface rest
-                else
-                match
-                  Expression_elaborator.compile_fn ~param_type_overrides scope
-                    env params_form body_forms
-                with
+                  else
+                  match
+                    Expression_elaborator.compile_fn ~param_type_overrides
+                      ~use_open_context scope method_env params_form body_forms
+                  with
                 | Error _ as err -> err
                 | Ok implementation -> (
                     let binding = binding_of_expr ocaml_name implementation in
@@ -2544,11 +2587,11 @@ and compile_definition scope env next_type form =
                        body_forms )
                  with
                  | Ok dispatch, Ok parts ->
-                     let env, next_type, return_type_items, parts =
-                       allocate_function_return_record env next_type parts
-                     in
                      let env, next_type, local_type_items, parts =
                        allocate_function_local_records env next_type parts
+                     in
+                     let env, next_type, return_type_items, parts =
+                       allocate_function_return_record env next_type parts
                      in
                      let method_name = next_multimethod_method_name () in
                      let parameter_tys =
@@ -2807,11 +2850,16 @@ and compile_definition scope env next_type form =
       let apply_scc_substitutions substitutions env =
         Env.fold
           (fun key (binding : binding) env ->
-            Env.add key
+            let binding =
               {
                 binding with
                 ty = Type_solver.apply substitutions binding.ty;
+                scheme = None;
               }
+              |> Types.generalize_binding
+            in
+            Env.add key
+              binding
               env)
           env env
       in
@@ -3103,12 +3151,15 @@ and compile_definition scope env next_type form =
             Ok
               (Env.fold
                  (fun key (binding : binding) env ->
-                   Env.add key
+                   let binding =
                      {
                        binding with
                        ty = Type_solver.apply substitutions binding.ty;
+                       scheme = None;
                      }
-                     env)
+                     |> Types.generalize_binding
+                   in
+                   Env.add key binding env)
                  env env)
       in
       let rec compile_definitions env next_type row_items bindings = function
@@ -3256,11 +3307,11 @@ and compile_definition scope env next_type form =
                      (Source_context.find name_form) error)
             | Ok parts ->
                 let env = !inferred_scc_env in
-                let env, next_type, return_type_items, parts =
-                  allocate_function_return_record env next_type parts
-                in
                 let env, next_type, local_type_items, parts =
                   allocate_function_local_records env next_type parts
+                in
+                let env, next_type, return_type_items, parts =
+                  allocate_function_return_record env next_type parts
                 in
                 let param_tys =
                   parts.param_bindings
@@ -3273,9 +3324,8 @@ and compile_definition scope env next_type form =
                   fn_code ~row_param_type_names:row_param_types parts
                 in
                 let binding =
-                  Types.binding ~row_param_types
-                    ?return_param_index:expr.return_param_index ocaml_name
-                    (Types.align_deferred_param_types expr.ty expr.semantic_expr)
+                  Expression_support.binding_of_expr ~row_param_types
+                    ocaml_name expr
                 in
                 let refined_env =
                   match predeclared_type with
@@ -4649,11 +4699,11 @@ and compile_definition scope env next_type form =
       | Ok parts when unresolved_contextual_type parts.body.ty ->
           Error.error "empty list requires a contextual element type"
       | Ok parts -> (
-          let env, next_type, return_type_items, parts =
-            allocate_function_return_record env next_type parts
-          in
           let env, next_type, local_type_items, parts =
             allocate_function_local_records env next_type parts
+          in
+          let env, next_type, return_type_items, parts =
+            allocate_function_return_record env next_type parts
           in
           let ocaml_name = Names.ocaml_binding_name scope name in
           let param_tys =

@@ -100,10 +100,26 @@
   :fn<persistent-tree-set<value>;value;bool;seq<value>>)
 (signature clojure.core/tree-set-get [value]
   :fn<persistent-tree-set<value>;value;option<value>>)
+(signature clojure.core/tree-set-comparator [value]
+  :fn<persistent-tree-set<value>;fn<value;value;int>>)
+(signature clojure.core/tree-set-equiv [value]
+  :fn<persistent-tree-set<value>;persistent-tree-set<value>;bool>)
+(signature clojure.core/tree-set-count [value]
+  :fn<persistent-tree-set<value>;int>)
+(signature clojure.core/tree-set-empty-like [value]
+  :fn<persistent-tree-set<value>;persistent-tree-set<value>>)
 (signature clojure.core/sorted-set [value]
   :overload<fn<persistent-tree-set<value>>;fn<value;persistent-tree-set<value>>;fn<value;value;persistent-tree-set<value>>;fn<value;value;value;persistent-tree-set<value>>;fn<value;value;value;value;persistent-tree-set<value>>>)
 (signature clojure.core/sorted-set-by [value]
   :overload<fn<fn<value;value;int>;persistent-tree-set<value>>;fn<fn<value;value;int>;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;value;value;persistent-tree-set<value>>>)
+(signature clojure.core/-sorted-seq [entry key storage]
+  :fn<sorted<entry;key;storage>;bool;seq<entry>>)
+(signature clojure.core/-sorted-seq-from [entry key storage]
+  :fn<sorted<entry;key;storage>;key;bool;seq<entry>>)
+(signature clojure.core/-entry-key [entry key storage]
+  :fn<sorted<entry;key;storage>;entry;key>)
+(signature clojure.core/-comparator [entry key storage]
+  :fn<sorted<entry;key;storage>;fn<key;key;int>>)
 (signature clojure.core/mk-bound-fn [entry key storage]
   :fn<sorted<entry;key;storage>;fn<int;int;bool>;key;fn<entry;bool>>)
 (signature clojure.core/subseq [entry key storage]

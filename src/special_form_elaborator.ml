@@ -257,6 +257,8 @@ let narrow_type_predicates scope env condition body =
                | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
                | _ -> false)
            | Error _ -> false)
+    |> List.filter (fun name ->
+           List.mem name (Local_function_elaborator.free_symbols [] body))
   in
   let body =
     List.fold_right
@@ -730,7 +732,129 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   let edn_packable_static_type = Edn_value_elaborator.is_packable in
   let pack_edn_expression = Edn_value_elaborator.pack_expression in
+  let structural_record_projection fields branch =
+    let source = "__lg_branch_record_source" in
+    let source_expr =
+      typed_ir (TRecord fields) (Semantic_ir.Ident source)
+    in
+    let values =
+      List.map
+        (fun (field : field) ->
+          (field, Structural_map.field_expr source_expr field))
+        fields
+    in
+    Semantic_ir.Let
+      ( [ (Semantic_ir.PVar source, branch.semantic_expr) ],
+        (Structural_map.record_expr fields values).semantic_expr )
+  in
+  let rec field_projection_expression expression =
+    match expression with
+    | Semantic_ir.Typed (_, expression)
+    | Semantic_ir.Located (_, _, expression)
+    | Semantic_ir.Constraint (expression, _) ->
+        field_projection_expression expression
+    | Semantic_ir.Let (_, body) -> field_projection_expression body
+    | Semantic_ir.Field _ -> true
+    | _ -> false
+  in
+  let rec record_projection_source = function
+    | Semantic_ir.Typed (_, expression)
+    | Semantic_ir.Located (_, _, expression)
+    | Semantic_ir.Constraint (expression, _) ->
+        record_projection_source expression
+    | Semantic_ir.Ident _ | Semantic_ir.Field _ -> true
+    | _ -> false
+  in
+  let compiler_generated_anonymous_record (record : named_record) =
+    (not record.nominal)
+    && String.length record.type_name > 1
+    && record.type_name.[0] = 't'
+    && String.for_all
+         (fun character -> character >= '0' && character <= '9')
+         (String.sub record.type_name 1 (String.length record.type_name - 1))
+  in
+  let annotated_anonymous_record expression =
+    expression
+    |> Semantic_ir.type_annotations
+    |> List.find_map (function
+         | TNamed_record record
+           when compiler_generated_anonymous_record record ->
+             Some record
+         | _ -> None)
+  in
+  let branch_anonymous_record (branch : typed_expr) =
+    match branch.ty with
+    | TNamed_record record when compiler_generated_anonymous_record record ->
+        Some record
+    | _ -> annotated_anonymous_record branch.semantic_expr
+  in
+  let anonymous_branch_merge_target result_ty left right =
+    match result_ty with
+    | TRecord _ -> (
+        match (branch_anonymous_record left, branch_anonymous_record right) with
+        | Some left_record, Some right_record -> (
+            match
+              merge_branch_types
+                (TNamed_record left_record)
+                (TNamed_record right_record)
+            with
+            | Some (TNamed_record record) -> TNamed_record record
+            | Some _ | None -> result_ty)
+        | Some record, None
+        | None, Some record
+          when Types.row_compatible ~expected:result_ty
+                 ~actual:(TNamed_record record) ->
+            TNamed_record record
+        | _ -> result_ty)
+    | _ -> result_ty
+  in
   let rec adapt_branch_expression env result_ty (branch : typed_expr) =
+    let branch_anonymous_record = branch_anonymous_record branch in
+    let structural_record_projection_result =
+      match (result_ty, branch.ty) with
+      | TRecord fields, TRecord source_fields
+        when Types.is_homogeneous_record fields
+             && Types.is_homogeneous_record source_fields
+             && Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
+          Some branch.semantic_expr
+      | TRecord fields, TRecord _
+        when ((not (Types.equal result_ty branch.ty))
+             || Option.is_some branch_anonymous_record)
+             && Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
+          Some (structural_record_projection fields branch)
+      | TRecord fields, TRecord _
+        when Types.equal result_ty branch.ty
+             && record_projection_source branch.semantic_expr ->
+          Some (structural_record_projection fields branch)
+      | _ -> None
+    in
+    let non_nominal_named_record_projection =
+      let source_record =
+        match branch.ty with
+        | TNamed_record record -> Some record
+        | _ -> branch_anonymous_record
+      in
+      match (result_ty, source_record) with
+      | TNamed_record target_record, Some source_record
+        when (not target_record.nominal)
+             && (not source_record.nominal)
+             && not (Type_id.equal target_record.type_id source_record.type_id)
+             && Types.row_compatible ~expected:result_ty
+                  ~actual:(TNamed_record source_record) ->
+          let branch =
+            {
+              branch with
+              ty = TNamed_record source_record;
+              record_values = None;
+            }
+          in
+          Some (Structural_map.as_named_record target_record branch).semantic_expr
+      | _ -> None
+    in
+    match (structural_record_projection_result, non_nominal_named_record_projection) with
+    | Some expression, _ -> Ok expression
+    | None, Some expression -> Ok expression
+    | None, None -> (
     match inject_contextual_closed_sum env ~expected:result_ty branch with
     | Some result -> Result.map (fun value -> value.semantic_expr) result
     | None -> (
@@ -771,6 +895,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               if success_identity && error_identity then branch.semantic_expr
               else Semantic_ir.Match (branch.semantic_expr, [success; error]))
             (adapt "Error" target_error source_error))
+    | ( (TNullable _target_inner
+        | TOcaml_app ("option", [ _target_inner ])),
+        (TNullable (TUnknown | TMeta _ | TVar _)
+        | TOcaml_app ("option", [ (TUnknown | TMeta _ | TVar _) ])) ) ->
+        Ok branch.semantic_expr
     | ( (TNullable target_inner
         | TOcaml_app ("option", [ target_inner ])),
         (TNullable source_inner
@@ -803,6 +932,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       when (match source_ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
            && (match Semantic_ir.unlocated branch.semantic_expr with
               | Semantic_ir.Apply _ | Semantic_ir.Uncurried_apply _ -> true
+              | Semantic_ir.Let _ -> true
+              | expression when field_projection_expression expression -> true
               | _ -> false) ->
         Ok branch.semantic_expr
     | ( (TNullable target_inner
@@ -928,7 +1059,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       when Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
         let branch = { branch with record_values = None } in
         Ok (Structural_map.as_named_record record branch).semantic_expr
-    | TRecord fields, (TRecord _ | TNamed_record _)
+    | TNamed_record target_record, TNamed_record source_record
+      when (not target_record.nominal)
+           && (not source_record.nominal)
+           && Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
+        let branch = { branch with record_values = None } in
+        Ok (Structural_map.as_named_record target_record branch).semantic_expr
+    | TRecord fields, TNamed_record _
       when Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
         Ok
           (Structural_map.record_expr fields
@@ -1015,7 +1152,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           (if Types.equal branch.ty TUnknown then branch.semantic_expr
            else
              coerce_expression_to_type result_ty branch.ty
-               branch.semantic_expr))
+               branch.semantic_expr)))
   in
   let rec requires_branch_adaptation = function
     | TOcaml_app ("result", _) -> true
@@ -1028,20 +1165,31 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | TArray _ -> true
     | TSeq _ -> true
     | TRecord _ -> true
+    | TNamed_record record -> not record.nominal
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         requires_branch_adaptation inner
     | _ -> false
   in
   let adapt_merged_branches env result_ty left left_code right right_code =
-    if requires_branch_adaptation result_ty then
-      match
-        ( adapt_branch_expression env result_ty left,
-          adapt_branch_expression env result_ty right )
-      with
-      | (Error _ as error), _ -> error
-      | _, (Error _ as error) -> error
-      | Ok left, Ok right -> Ok (left, right)
-    else Ok (left_code, right_code)
+    let _ = (left_code, right_code) in
+    let result_ty = anonymous_branch_merge_target result_ty left right in
+    match
+      ( adapt_branch_expression env result_ty left,
+        adapt_branch_expression env result_ty right )
+    with
+    | (Error _ as error), _ -> error
+    | _, (Error _ as error) -> error
+    | Ok left, Ok right -> Ok (result_ty, left, right)
+  in
+  let adapt_branch_pair env result_ty left right =
+    let result_ty = anonymous_branch_merge_target result_ty left right in
+    match
+      ( adapt_branch_expression env result_ty left,
+        adapt_branch_expression env result_ty right )
+    with
+    | (Error _ as error), _ -> error
+    | _, (Error _ as error) -> error
+    | Ok left, Ok right -> Ok (result_ty, left, right)
   in
   let rec compile_vector scope env forms =
     let compile_tuple expected_types =
@@ -1714,7 +1862,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     let option_expression =
       let env = Env.with_expected_type None env in
       match option_form with
-      | FList [ FSymbol "first"; collection_form ] -> (
+      | FList [ FSymbol first_name; collection_form ]
+        when has_source_name first_name "first"
+             || has_source_name first_name "__lg_first" -> (
           match compile_expr scope env collection_form with
           | Error _ as error -> error
           | Ok collection -> (
@@ -1771,7 +1921,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     none_expr none_code
                 with
                 | Error _ as error -> error
-                | Ok (some_code, none_code) ->
+                | Ok (result_ty, some_code, none_code) ->
                     Ok
                       (typed_ir result_ty
                          (Semantic_ir.Let
@@ -1799,7 +1949,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     none_expr none_code
                 with
                 | Error _ as error -> error
-                | Ok (some_code, none_code) ->
+                | Ok (result_ty, some_code, none_code) ->
                     Ok
                       (typed_ir result_ty
                          (Semantic_ir.Let
@@ -1842,7 +1992,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     none_expr none_code
                 with
                 | Error _ as error -> error
-                | Ok (some_code, none_code) ->
+                | Ok (result_ty, some_code, none_code) ->
                     let body =
                       if require_truthy then
                         Semantic_ir.If
@@ -1881,7 +2031,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         none_expr none_code
                     with
                     | Error _ as error -> error
-                    | Ok (some_code, none_code) ->
+                    | Ok (result_ty, some_code, none_code) ->
                         let some_code =
                           if require_truthy then
                             Semantic_ir.If
@@ -2578,26 +2728,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 | (Error _ as error), _ -> error
                 | _, (Error _ as error) -> error
                 | Ok then_expr, Ok else_expr -> (
-                    match
-                      ( adapt_branch_expression env result_ty then_expr,
-                        adapt_branch_expression env result_ty else_expr )
-                    with
-                    | (Error _ as error), _ -> error
-                    | _, (Error _ as error) -> error
-                    | Ok then_code, Ok else_code ->
+                    match adapt_branch_pair env result_ty then_expr else_expr with
+                    | Error _ as error -> error
+                    | Ok (result_ty, then_code, else_code) ->
                         Ok
                           (typed_ir result_ty
                              (Semantic_ir.If
                                 (condition_code, then_code, else_code)))))
             | Some (result_ty, _, _)
               when requires_branch_adaptation result_ty -> (
-                match
-                  ( adapt_branch_expression env result_ty then_expr,
-                    adapt_branch_expression env result_ty else_expr )
-                with
-                | (Error _ as error), _ -> error
-                | _, (Error _ as error) -> error
-                | Ok then_code, Ok else_code ->
+                match adapt_branch_pair env result_ty then_expr else_expr with
+                | Error _ as error -> error
+                | Ok (result_ty, then_code, else_code) ->
                     Ok
                       (typed_ir result_ty
                          (Semantic_ir.If
@@ -2725,7 +2867,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                  (TOcaml_app ("option", [ TUnknown ]))
                  (Semantic_ir.Constructor ("None", None))))
     | _ -> (
-        let operand_env = Env.with_expected_type None env in
+        let operand_env =
+          match (operator, Env.expected_type env) with
+          | `Or, Some (TNullable _ | TOcaml_app ("option", [ _ ])) -> env
+          | _ -> Env.with_expected_type None env
+        in
         match compile_args_for scope operand_env forms with
         | Error _ as err -> err
         | Ok expressions -> (
@@ -2872,42 +3018,69 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             in
             let result_ty =
               let last_index = List.length expressions - 1 in
-              expressions
-              |> List.mapi (fun index expression ->
-                     let last = index = last_index in
-                     let value_ty =
-                       match (operator, last, expression.ty) with
-                       | ( `And,
-                           false,
-                           (TNullable payload_ty
-                           | TOcaml_app ("option", [ payload_ty ])) )
-                         when payload_is_always_truthy payload_ty ->
-                           TNil
-                       | `And, false, ty -> (
-                           match Types.truthy_constraint_info ty with
-                           | Some
-                               (TNullable payload_ty
-                               | TOcaml_app ("option", [ payload_ty ]))
-                             when payload_is_always_truthy payload_ty ->
-                               TNil
-                           | Some _ | None -> expression.ty)
-                       | ( `Or,
-                           false,
-                           (TNullable payload_ty
-                           | TOcaml_app ("option", [ payload_ty ])) ) ->
-                           payload_ty
-                       | _ -> expression.ty
-                     in
-                     Some (Types.constraint_value_type value_ty))
-              |> List.filter_map Fun.id
-              |> function
-              | [] -> None
-              | first :: rest ->
-                  List.fold_left
-                    (fun merged ty ->
-                      Option.bind merged (fun merged ->
-                          merge_branch_types merged ty))
-                    (Some first) rest
+              let expression_types =
+                expressions
+                |> List.mapi (fun index expression ->
+                       let last = index = last_index in
+                       let value_ty =
+                         match (operator, last, expression.ty) with
+                         | ( `And,
+                             false,
+                             (TNullable payload_ty
+                             | TOcaml_app ("option", [ payload_ty ])) )
+                           when payload_is_always_truthy payload_ty ->
+                             TNil
+                         | `And, false, ty -> (
+                             match Types.truthy_constraint_info ty with
+                             | Some
+                                 (TNullable payload_ty
+                                 | TOcaml_app ("option", [ payload_ty ]))
+                               when payload_is_always_truthy payload_ty ->
+                                 TNil
+                             | Some _ | None -> expression.ty)
+                         | ( `Or,
+                             false,
+                             (TNullable payload_ty
+                             | TOcaml_app ("option", [ payload_ty ])) ) ->
+                             payload_ty
+                         | _ -> expression.ty
+                       in
+                       Some (Types.constraint_value_type value_ty))
+                |> List.filter_map Fun.id
+              in
+              let merged =
+                match expression_types with
+                | [] -> None
+                | first :: rest ->
+                    List.fold_left
+                      (fun merged ty ->
+                        Option.bind merged (fun merged ->
+                            merge_branch_types merged ty))
+                      (Some first) rest
+              in
+              match operator with
+              | `Or
+                when List.for_all
+                       (fun expression ->
+                         match expression.ty with
+                         | TNil | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                             true
+                         | _ -> false)
+                       expressions -> (
+                  expressions
+                  |> List.filter_map (fun expression ->
+                         optional_payload expression.ty)
+                  |> function
+                  | [] -> merged
+                  | first :: rest ->
+                      List.fold_left
+                        (fun merged ty ->
+                          Option.bind merged (fun merged ->
+                              merge_branch_types merged ty))
+                        (Some first) rest
+                      |> Option.map (fun payload_ty ->
+                             TOcaml_app ("option", [ payload_ty ])))
+              | _ -> merged
             in
             match result_ty with
             | Some result_ty ->
@@ -3239,7 +3412,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | _ ->
               Error.error
                 ("unsupported match pattern "
-               ^ Macro_expander.string_of_form pattern))
+               ^ Macro_expander.string_of_form pattern
+               ^ " for " ^ Types.source_name target_ty))
       in
       Result.map
         (fun (compiled, bindings) ->
@@ -3327,10 +3501,75 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | FKeyword _ -> Some TKeyword
       | _ -> None
     in
+    let expected_binding_type_from_body binding =
+      let resolve_named_record =
+        Function_elaborator.infer_named_record scope env
+      in
+      let expected_from_call name args =
+        match Resolver.lookup_binding scope env name with
+        | Ok { ty = TFn (parameter_tys, _); _ }
+          when List.length parameter_tys = List.length args ->
+            List.combine parameter_tys args
+            |> List.find_map (function
+                 | expected_ty, FSymbol name when String.equal name binding ->
+                     Some (resolve_named_record expected_ty)
+                 | _ -> None)
+        | Ok { ty = TOverloaded_fn arities; _ } -> (
+            let selected =
+              List.find_opt
+                (fun (arity : fn_arity) ->
+                  Option.is_none arity.rest_param
+                  && List.length arity.fixed_params = List.length args)
+                arities
+            in
+            match selected with
+            | Some arity ->
+                List.combine arity.fixed_params args
+                |> List.find_map (function
+                     | expected_ty, FSymbol name
+                       when String.equal name binding ->
+                         Some (resolve_named_record expected_ty)
+                     | _ -> None)
+            | None -> None)
+        | Ok _ | Error _ -> None
+      in
+      let rec find = function
+        | FList (FSymbol name :: args) -> (
+            match expected_from_call name args with
+            | Some _ as expected -> expected
+            | None -> List.find_map find args)
+        | FList forms | FVector forms -> List.find_map find forms
+        | FMap pairs ->
+            List.find_map
+              (fun (key, value) ->
+                match find key with
+                | Some _ as expected -> expected
+                | None -> find value)
+              pairs
+        | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FBool _
+        | FRegex _ | FSymbol _ | FKeyword _ | FCoreSymbol _ ->
+            None
+      in
+      find
+    in
+    let target_expected_from_result_payload (pattern, result) =
+      match pattern with
+      | FList [ FSymbol "Ok"; FSymbol binding ] ->
+          Option.map
+            (fun payload_ty -> TOcaml_app ("result", [ payload_ty; TUnknown ]))
+            (expected_binding_type_from_body binding result)
+      | FList [ FSymbol "Error"; FSymbol binding ] ->
+          Option.map
+            (fun payload_ty -> TOcaml_app ("result", [ TUnknown; payload_ty ]))
+            (expected_binding_type_from_body binding result)
+      | _ -> None
+    in
     let target_expected pairs =
       pairs
-      |> List.filter_map (fun (pattern, _) ->
-             target_expected_from_pattern pattern)
+      |> List.filter_map (fun ((pattern, _) as pair) ->
+             match target_expected_from_pattern pattern with
+             | Some _ as expected -> expected
+             | None -> target_expected_from_result_payload pair)
       |> function
       | [] -> None
       | first :: rest ->
@@ -3343,10 +3582,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     match parse_pairs [] clauses with
     | Error _ as err -> err
     | Ok pairs -> (
-    match
-      compile_expr scope
-        (Env.with_expected_type (target_expected pairs) env)
-        target_form
+        let expected_target_ty = target_expected pairs in
+        match
+          compile_expr scope
+            (Env.with_expected_type expected_target_ty env)
+            target_form
       |> Result.map unwrap_option_storage
     with
     | Error _ as err -> err
@@ -3579,19 +3819,25 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               with
               | _, (Error _ as err) -> err
               | Semantic_ir.Match_guarded (_, cases), Ok ty ->
-                  let body_expression =
-                    coerce_expression_to_type ty body.ty body.semantic_expr
-                  in
-                  let cases =
-                    List.map
-                      (fun (pattern, guard, expression) ->
-                        ( pattern,
-                          guard,
-                          coerce_expression_to_type ty handlers.ty expression
-                        ))
-                      cases
-                  in
-                  Ok (typed_ir ty (Semantic_ir.Try (body_expression, cases)))
+                  Result.bind
+                    (adapt_branch_expression env ty body)
+                    (fun body_expression ->
+                      let rec adapt_cases adapted = function
+                        | [] -> Ok (List.rev adapted)
+                        | (pattern, guard, expression) :: rest ->
+                            Result.bind
+                              (adapt_branch_expression env ty
+                                 (typed_ir handlers.ty expression))
+                              (fun expression ->
+                                adapt_cases
+                                  ((pattern, guard, expression) :: adapted)
+                                  rest)
+                      in
+                      Result.map
+                        (fun cases ->
+                          typed_ir ty
+                            (Semantic_ir.Try (body_expression, cases)))
+                        (adapt_cases [] cases))
               | _, Ok _ ->
                   Error.error "internal error: malformed try handlers"))
     in
@@ -3814,13 +4060,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             | (Error _ as err), _ -> err
             | _, (Error _ as err) -> err
             | Ok condition_code, Ok result_ty ->
-                (match
-                   ( adapt_branch_expression env result_ty then_expr,
-                     adapt_branch_expression env result_ty else_expr )
-                 with
-                | (Error _ as error), _ -> error
-                | _, (Error _ as error) -> error
-                | Ok then_expr, Ok else_expr ->
+                (match adapt_branch_pair env result_ty then_expr else_expr with
+                | Error _ as error -> error
+                | Ok (result_ty, then_expr, else_expr) ->
                     Ok
                       (typed_ir result_ty
                          (Semantic_ir.If
@@ -3897,7 +4139,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                               some_code none_expr none_code
                           with
                           | Error _ as error -> error
-                          | Ok (some_code, none_code) ->
+                          | Ok (result_ty, some_code, none_code) ->
                               let node =
                                 match Env.target env with
                                 | Target.Melange ->
@@ -4551,6 +4793,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             | Ok substitutions ->
                                 Type_solver.apply substitutions fallback
                             | Error _ -> fallback)
+                        | Some (TNamed_record _ as ty)
+                          when Types.row_compatible ~expected:ty
+                                 ~actual:fallback ->
+                            ty
                         | Some _ | None -> fallback)
                       names inferred_param_tys
               in
@@ -4686,12 +4932,87 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   Result.bind
                     (adapt_initials [] param_tys value_forms values)
                     (fun initial_values ->
+                  let named_record_for_exact_fields fields =
+                    let same_layout (record : named_record) =
+                      List.length record.fields = List.length fields
+                      && List.for_all
+                           (fun (field : field) ->
+                             match Types.find_field field.keyword record.fields with
+                             | Some actual -> Types.equal field.ty actual.ty
+                             | None -> false)
+                           fields
+                    in
+                    Env.filter_record_bindings
+                      (fun _ (binding : binding) ->
+                        match binding.ty with
+                        | TNamed_record record when same_layout record ->
+                            Some record
+                        | _ -> None)
+                      env
+                    |> function
+                    | [ record ] -> Some record
+                    | _ -> None
+                  in
                   let params =
                     List.map2
                       (fun name (identity, param_ty) ->
+                        let name = Names.sanitize_name name in
+                        let pattern =
+                          match param_ty with
+                          | TSeq (TNamed_record record) ->
+                              Semantic_ir.PConstraint
+                                ( Semantic_ir.PVar name,
+                                  Structural_map.record_type_application record
+                                  ^ " Seq.t" )
+                          | TOcaml_app (type_name, [ TNamed_record record ])
+                            when Types.is_next_seq_type_name type_name ->
+                              Semantic_ir.PConstraint
+                                ( Semantic_ir.PVar name,
+                                  Structural_map.record_type_application record
+                                  ^ " Seq.t" )
+                          | TSeq inner -> (
+                              match
+                                Function_elaborator.infer_named_record scope env
+                                  inner
+                              with
+                              | TNamed_record record ->
+                                  Semantic_ir.PConstraint
+                                    ( Semantic_ir.PVar name,
+                                      Structural_map.record_type_application record
+                                      ^ " Seq.t" )
+                              | TRecord fields -> (
+                                  match named_record_for_exact_fields fields with
+                                  | Some record ->
+                                      Semantic_ir.PConstraint
+                                        ( Semantic_ir.PVar name,
+                                          Structural_map.record_type_application record
+                                          ^ " Seq.t" )
+                                  | None -> capability_pattern name param_ty)
+                              | _ -> capability_pattern name param_ty)
+                          | TOcaml_app (type_name, [ inner ])
+                            when Types.is_next_seq_type_name type_name -> (
+                              match
+                                Function_elaborator.infer_named_record scope env
+                                  inner
+                              with
+                              | TNamed_record record ->
+                                  Semantic_ir.PConstraint
+                                    ( Semantic_ir.PVar name,
+                                      Structural_map.record_type_application record
+                                      ^ " Seq.t" )
+                              | TRecord fields -> (
+                                  match named_record_for_exact_fields fields with
+                                  | Some record ->
+                                      Semantic_ir.PConstraint
+                                        ( Semantic_ir.PVar name,
+                                          Structural_map.record_type_application record
+                                          ^ " Seq.t" )
+                                  | None -> capability_pattern name param_ty)
+                              | _ -> capability_pattern name param_ty)
+                          | _ -> capability_pattern name param_ty
+                        in
                         located_pattern identity
-                          (capability_pattern (Names.sanitize_name name)
-                             param_ty))
+                          pattern)
                       names (List.combine identities param_tys)
                   in
                   Ok
@@ -4726,14 +5047,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             rest
       | _ -> List.rev names
     in
-    let rec remaining_value_forms values = function
-      | _pattern :: value :: rest ->
-          remaining_value_forms (value :: values) rest
-      | _ -> List.rev values
-    in
     let inferred_binding_type env name value_form rest =
       let names = name :: remaining_binding_names [] rest in
-      let forms = remaining_value_forms [] rest @ body_forms in
+      let forms =
+        match rest with
+        | [] -> body_forms
+        | _ -> [FList (FSymbol "let" :: FVector rest :: body_forms)]
+      in
       let local_names = List.sort_uniq String.compare names in
       let rec nested_function_parameters = function
         | FList
@@ -4823,7 +5143,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           ~resolve_named_record params forms
       with
       | Ok inferred ->
-          List.assoc_opt name inferred |> Option.value ~default:TUnknown
+          let inferred_ty =
+            List.assoc_opt name inferred |> Option.value ~default:TUnknown
+          in
+          Type_inference.refine_type initial_ty inferred_ty
       | Error _ -> TUnknown
     in
     let expected_value_env env pattern value_form rest =
@@ -4844,7 +5167,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             |> List.sort_uniq String.compare
           in
           let params = List.map (fun name -> (name, TUnknown)) names in
-          let forms = remaining_value_forms [] rest @ body_forms in
+          let forms =
+            match rest with
+            | [] -> body_forms
+            | _ -> [FList (FSymbol "let" :: FVector rest :: body_forms)]
+          in
           let lookup_function_ty =
             Expression_support.lookup_function_ty scope env
           in
@@ -4964,6 +5291,20 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         let env_bindings =
                           match (pattern, bindings) with
                           | FSymbol name, [ binding ] ->
+                              let inferred_ty =
+                                inferred_binding_type env name value_form rest
+                              in
+                              let binding_ty =
+                                match (binding.ty, inferred_ty) with
+                                | ( TRef (TVector (TUnknown | TMeta _ | TVar _)),
+                                    TRef (TVector element_ty) )
+                                  when not
+                                         (match element_ty with
+                                         | TUnknown | TMeta _ | TVar _ -> true
+                                         | _ -> false) ->
+                                    TRef (TVector element_ty)
+                                | _ -> binding.ty
+                              in
                               let constant_keyword =
                                 match value_form with
                                 | FKeyword keyword -> Some keyword
@@ -4976,7 +5317,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 Types.binding
                                   ?return_param_index:value.return_param_index
                                   ?constant_keyword ~false_non_nil_names
-                                  binding.ocaml_name binding.ty
+                                  binding.ocaml_name binding_ty
                                 |> generalize_function_value value_form
                               in
                               [ (Names.scoped_key scope name, local_binding) ]
@@ -5008,16 +5349,28 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 | None -> ir_bindings
                                 | Some binding -> binding :: ir_bindings
                               in
+                              let local_pattern
+                                  (binding : Destructure.local_binding) =
+                                let named_ty =
+                                  Function_elaborator.infer_named_record
+                                    scope env binding.ty
+                                in
+                                let pattern =
+                                  if has_capability binding.ty then
+                                    capability_pattern binding.ocaml_name
+                                      binding.ty
+                                  else Semantic_ir.PVar binding.ocaml_name
+                                in
+                                match named_ty with
+                                | TNamed_record _ when not (has_capability binding.ty) ->
+                                    Semantic_ir.PTyped (pattern, named_ty)
+                                | _ -> pattern
+                              in
                               bindings
                               |> List.fold_left
                                    (fun acc
                                         (binding : Destructure.local_binding) ->
-                                     let pattern =
-                                       if has_capability binding.ty then
-                                         capability_pattern binding.ocaml_name
-                                           binding.ty
-                                       else Semantic_ir.PVar binding.ocaml_name
-                                     in
+                                     let pattern = local_pattern binding in
                                      ( located_pattern binding.identity pattern,
                                        binding.semantic_expr )
                                      :: acc)

@@ -224,6 +224,10 @@ and row_field_plan =
       adaptation : t;
     }
   | Missing_optional_field of field
+  | Missing_constrained_field of {
+      expected : field;
+      adaptation : t;
+    }
   | Missing_extension_field of {
       expected : field;
       adaptation : t;
@@ -285,6 +289,14 @@ let plan_row_projection ~plan_field type_name expected_fields actual =
                 | Error error -> Error error)
             | None when optional_type expected.ty ->
                 build (Missing_optional_field expected :: field_plans) rest
+            | None when Option.is_some (Types.truthy_constraint_info expected.ty) ->
+                Result.bind
+                  (plan_field expected.ty TNil)
+                  (fun adaptation ->
+                    build
+                      (Missing_constrained_field { expected; adaptation }
+                      :: field_plans)
+                      rest)
             | None when Types.is_record_extension_field expected ->
                 Result.bind
                   (plan_field expected.ty source_ty)
@@ -471,6 +483,25 @@ let overload_covers_variadic_identity expected_arity actual_arities =
                       actual_arities))
         variadic_fixed_count
 
+let external_record_type = function
+  | TOcaml type_name -> (
+      match Ocaml_signature.record_type type_name with
+      | Ok (TNamed_record _ as record) -> record
+      | Ok _ | Error _ -> TOcaml type_name)
+  | TOcaml_app (type_name, arguments) -> (
+      match Ocaml_signature.record_type type_name with
+      | Ok (TNamed_record record)
+        when List.length record.type_parameters = List.length arguments ->
+          let substitutions =
+            List.combine record.type_parameters arguments
+            |> List.map (fun (parameter, argument) ->
+                   (Type_solver.Declared parameter, argument))
+            |> Type_solver.of_list
+          in
+          Type_solver.apply substitutions (TNamed_record record)
+      | Ok _ | Error _ -> TOcaml_app (type_name, arguments))
+  | ty -> ty
+
 let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
     ~sequence_satisfies expected actual =
   let row_type_name =
@@ -479,6 +510,7 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
     | None, TRecord fields -> row_type_name_for fields
     | None, _ -> None
   in
+  let actual = external_record_type actual in
   match expected with
   | TRecord _ when open_leaf (Types.constraint_value_type actual) -> Ok Identity
   | TRecord expected_fields -> (
@@ -680,6 +712,20 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                 plan_function_overload ~row_type_name_for
                   ~protocol_satisfies ~sequence_satisfies expected actual
                   expected_arities actual_params actual_return
+            | TPoly_variant _, TOcaml name -> (
+                match Ocaml_signature.of_compiler_type
+                        (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
+                | TPoly_variant _ as manifest ->
+                    plan ~row_type_name_for ~protocol_satisfies
+                      ~sequence_satisfies expected manifest
+                | _ -> Error (Incompatible_types { expected; actual }))
+            | TOcaml name, TPoly_variant _ -> (
+                match Ocaml_signature.of_compiler_type
+                        (Lg_compiler_support.Ocaml_value.Constructor (name, [])) with
+                | TPoly_variant _ as manifest ->
+                    plan ~row_type_name_for ~protocol_satisfies
+                      ~sequence_satisfies manifest actual
+                | _ -> Error (Incompatible_types { expected; actual }))
             | TPoly_variant expected_row, TPoly_variant actual_row
               when Variant_row.compatible expected_row actual_row ->
                 let rec plan_tags planned = function
@@ -865,19 +911,12 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                     | source ->
                         match sequence_element_type source with
                         | None -> Ok None
-                        | Some actual_element
-                          when (Option.is_some (Types.record_fields actual_element)
-                                && (match expected_element with
-                                    | TRecord _ -> true
-                                    | TNamed_record record -> not record.nominal
-                                    | _ -> false))
-                               || (match expected_element, actual_element with
-                                   | TPoly_variant _, TPoly_variant _ -> true
-                                   | _ -> false) ->
+                        | Some actual_element ->
                             Result.map
-                              (fun adaptation -> Some (actual_element, adaptation))
+                              (function
+                                | Identity -> None
+                                | adaptation -> Some (actual_element, adaptation))
                               (plan_element expected_element actual_element)
-                        | Some _ -> Ok None
                   in
                   Result.map
                     (fun element_adaptation ->
@@ -1084,6 +1123,11 @@ and plan_overloaded_callback ~row_type_name_for ~protocol_satisfies
 
 and plan_callback ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
     expected actual expected_params expected_return actual_params actual_return =
+  let thunk_host_shape_identity =
+    match (expected_params, actual_params) with
+    | [], [ TUnit ] | [ TUnit ], [] -> Types.equal expected_return actual_return
+    | _ -> false
+  in
   let normalize_thunk_parameters = function [] -> [ TUnit ] | params -> params in
   let expected_params = normalize_thunk_parameters expected_params in
   let actual_params = normalize_thunk_parameters actual_params in
@@ -1101,13 +1145,37 @@ and plan_callback ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
       List.map (Type_solver.apply substitutions) actual_params
     in
     let actual_return = Type_solver.apply substitutions actual_return in
+    let structural_callback_accepts_record structural incoming =
+      match (Types.record_fields structural, external_record_type incoming) with
+      | Some structural_fields, TNamed_record incoming_record ->
+          List.for_all
+            (fun (structural_field : field) ->
+              match
+                List.find_opt
+                  (fun (incoming_field : field) ->
+                    String.equal incoming_field.keyword structural_field.keyword)
+                  incoming_record.fields
+              with
+              | Some incoming_field ->
+                  identity_compatible structural_field.ty incoming_field.ty
+                  || open_leaf structural_field.ty
+                  || open_leaf incoming_field.ty
+              | None -> false)
+            structural_fields
+      | _ -> false
+    in
     let rec plan_arguments adaptations expected actual =
       match (expected, actual) with
       | [], [] -> Ok (List.rev adaptations)
       | expected :: expected_rest, actual :: actual_rest ->
-          Result.bind
-            (plan ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
-               actual expected)
+          let planned =
+            if structural_callback_accepts_record actual expected then
+              Ok Identity
+            else
+              plan ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
+                actual expected
+          in
+          Result.bind planned
             (fun adaptation ->
               plan_arguments (adaptation :: adaptations) expected_rest
                 actual_rest)
@@ -1119,6 +1187,8 @@ and plan_callback ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
         Result.map
           (fun result_adaptation ->
             if
+              (Types.equal expected actual || thunk_host_shape_identity)
+              &&
               List.for_all
                 (function Identity -> true | _ -> false)
                 argument_adaptations

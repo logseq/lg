@@ -704,11 +704,14 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                           | TOverloaded_fn [ arity ] -> Some arity.return_ty
                           | _ -> None
                         in
-                        let use_return_context =
-                          Option.fold ~none:false
-                            ~some:contains_contextual_closed_sum
-                            expected_return_ty
-                        in
+                          let use_return_context =
+                            Option.fold ~none:false
+                              ~some:(fun return_ty ->
+                                match return_ty with
+                                | TFn _ | TOverloaded_fn _ -> true
+                                | _ -> contains_contextual_closed_sum return_ty)
+                              expected_return_ty
+                          in
                         let method_env =
                           if use_return_context then
                             Env.with_expected_type (Some expected_method_ty) env

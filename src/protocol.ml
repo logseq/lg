@@ -335,18 +335,21 @@ let infer_constraint_substitutions env substitutions constraint_ty receiver_ty =
          ( Types.protocol_witness_method_types witness_ty,
            witness_implementations env protocol_id receiver_ty )
        with
-      | Some expected_methods, Some implementations
-        when List.length expected_methods = List.length implementations ->
-          List.fold_left2
-            (fun substitutions expected (implementation : binding) ->
-              match (expected, implementation.ty) with
-              | ( TFn (_ :: expected_parameters, expected_return),
-                  TFn (_ :: actual_parameters, actual_return) )
-                when List.length expected_parameters
-                     = List.length actual_parameters ->
-                  let substitutions =
-                    Type_solver.unify_lists substitutions expected_parameters
-                      actual_parameters
+        | Some expected_methods, Some implementations
+          when List.length expected_methods = List.length implementations ->
+            List.fold_left2
+              (fun substitutions expected (implementation : binding) ->
+                match (expected, implementation.ty) with
+                | ( TFn (_ :: expected_parameters, expected_return),
+                    TFn (actual_receiver :: actual_parameters, actual_return) )
+                  when List.length expected_parameters
+                       = List.length actual_parameters
+                       && Result.is_ok
+                            (Type_solver.unify Type_solver.empty receiver_ty
+                               actual_receiver) ->
+                    let substitutions =
+                      Type_solver.unify_lists substitutions expected_parameters
+                        actual_parameters
                     |> Result.value ~default:substitutions
                   in
                   Type_solver.unify substitutions expected_return actual_return

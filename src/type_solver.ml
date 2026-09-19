@@ -414,7 +414,9 @@ let resolve_head substitutions ty =
   in
   resolve [] ty
 
-let rec unify substitutions left right =
+let unify ?(resolve_alias = fun _ -> None) substitutions left right =
+ let active_alias_pairs = ref [] in
+ let rec unify substitutions left right =
   let left = resolve_head substitutions left in
   let right = resolve_head substitutions right in
   if left == right then Ok substitutions
@@ -680,6 +682,24 @@ let rec unify substitutions left right =
             Result.bind result (fun substitutions ->
                 unify substitutions left right))
           (Ok substitutions) fields
+    | (TOcaml _ as alias), (TPoly_variant _ | TRecord _ | TNamed_record _)
+    | (TPoly_variant _ | TRecord _ | TNamed_record _), (TOcaml _ as alias) -> (
+        let other = if alias == left then right else left in
+        let pair = (alias, other) in
+        if List.mem pair !active_alias_pairs then Ok substitutions
+        else
+          match resolve_alias alias with
+          | Some ((TPoly_variant _ | TRecord _ | TNamed_record _) as manifest) ->
+              (* Recursive aliases are compared coinductively, but only along
+                 the current path; sibling payloads still need unification. *)
+              let previous = !active_alias_pairs in
+              active_alias_pairs := pair :: previous;
+              Fun.protect
+                ~finally:(fun () -> active_alias_pairs := previous)
+                (fun () ->
+                  if alias == left then unify substitutions manifest right
+                  else unify substitutions left manifest)
+          | _ -> Error { left; right })
     | _ -> Error { left; right }
 
 and unify_lists substitutions left right =
@@ -707,6 +727,14 @@ and unify_arities substitutions left right =
         in
         Result.bind rest (fun substitutions ->
             unify substitutions left.return_ty right.return_ty))
+ in
+ unify substitutions left right
+
+let unify_lists substitutions left right =
+  List.fold_left2
+    (fun result left right ->
+      Result.bind result (fun substitutions -> unify substitutions left right))
+    (Ok substitutions) left right
 
 let infer substitutions ~template ~actual = unify substitutions template actual
 

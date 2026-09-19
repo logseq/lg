@@ -756,7 +756,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               Env.add (Names.scoped_key scope parameter_name)
                 (Types.binding parameter_name element_ty)
                 env)
-            env parameter_names element_tys
+            (Env.with_expected_type None env)
+            parameter_names element_tys
         in
         Result.map
           (fun body ->
@@ -1068,7 +1069,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     and compile_mapcat scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
-          match compile_expr scope env collection_form with
+          match
+            compile_expr scope (Env.with_expected_type None env)
+              collection_form
+          with
           | Error _ as error -> error
           | Ok collection -> (
               match Collection_capability.to_seq_expr env collection with
@@ -1109,6 +1113,174 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                       Error.error
                         "mapcat function argument type does not match collection"
                   | Ok _ -> Error.error "mapcat expects a function")))
+      | fn_form :: (_ :: _ as collection_forms) ->
+          let rec compile_collections compiled = function
+            | [] -> Ok (List.rev compiled)
+            | form :: rest -> (
+                match
+                  compile_expr scope (Env.with_expected_type None env) form
+                with
+                | Error _ as error -> error
+                | Ok collection -> (
+                    match Collection_capability.to_seq_expr env collection with
+                    | Error _ ->
+                        Error.error
+                          ("mapcat expects seqable collections, got "
+                         ^ Types.source_name collection.ty)
+                    | Ok (element_ty, sequence) ->
+                        compile_collections
+                          ((element_ty, sequence) :: compiled)
+                          rest))
+          in
+          (match compile_collections [] collection_forms with
+          | Error _ as error -> error
+          | Ok collections -> (
+              let element_tys = List.map fst collections in
+              let sequences = List.map snd collections in
+              match
+                compile_function_arg_for_collections scope env element_tys
+                  fn_form
+              with
+              | Error _ as error -> error
+              | Ok fn -> (
+                  match fn.ty with
+                  | TFn (parameter_tys, return_ty)
+                    when List.length parameter_tys = List.length element_tys
+                    ->
+                      let argument_names =
+                        List.mapi
+                          (fun index _ ->
+                            "__lg_mapcat_argument_" ^ string_of_int index)
+                          element_tys
+                      in
+                      let rec prepare_arguments prepared parameter_tys
+                          element_tys names =
+                        match (parameter_tys, element_tys, names) with
+                        | [], [], [] -> Ok (List.rev prepared)
+                        | ( expected :: parameter_tys,
+                            actual :: element_tys,
+                            name :: names ) ->
+                            let argument =
+                              typed_ir actual (Semantic_ir.Ident name)
+                            in
+                            let prepared_argument =
+                              if Types.is_dynamic expected then
+                                pack_dynamic_value env expected argument
+                              else if
+                                Types.assignable ~policy:Host_boundary
+                                  ~expected ~actual
+                                || Types.equal expected TUnknown
+                                ||
+                                match expected with
+                                | TVar _ -> true
+                                | _ -> false
+                              then Ok argument.semantic_expr
+                              else
+                                Error.error
+                                  "mapcat function type does not match \
+                                   collections"
+                            in
+                            Result.bind prepared_argument (fun argument ->
+                                prepare_arguments (argument :: prepared)
+                                  parameter_tys element_tys names)
+                        | _ ->
+                            Error.error
+                              "internal multi-collection mapcat arity \
+                               mismatch"
+                      in
+                      Result.bind
+                        (prepare_arguments [] parameter_tys element_tys
+                           argument_names)
+                        (fun arguments ->
+                          let function_name = "__lg_mapcat_function" in
+                          let sequence_names =
+                            List.mapi
+                              (fun index _ ->
+                                "__lg_mapcat_sequence_" ^ string_of_int index)
+                              sequences
+                          in
+                          let bound_sequences =
+                            List.map
+                              (fun name -> Semantic_ir.Ident name)
+                              sequence_names
+                          in
+                          let zipped, pattern =
+                            match (bound_sequences, argument_names) with
+                            | ( first_sequence :: rest_sequences,
+                                first_name :: rest_names ) ->
+                                List.fold_left2
+                                  (fun (zipped, pattern) sequence name ->
+                                    let left_name = "__lg_mapcat_left" in
+                                    let right_name = "__lg_mapcat_right" in
+                                    ( apply "Lg_runtime.Runtime_seq.map2"
+                                        [
+                                          Semantic_ir.Fun
+                                            ( [
+                                                Semantic_ir.PVar left_name;
+                                                Semantic_ir.PVar right_name;
+                                              ],
+                                              Semantic_ir.Tuple
+                                                [
+                                                  Semantic_ir.Ident
+                                                    left_name;
+                                                  Semantic_ir.Ident
+                                                    right_name;
+                                                ] );
+                                          zipped;
+                                          sequence;
+                                        ],
+                                      Semantic_ir.PTuple
+                                        [ pattern; Semantic_ir.PVar name ] ))
+                                  ( first_sequence,
+                                    Semantic_ir.PVar first_name )
+                                  rest_sequences rest_names
+                            | _ -> assert false
+                          in
+                          let result =
+                            typed_ir return_ty
+                              (Semantic_ir.Apply
+                                 ( Semantic_ir.Ident function_name,
+                                   arguments ))
+                          in
+                          match
+                            Collection_capability.to_seq_expr env result
+                          with
+                          | Error _ ->
+                              Error.error
+                                ("mapcat function must return a collection, \
+                                  got "
+                                ^ Types.source_name return_ty)
+                          | Ok (result_inner, result_sequence) ->
+                              let flat_mapped =
+                                apply "Lg_runtime.Runtime_seq.flat_map"
+                                  [
+                                    Semantic_ir.Fun
+                                      ( [ pattern ],
+                                        result_sequence );
+                                    zipped;
+                                  ]
+                              in
+                              let result =
+                                List.fold_right2
+                                  (fun name sequence body ->
+                                    Semantic_ir.Let
+                                      ( [ ( Semantic_ir.PVar name,
+                                            sequence ) ],
+                                        body ))
+                                  sequence_names sequences flat_mapped
+                              in
+                              Ok
+                                (typed_ir (TSeq result_inner)
+                                   (Semantic_ir.Let
+                                      ( [
+                                          ( Semantic_ir.PVar function_name,
+                                            fn.semantic_expr );
+                                        ],
+                                        result ))))
+                  | TFn _ ->
+                      Error.error
+                        "mapcat function arity does not match collections"
+                  | _ -> Error.error "mapcat expects a function")))
       | _ -> Error.error "mapcat expects function and collection"
     and compile_repeatedly scope env arg_forms =
       match arg_forms with
@@ -1321,7 +1493,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     let rec compile_collections compiled = function
       | [] -> Ok (List.rev compiled)
       | form :: rest -> (
-          match compile_expr scope env form with
+          match compile_expr scope (Env.with_expected_type None env) form with
           | Error _ as error -> error
           | Ok collection -> (
               match Collection_capability.to_seq_expr env collection with

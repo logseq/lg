@@ -432,9 +432,18 @@ and to_parsetree ~context = function
   | Located (node_id, location, expression) ->
       to_parsetree ~context expression
       |> Result.map (fun (expression : Parsetree.expression) ->
+             let rec locate (expression : Parsetree.expression) =
+               let pexp_desc =
+                 match expression.pexp_desc with
+                 | Parsetree.Pexp_constraint (inner, ty) when inner.pexp_loc = Location.none ->
+                     Parsetree.Pexp_constraint (locate inner, ty)
+                 | desc -> desc
+               in
+               { expression with pexp_desc; pexp_loc = location }
+             in
+             let expression = locate expression in
              {
                expression with
-               pexp_loc = location;
                pexp_attributes =
                  source_attributes node_id @ expression.pexp_attributes;
              })

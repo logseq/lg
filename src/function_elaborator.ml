@@ -30,6 +30,21 @@ let same_host_wrapper expected actual =
 
 let rec record_inference_compatible env ~allow_expected_dynamic expected_fields
     actual_fields =
+  let rec has_record_requirement = function
+    | TRecord (_ :: _) -> true
+    | TRef payload | TNullable payload | TOcaml_app ("option", [ payload ]) ->
+        has_record_requirement payload
+    | _ -> false
+  in
+  let rec reference_payload_compatible expected actual =
+    match expected, actual with
+    | TRecord fields, (TRecord actual_fields | TNamed_record { fields = actual_fields; _ }) ->
+        record_inference_compatible env ~allow_expected_dynamic fields actual_fields
+    | (TNullable expected | TOcaml_app ("option", [ expected ])),
+      (TNullable actual | TOcaml_app ("option", [ actual ]))
+    | TRef expected, TRef actual -> reference_payload_compatible expected actual
+    | _ -> false
+  in
   expected_fields
   |> List.for_all (fun (expected : field) ->
          match find_field expected.keyword actual_fields with
@@ -37,13 +52,8 @@ let rec record_inference_compatible env ~allow_expected_dynamic expected_fields
              Option.is_some (Types.find_record_extension_field actual_fields)
          | Some actual ->
              (match expected.ty, actual.ty with
-             | TRef (TRecord (_ :: _ as fields)), TRef (TNamed_record record) ->
-                 record_inference_compatible env ~allow_expected_dynamic fields
-                   record.fields
-             | TRef (TRecord (_ :: _ as fields)), TRef (TRecord actual_fields) ->
-                 record_inference_compatible env ~allow_expected_dynamic fields
-                   actual_fields
-             | TRef (TRecord (_ :: _)), TRef _ -> false
+             | TRef expected, TRef actual when has_record_requirement expected ->
+                 reference_payload_compatible expected actual
              | _ ->
              let expected_dynamic_compatible =
                match Types.dynamic_constraint_info expected.ty with
@@ -85,9 +95,17 @@ let rec record_inference_compatible env ~allow_expected_dynamic expected_fields
              || same_host_wrapper expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty))
 
+let structural_named_record_can_rematch (record : named_record) =
+  (not record.nominal)
+  && Type_id.owner record.type_id = []
+  && not (String.contains record.type_name '.')
+
 let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
     ?(required_protocols = []) scope env = function
   | TPoly_variant _ as ty -> Semantic_type.map_children (infer_named_record scope env) ty
+  | TNamed_record record when structural_named_record_can_rematch record ->
+      infer_named_record ?preferred_record ~allow_dynamic_fields
+        ~required_protocols scope env (TRecord record.fields)
   | TNamed_record record as ty -> (
       match
         Resolver.lookup_record_type scope env (Type_id.to_string record.type_id)
@@ -343,6 +361,23 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
                      (TNamed_record record))
                  required_protocols)
       in
+      let candidates =
+        match preferred_record with
+        | Some _ -> candidates
+        | None when List.exists (fun (field : field) -> field.mutable_) fields ->
+            List.filter
+              (fun record ->
+                List.for_all
+                  (fun (field : field) ->
+                    not field.mutable_
+                    ||
+                    match Types.find_field field.keyword record.fields with
+                    | Some target -> target.mutable_
+                    | None -> false)
+                  fields)
+              candidates
+        | None -> candidates
+      in
       let rec direct_match_count fields actual_fields =
         List.fold_left
              (fun count field ->
@@ -403,7 +438,13 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
            (infer_named_record ~allow_dynamic_fields scope env) constraint_)
   | inferred -> inferred
 
-let infer_parameter_named_record scope env = function
+let rec infer_parameter_named_record scope env = function
+  | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
+      match Types.protocol_constraint_info ty with
+      | Some (_, _, value_ty) ->
+          Types.protocol_constraint_with_value ty
+            (infer_parameter_named_record scope env value_ty)
+      | None -> assert false)
   | TConstraint
       (Seqable_constraint
         ({
@@ -424,6 +465,11 @@ let infer_parameter_named_record scope env = function
   | ty -> infer_named_record scope env ty
 
 let rec collapse_static_record_protocols env ty =
+  match ty with
+  | TConstraint (Protocol_constraint { guarded = true; value = value_ty; _ }) ->
+      Types.protocol_constraint_with_value ty
+        (collapse_static_record_protocols env value_ty)
+  | _ -> (
   match Types.protocol_constraint_info ty with
   | Some (protocol_id, _, value_ty) ->
       let value_ty = collapse_static_record_protocols env value_ty in
@@ -444,7 +490,7 @@ let rec collapse_static_record_protocols env ty =
                    ty = collapse_static_record_protocols env field.ty;
                  })
                fields)
-      | ty -> ty)
+      | ty -> ty))
 
 let rec protocol_witness_constraint_type receiver_ty = function
   | TUnknown | TMeta _ -> TOcaml "_"
@@ -742,12 +788,54 @@ let returned_parameter_index scope env parameter_names body_forms =
     |> List.find_opt (fun (_, parameter) -> String.equal name parameter)
     |> Option.map fst
   in
+  let merge_optional_index left right =
+    match (left, right) with
+    | Some left, Some right when left = right -> Some left
+    | Some index, None | None, Some index -> Some index
+    | Some _, Some _ | None, None -> None
+  in
   let rec returned_parameter = function
     | Ast.FSymbol name -> parameter_index name
+    | Ast.FList (Ast.FSymbol ("let" | "let*") :: _bindings :: forms) -> (
+        match List.rev forms with
+        | form :: _ -> returned_parameter form
+        | [] -> None)
+    | Ast.FList (Ast.FSymbol "try" :: forms) ->
+        let rec collect body catches = function
+          | Ast.FList (Ast.FSymbol "catch" :: _pattern :: catch_forms) :: rest ->
+              let catch_return =
+                match List.rev catch_forms with
+                | form :: _ -> returned_parameter form
+                | [] -> None
+              in
+              collect body (merge_optional_index catches catch_return) rest
+          | Ast.FList (Ast.FSymbol "finally" :: _) :: rest ->
+              collect body catches rest
+          | form :: rest -> collect (Some form) catches rest
+          | [] ->
+              let body_return = Option.bind body returned_parameter in
+              merge_optional_index body_return catches
+        in
+        collect None None forms
     | Ast.FList [ Ast.FSymbol "if"; _condition; then_form; else_form ] -> (
         match (returned_parameter then_form, returned_parameter else_form) with
         | Some left, Some right when left = right -> Some left
         | _ -> None)
+    | Ast.FList
+        [
+          Ast.FSymbol ("__lg_if-some" | "__lg_if-let" | "if-some" | "if-let");
+          Ast.FVector [ _binding; _option_form ];
+          then_form;
+          else_form;
+        ] -> (
+        match (returned_parameter then_form, returned_parameter else_form) with
+        | Some left, Some right when left = right -> Some left
+        | _ -> None)
+    | Ast.FList
+        (Ast.FSymbol ("__lg_assoc" | "assoc") :: target :: _pairs) ->
+        returned_parameter target
+    | Ast.FList [ Ast.FSymbol "Ok"; value ] ->
+        returned_parameter value
     | Ast.FList (Ast.FSymbol "do" :: forms) -> (
         match List.rev forms with
         | form :: _ -> returned_parameter form
@@ -773,8 +861,41 @@ let returned_parameter_index scope env parameter_names body_forms =
     | Ast.FMap _ | Ast.FList _ ->
         None
   in
+  let rec result_ok_returned_parameter = function
+    | Ast.FList [ Ast.FSymbol "Ok"; value ] -> returned_parameter value
+    | Ast.FList [ Ast.FSymbol "Error"; _ ] -> None
+    | Ast.FList (Ast.FSymbol ("let" | "let*") :: _bindings :: forms) -> (
+        match List.rev forms with
+        | form :: _ -> result_ok_returned_parameter form
+        | [] -> None)
+    | Ast.FList [ Ast.FSymbol "if"; _condition; then_form; else_form ] ->
+        merge_optional_index (result_ok_returned_parameter then_form)
+          (result_ok_returned_parameter else_form)
+    | Ast.FList
+        [
+          Ast.FSymbol ("__lg_if-some" | "__lg_if-let" | "if-some" | "if-let");
+          Ast.FVector [ _binding; _option_form ];
+          then_form;
+          else_form;
+        ] ->
+        merge_optional_index (result_ok_returned_parameter then_form)
+          (result_ok_returned_parameter else_form)
+    | Ast.FList (Ast.FSymbol "do" :: forms) -> (
+        match List.rev forms with
+        | form :: _ -> result_ok_returned_parameter form
+        | [] -> None)
+    | Ast.FList [ Ast.FSymbol ("__lg_with-meta" | "with-meta"); value; _metadata ] ->
+        result_ok_returned_parameter value
+    | Ast.FSymbol _ | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
+    | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _ | Ast.FBool _
+    | Ast.FVector _ | Ast.FMap _ | Ast.FList _ ->
+        None
+  in
   match List.rev body_forms with
-  | form :: _ -> returned_parameter form
+  | form :: _ -> (
+      match returned_parameter form with
+      | Some _ as index -> index
+      | None -> result_ok_returned_parameter form)
   | [] -> None
 
 let lexical_parameter_names specs =
@@ -791,6 +912,13 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs ->
+      let normalize_variadic_rest_type ty =
+        match ty with
+        | TSeq _ -> ty
+        | TMeta _ -> TSeq ty
+        | TUnknown -> TSeq (Type_solver.fresh ())
+        | ty -> TSeq ty
+      in
       let parameter_names = lexical_parameter_names specs in
       let macro_env = Env.add_core_exclusions ~scope parameter_names env in
       Result.bind
@@ -820,10 +948,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
             in
             let param_ty =
               if Some index = variadic_rest_index then
-                match param_ty with
-                | TMeta _ -> TSeq param_ty
-                | TUnknown -> TSeq (Type_solver.fresh ())
-                | ty -> ty
+                normalize_variadic_rest_type param_ty
               else param_ty
             in
                let destructured =
@@ -995,7 +1120,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
           in
           let resolved_inferred =
             List.map
-                (fun (name, ty) -> (name, infer_parameter_type name ty))
+              (fun (name, ty) -> (name, infer_parameter_type name ty))
               inferred
           in
           let resolved_records =
@@ -1006,6 +1131,275 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
           in
           let inferred =
             reconcile_shared_parameter_variables inferred resolved_inferred
+          in
+          let expected_parameter_types_from_body parameter_names inferred =
+              let parameter_name name =
+                List.exists
+                  (fun parameter ->
+                    String.equal name parameter
+                    || String.equal name (Names.sanitize_name parameter))
+                  parameter_names
+              in
+              let canonical_parameter_name name =
+                List.find_opt
+                  (fun parameter ->
+                    String.equal name parameter
+                    || String.equal name (Names.sanitize_name parameter))
+                  parameter_names
+                |> Option.value ~default:name
+              in
+              let arity_params argument_count (arity : fn_arity) =
+                let fixed_count = List.length arity.fixed_params in
+                if argument_count < fixed_count then None
+                else
+                  match arity.rest_param with
+                  | None when argument_count = fixed_count ->
+                      Some arity.fixed_params
+                  | Some rest_ty ->
+                      Some
+                        (arity.fixed_params
+                        @ List.init (argument_count - fixed_count) (fun _ ->
+                              rest_ty))
+                  | None -> None
+              in
+              let rec contains_record_shape ty =
+                Option.is_some (Types.record_fields ty)
+                ||
+                match ty with
+                | TNullable inner | TArray inner | TRef inner | TList inner
+                | TVector inner | TSet inner | TSeq inner
+                | TOcaml_app (_, [ inner ]) ->
+                    contains_record_shape inner
+                | TOcaml_app (_, arguments) | TTuple arguments ->
+                    List.exists contains_record_shape arguments
+                | TFn (parameters, return_ty) ->
+                    List.exists contains_record_shape (return_ty :: parameters)
+                | TOverloaded_fn arities ->
+                    List.exists
+                      (fun arity ->
+                        List.exists contains_record_shape
+                          (arity.return_ty :: arity.fixed_params)
+                        || Option.fold ~none:false ~some:contains_record_shape
+                             arity.rest_param)
+                      arities
+                | TConstraint constraint_ ->
+                    List.exists contains_record_shape
+                      (constraint_children constraint_)
+                | TPoly_variant row ->
+                    List.exists contains_record_shape
+                      (List.filter_map snd row.tags)
+                | TRecord _ | TNamed_record _ -> true
+                | TInt | TFloat | TChar | TString | TRegex | TMap_keys
+                | TSymbol | TKeyword | TBool | TUnit | TNil | TUnknown
+                | TMeta _ | TVar _ | TOcaml _ ->
+                    false
+              in
+              let add_expected acc parameter expected =
+                let expected = infer_named_record scope env expected in
+                if not (contains_record_shape expected) then acc
+                else begin
+                  let current =
+                    List.assoc_opt parameter acc |> Option.value ~default:TUnknown
+                  in
+                  (parameter, Type_inference.refine_type current expected)
+                  :: List.remove_assoc parameter acc
+                end
+              in
+              let add_call acc name args =
+                let parameter_tys =
+                  match lookup_function_ty name with
+                  | Ok (TFn (parameter_tys, _))
+                    when List.length parameter_tys = List.length args ->
+                      Some parameter_tys
+                  | Ok (TOverloaded_fn arities) ->
+                      arities
+                      |> List.find_map (arity_params (List.length args))
+                  | Ok _ | Error _ -> None
+                in
+                match parameter_tys with
+                | None -> acc
+                | Some parameter_tys ->
+                    List.fold_left2
+                      (fun acc expected -> function
+                        | Ast.FSymbol argument when parameter_name argument ->
+                            add_expected acc
+                              (canonical_parameter_name argument)
+                              expected
+                        | _ -> acc)
+                      acc parameter_tys args
+              in
+              let option_payload = function
+                | TNullable payload | TOcaml_app ("option", [ payload ]) ->
+                    payload
+                | _ -> TUnknown
+              in
+              let symbol_has_source_name name expected =
+                String.equal name expected
+                || String.equal (Names.sanitize_name name)
+                     (Names.sanitize_name expected)
+                ||
+                match String.rindex_opt name '/' with
+                | Some index ->
+                    let local =
+                      String.sub name (index + 1)
+                        (String.length name - index - 1)
+                    in
+                    String.equal local expected
+                    || String.equal (Names.sanitize_name local)
+                         (Names.sanitize_name expected)
+                | None -> false
+              in
+              let function_binding_type name =
+                match lookup_function_ty name with
+                | Ok ty -> ty
+                | Error _ -> TUnknown
+              in
+              let form_type locals form =
+                let params =
+                  locals @ inferred
+                in
+                let direct_call_return =
+                  match form with
+                  | Ast.FList (Ast.FSymbol name :: args) -> (
+                      match lookup_function_ty name with
+                      | Ok (TFn (parameter_tys, return_ty))
+                        when List.length parameter_tys = List.length args ->
+                          Some return_ty
+                      | Ok (TOverloaded_fn arities) ->
+                          arities
+                          |> List.find_map (fun arity ->
+                                 Option.map
+                                   (fun _ -> arity.return_ty)
+                                   (arity_params (List.length args) arity))
+                      | Ok _ | Error _ -> None)
+                  | _ -> None
+                in
+                match direct_call_return with
+                | Some ty -> ty
+                | None -> (
+                    match
+                      Type_inference.inferred_form_type
+                        ~lookup_binding:function_binding_type params form
+                    with
+                    | TUnknown | TMeta _ | TVar _ ->
+                        Type_inference.inferred_call_return_type
+                          ~lookup_function_ty params form
+                    | ty -> ty)
+              in
+              let rec bind_pattern locals pattern ty =
+                match pattern with
+                | Ast.FSymbol name when not (String.equal name "_") ->
+                    (name, ty) :: List.remove_assoc name locals
+                | Ast.FList [ Ast.FSymbol some_name; Ast.FSymbol name ]
+                  when (symbol_has_source_name some_name "Some"
+                       || symbol_has_source_name some_name "__lg_some")
+                       && not (String.equal name "_") ->
+                    (name, option_payload ty) :: List.remove_assoc name locals
+                | Ast.FList (Ast.FSymbol tuple_name :: patterns)
+                  when symbol_has_source_name tuple_name "tuple"
+                       || symbol_has_source_name tuple_name "__lg_tuple" -> (
+                    match ty with
+                    | TTuple tys when List.length patterns = List.length tys ->
+                        List.fold_left2 bind_pattern locals patterns tys
+                    | _ -> locals)
+                | _ -> locals
+              in
+              let add_parameter_call locals acc name args =
+                if parameter_name name then
+                  let argument_tys =
+                    List.map (fun arg -> form_type locals arg) args
+                  in
+                  add_expected acc
+                    (canonical_parameter_name name)
+                    (TFn (argument_tys, TUnknown))
+                else acc
+              in
+              let rec visit locals acc = function
+                | Ast.FList (Ast.FSymbol ("fn" | "fn*") :: _) -> acc
+                | Ast.FList (Ast.FSymbol match_name :: scrutinee :: branches)
+                  when symbol_has_source_name match_name "match"
+                       || symbol_has_source_name match_name "__lg_match" ->
+                    let acc = visit locals acc scrutinee in
+                    let rec visit_branches acc = function
+                      | pattern :: branch :: rest ->
+                          let branch_locals =
+                            bind_pattern locals pattern (form_type locals scrutinee)
+                          in
+                          visit_branches (visit branch_locals acc branch) rest
+                      | [ pattern ] -> visit locals acc pattern
+                      | [] -> acc
+                    in
+                    visit_branches acc branches
+                | Ast.FList (Ast.FSymbol name :: args as forms) ->
+                    let acc = add_call acc name args in
+                    let acc = add_parameter_call locals acc name args in
+                    List.fold_left (visit locals) acc forms
+                | Ast.FList forms | Ast.FVector forms ->
+                    List.fold_left (visit locals) acc forms
+                | Ast.FMap pairs ->
+                    List.fold_left
+                      (fun acc (key, value) ->
+                        visit locals (visit locals acc key) value)
+                      acc pairs
+                | Ast.FSymbol _ | Ast.FCoreSymbol _ | Ast.FKeyword _
+                | Ast.FString _ | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _
+                | Ast.FDecimal _ | Ast.FChar _ | Ast.FBool _ ->
+                    acc
+              in
+              List.fold_left (visit [])
+                (List.map (fun name -> (name, TUnknown)) parameter_names)
+                body_forms
+              |> List.map (fun (name, expected) ->
+                     let current =
+                       List.assoc_opt name inferred
+                       |> Option.value ~default:TUnknown
+                     in
+                     let refined =
+                       match Types.protocol_constraint_info current with
+                       | Some (_, _, value_ty)
+                         when Option.is_none
+                                (Types.protocol_constraint_info expected) ->
+                           Types.protocol_constraint_with_value current
+                             (Type_inference.refine_type value_ty expected)
+                       | Some _ | None ->
+                           Type_inference.refine_type current expected
+                     in
+                     (name, refined))
+          in
+          let inferred =
+              let parameter_names =
+                specs
+                |> List.map (fun (spec : Destructure.param_spec) ->
+                       spec.source_name)
+              in
+              let call_expected =
+                expected_parameter_types_from_body parameter_names inferred
+              in
+              List.map
+                (fun (name, ty) ->
+                  match List.assoc_opt name call_expected with
+                  | Some expected ->
+                      let refined =
+                        match
+                          ( Types.protocol_constraint_info ty,
+                            Types.protocol_constraint_info expected )
+                        with
+                        | Some (_, _, value_ty), None ->
+                            Types.protocol_constraint_with_value ty
+                              (Type_inference.refine_type value_ty expected)
+                        | ( Some (protocol_id, _, value_ty),
+                            Some (expected_protocol_id, _, expected_value_ty) )
+                          when Protocol_id.equal protocol_id
+                                 expected_protocol_id ->
+                            Types.protocol_constraint_with_value ty
+                              (Type_inference.refine_type value_ty
+                                 expected_value_ty)
+                        | Some _, Some _ | None, _ ->
+                            Type_inference.refine_type ty expected
+                      in
+                      (name, refined)
+                  | None -> (name, ty))
+                inferred
           in
           let ( let* ) = Result.bind in
           let* inferred =
@@ -1121,12 +1515,7 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                        in
                        let inferred_ty =
                          if Some index = variadic_rest_index then
-                           match Types.seqable_constraint_element inferred_ty with
-                           | Some element_ty -> TSeq element_ty
-                           | None -> (
-                               match inferred_ty with
-                               | TUnknown -> TSeq TUnknown
-                               | ty -> ty)
+                           normalize_variadic_rest_type inferred_ty
                          else inferred_ty
                        in
                        match spec.Destructure.explicit_ty with
@@ -1177,11 +1566,26 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                                if Types.equal ty TUnknown
                                   || (spec.destructured
                                      && match ty with TMeta _ -> true | _ -> false)
+                               then (spec, inferred_ty)
+                               else if
+                                 Types.is_guarded_protocol_constraint inferred_ty
+                                 && Option.is_none
+                                      (Types.protocol_constraint_info ty)
                                then
-                                 (spec, inferred_ty)
+                                 let value_ty =
+                                   match
+                                     Types.protocol_constraint_info inferred_ty
+                                   with
+                                   | Some (_, _, value_ty) -> value_ty
+                                   | None -> assert false
+                                 in
+                                 ( spec,
+                                   Types.protocol_constraint_with_value
+                                     inferred_ty
+                                     (Type_inference.refine_type value_ty ty) )
                                else if Types.equal ty TMap_keys then
-                                 (spec,
-                                  Type_inference.refine_type ty inferred_ty)
+                                 ( spec,
+                                   Type_inference.refine_type ty inferred_ty )
                                else if
                                  ((refine_open_overrides
                                   || Option.is_some
@@ -1640,10 +2044,19 @@ let fn_code ?(row_param_type_names = []) parts =
     | Some index -> (
         match List.nth_opt param_tys index with
         | Some parameter_ty -> (
+            match return_ty with
+            | TOcaml_app ("result", [ ok_ty; error_ty ])
+              when Types.equal ok_ty parameter_ty
+                   || Types.row_compatible ~expected:parameter_ty
+                        ~actual:ok_ty
+                   || Types.row_compatible ~expected:ok_ty
+                        ~actual:parameter_ty ->
+                TOcaml_app ("result", [ ok_ty; error_ty ])
+            | _ -> (
             match Types.seqable_constraint_info parameter_ty with
             | Some (_, _, storage_ty) when Types.equal return_ty storage_ty ->
                 return_ty
-            | Some _ | None -> parameter_ty)
+            | Some _ | None -> parameter_ty))
         | None -> return_ty)
     | None -> return_ty
   in

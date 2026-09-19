@@ -463,7 +463,7 @@ let rec pattern_type_hints pattern ty =
           | Some name -> (name, ty) :: item_hints))
   | _ -> []
 
-let infer_generator_pattern_type pattern lookup_local_ty =
+let infer_generator_pattern_type ?source_ty pattern lookup_local_ty =
   match pattern with
   | FVector forms -> (
       match parse_sequence_pattern forms with
@@ -478,7 +478,8 @@ let infer_generator_pattern_type pattern lookup_local_ty =
           (match item_tys with
           | [] -> Ok (TVector TUnknown)
           | first :: rest
-            when List.for_all (fun ty -> Types.equal first ty) rest ->
+            when (match source_ty with Some (TTuple _) -> false | _ -> true)
+                 && List.for_all (fun ty -> Types.equal first ty) rest ->
               Ok (TVector first)
           | _ -> Ok (TTuple item_tys))
       | Ok _ | Error _ -> infer_pattern_type pattern lookup_local_ty)

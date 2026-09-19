@@ -27,6 +27,10 @@ that:
 Unknown types are inference variables, not permission to generate dynamic
 storage.
 
+`try` inference preserves static constraints from its body and handlers. An
+unresolved branch does not force other branches into dynamic storage; elaboration
+merges the resolved branch types and rejects incompatible alternatives.
+
 Unannotated accessors that dereference record fields retain a fresh payload
 variable, shared with the reference field. Calling the accessor specializes
 that variable to the stored type without copying or erasing the mutable cell.
@@ -39,6 +43,20 @@ A keyword field used as a condition requires truthiness, not optional storage.
 The field can remain a boolean, option, or another statically typed value;
 using it in a condition must not prevent later record constraints from resolving
 its actual type.
+
+An `and` used as a condition preserves boolean storage: false already provides
+the falsey case. Guard inference waits for the other operands' constraints
+before considering nullable non-boolean values, preserving optional numeric
+comparisons without imposing option storage on unresolved or boolean values.
+Host `option<T>` and LG nullable values use the same payload truthiness,
+including false boolean payloads.
+
+In an `and` expression, operands before the final operand are guards and the
+final operand is the returned value. Ordinary value inference must therefore
+apply truthiness evidence to the guards but infer the final operand as a value.
+Only an outer condition that observes the whole `and` may require truthiness for
+that final value. This keeps schema-style predicates from turning returned map
+fields into witness storage.
 
 Variant payload adaptation destructures capability evidence at the payload
 boundary, just as ordinary parameter binding does. Forwarding a variant to a
@@ -63,6 +81,10 @@ Conditional binding locals shadow source macros and inline macros only in the
 present branch. Initializers and absent branches use the enclosing environment.
 Macro expansion retains the complete `let` scope rather than expanding its
 bindings and body independently; destructured names obey the same rules.
+
+Sequential destructuring preserves a known tuple source even when every
+position has the same inferred type. Equal element types alone do not turn
+tuple storage into vector storage; actual vectors retain their sequence shape.
 
 Record updates propagate a known field type into the assigned value. Contextual
 updates of unresolved expression receivers defer their storage choice instead
@@ -93,7 +115,9 @@ Record inference considers declared nested fields when choosing between
 compatible record candidates. A generic field is not evidence for the nested
 fields of a concrete reference payload. Reference payload records must satisfy
 their required fields; inference never converts the mutable cell to a projected
-record reference. Accessors without such nested requirements stay generic.
+record reference. These requirements recurse through optional payloads and
+nested references, preserving cell identity across reads and writes. Accessors
+without such nested requirements stay generic.
 
 Structural and named record requirements on the same field merge into the named
 type when it satisfies the structural requirements. This works in either order
@@ -104,6 +128,10 @@ Membership tests on record fields use the same static collection constraints as
 membership on local values. Resolving a field to a set or map constrains its key
 type, while a vector constrains the key to an integer index. Keyword field access
 does not force the collection into a dynamic map.
+
+Sequence observations on string-valued record fields retain string storage and
+character elements. This applies in either inference order and inside nested
+records, without accepting incompatible numeric element constraints.
 
 Repeated nil predicates preserve an existing nil-check constraint rather than
 adding an option around it. Matching and conditional binding inspect the known
@@ -116,6 +144,15 @@ callbacks and polymorphic calls. An absent constructor payload must not erase
 the shared type variable carried by the other branch. A resolved host record
 and its external type name unify with the same type arguments, consistently
 with host-boundary assignability.
+
+Recursive constraints normalize visible OCaml record and polymorphic variant
+aliases before unification. Recursive payload references retain their host
+identity; normalization does not expand them indefinitely or erase payload types.
+When nested constraints expose different expansion depths of the same alias,
+unification resolves the visible definition only at the conflicting boundary.
+Repeated alias/type pairs on the current unification path close the recursive
+comparison. This does not skip sibling constraints or subsequent equations;
+incompatible payloads remain errors.
 
 Nested `Ok` and `Error` patterns infer payload structure recursively, including
 tuples and options. A helper matching an error tuple therefore does not need a
@@ -453,11 +490,18 @@ callbacks, and record fields without requiring redundant source type hints.
 A host callback's unresolved result does not discard its known parameter types.
 Mutable reference updates infer the updater's ordinary application, including
 source inline expansion, and propagate its result back to the same cell.
+This applies equally to local cells and keyword-accessed record fields.
+Dereferencing a record field propagates payload constraints in both directions;
+record constructors supply their declared element type to collection updates.
 Captured vectors therefore retain host record identity across callback writes
 and later field reads without requiring parameter hints.
 Collection callbacks may refresh record metadata only for the same type
 identity. A matching short name must never substitute a different source or
 host record, even when their fields are identical.
+Read-only field constraints do not prefer a nominal record merely because its
+total field count matches the observed fields. If several record types satisfy
+the observations, the parameter stays structural unless other type evidence
+selects one. Mutation additionally requires every written field to be mutable.
 When a callback consumes an inferred structural row, argument adaptation reads
 the incoming host record's declared fields before planning the static field
 projection. Passing the callback by name must not require an explicit hint.
@@ -1081,6 +1125,11 @@ a core binding or macro. Namespace exclusions are processed before definitions
 are dependency-ordered. Lexical parameter and local-binding shadowing remains
 unchanged; qualified core calls remain available after exclusion.
 
+Sequence call specialization checks the resolved binding against the core
+binding, not the unqualified spelling of the callee. Qualified user functions
+and lexical aliases named `map`, `mapv`, `seq`, `reduce`, or `filter` retain
+their own behavior.
+
 ### Recursive functions and inferred interfaces
 
 `letfn` accepts a nonempty vector of fixed-arity local function definitions.
@@ -1237,6 +1286,14 @@ label. Field quantifiers are excluded from the containing record's free type
 variables, and substitution preserves their scope and avoids variable capture.
 A field quantifier must have a different name from the record's own type
 parameters.
+
+### Named variant constructor identity
+
+Calls to local named variant constructors retain their inferred result type in
+generated OCaml, including payload and zero-argument calls. A constructor from
+another namespace with the same emitted name must not change the selected
+variant inside a conditional, option, or collection. This constraint comes from
+the resolved binding; callers do not need a source type hint.
 
 ### GADT constructor indices and existential payloads
 

@@ -245,7 +245,16 @@ let freshen_deferred_type ?return_param_index ty =
             Types.constraint_value_type parameter
         | Some index, _, _ -> (
             match List.nth_opt parameters index with
-            | Some parameter -> Types.constraint_value_type parameter
+            | Some parameter -> (
+                match freshen return_ty with
+                | Types.TOcaml_app ("result", [ ok_ty; error_ty ])
+                  when Types.equal ok_ty parameter
+                       || Types.row_compatible ~expected:parameter
+                            ~actual:ok_ty
+                       || Types.row_compatible ~expected:ok_ty
+                            ~actual:parameter ->
+                    Types.TOcaml_app ("result", [ ok_ty; error_ty ])
+                | _ -> Types.constraint_value_type parameter)
             | None -> freshen return_ty)
         | None, _, _ -> freshen return_ty
       in

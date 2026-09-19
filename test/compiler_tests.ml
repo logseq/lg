@@ -2768,6 +2768,60 @@ let test_type_relations_are_explicit_and_strict () =
   then
     failwith "source nullability must remain distinct from host option semantics"
 
+let test_fresh_anonymous_records_merge_across_branches () =
+  let open Lg.Types in
+  let field keyword ty = make_field keyword ty in
+  let anonymous index fields =
+    let type_name = "t" ^ string_of_int index in
+    named_record
+      ~type_id:(Lg.Type_id.create ~owner:[ "chat.live_sync" ] ~name:type_name)
+      ~type_parameters:[ "a" ] ~extensible:true ~type_name
+      ~set_module_name:("Set_" ^ type_name) fields
+  in
+  let left =
+    anonymous 22
+      [ field ":baseline-t" TUnknown; field ":url" TString ]
+  in
+  let right =
+    anonymous 23
+      [ field ":url" TString; field ":baseline-t" TInt ]
+  in
+  match Lg.Expression_support.merge_branch_types left right with
+  | Some (TNamed_record record) ->
+      if
+        not
+          (Lg.Type_id.owner record.type_id = [ "chat.live_sync" ]
+          && Lg.Type_id.name record.type_id = "t22")
+      then failwith "merged anonymous record should preserve the left branch id";
+      (match find_field ":baseline-t" record.fields with
+      | Some { ty = TInt; _ } -> ()
+      | Some _ -> failwith "merged anonymous record lost concrete field type"
+      | None -> failwith "merged anonymous record lost shared field");
+      (match record.type_arguments with
+      | [ TInt ] -> ()
+      | _ -> failwith "merged anonymous record lost concrete type argument")
+  | Some _ -> failwith "fresh anonymous branch merge returned a non-record type"
+  | None -> failwith "fresh compatible anonymous records must merge across branches"
+
+let test_fresh_anonymous_record_branches_emit_shared_record_type () =
+  let source =
+    {|
+(defn merge-pull-cursor [metadata ok?]
+  (try
+    (if ok?
+      (if-some [t (Some 9)] (assoc metadata :baseline-t t) metadata)
+      metadata)
+    (catch _ metadata)))
+
+(println (:baseline-t (merge-pull-cursor {:baseline-t 7} true)))
+(println (:baseline-t (merge-pull-cursor {:baseline-t 7} false)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "fresh_anonymous_record_branches_emit_shared_record_type"
+    "9\n7\n" native_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_type_solver_unifies_sequence_representations () =
   let open Lg.Types in
   let element = seqable_constraint_with_value (TVar "element") (TVar "storage") in
@@ -5837,6 +5891,35 @@ let test_tuple_branches_preserve_vector_storage () =
   assert_ocaml_runs "tuple_branches_preserve_vector_storage" "3\n4\n" native;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_payload_constructor_namespace_identity () =
+  let source = {|
+(ns variant.consumer (:require [variant.left :as left] [variant.right :as right]))
+(defn choose [enabled]
+  (if enabled (left/Rebuild (record left/left-payload (text "left"))) (left/Done)))
+(defn describe [value]
+  (match value (left/Rebuild payload) (:text payload) left/Done "done"))
+(println (describe (choose true)))
+(println (describe (choose false)))
+(println (match (Some (left/Rebuild (record left/left-payload (text "nested"))))
+           (Some (left/Rebuild payload)) (:text payload) _ "missing"))
+(println (count [(left/Rebuild (record left/left-payload (text "vector")))]))
+(println (match (right/Rebuild (record right/right-payload (number 42)))
+           (right/Rebuild payload) (:number payload) right/Done 0))
+|} in
+  let compile target =
+    let state, left = Lg.Compiler.compile_chunk ~target (stdlib_state target)
+      "(ns variant.left) (type-record left-payload (text :string)) (type-variant choice (Rebuild :left-payload) Done)"
+      |> expect_ok in
+    let state, right = Lg.Compiler.compile_chunk ~target state
+      "(ns variant.right) (type-record right-payload (number :int)) (type-variant action (Rebuild :right-payload) Done)"
+      |> expect_ok in
+    let _, consumer = Lg.Compiler.compile_chunk ~target state source |> expect_ok in
+    String.concat "\n" [left; right; consumer]
+  in
+  assert_ocaml_runs "payload_constructor_namespace_identity"
+    "left\ndone\nnested\n1\n42\n" (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let test_variant_constructors_use_valid_ocaml_names () =
   let source = {|
 (type-variant change No-change (Save-title :string))
@@ -5910,6 +5993,191 @@ let test_inferred_callback_captures_shadow_global_functions () =
   assert_ocaml_runs "inferred_callback_captures_shadow_global_functions" "" native;
   ignore (compile_with_stdlib Lg.Target.Melange "test/captured_symbol.cljc" source)
 
+let test_reference_accessor_keeps_declared_payload_with_shared_fields () =
+  let source = {|
+(type-record snapshot (server-t :int) (label :string))
+(type-record runtime-state (server-t :int) (snapshot :snapshot))
+(type-record runtime (state :ref<runtime-state>) (path :string))
+
+(defn state [runtime] @(:state runtime))
+(defn operation [runtime] (:server-t (state runtime)))
+(defn stage [runtime value]
+  (swap! (:state runtime) assoc :server-t value)
+  (:path runtime))
+(defn advance [runtime]
+  (stage runtime (inc (operation runtime))))
+
+(def runtime (record runtime (path "graph")
+               (state (atom (record runtime-state (server-t 7)
+                              (snapshot (record snapshot (server-t 6) (label "stored"))))))))
+(println (advance runtime))
+(println (operation runtime))
+(println (:label (:snapshot (state runtime))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "reference_accessor_keeps_declared_payload_with_shared_fields"
+    "graph\n8\nstored\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_optional_reference_record_reads_preserve_cell_identity () =
+  let source = {|
+(type-record checkpoint (cursor :int))
+(type-record opened-runtime (state :checkpoint) (extra :string))
+(type-record host (current :ref<option<opened-runtime>>))
+(type-record unrelated [value] (current :ref<value>))
+
+(defn cursor [host]
+  (when-some [opened @(:current host)] (:cursor (:state opened))))
+
+(defn create-host []
+  (record host (current (atom (Some (record opened-runtime
+                                   (state (record checkpoint (cursor 7))) (extra "kept")))))))
+(def host (create-host))
+(println (= (Some 7) (cursor host)))
+(reset! (:current host) nil)
+(println (nil? (cursor host)))
+(reset! (:current host)
+  (Some (record opened-runtime (state (record checkpoint (cursor 8))) (extra "kept"))))
+(println (= (Some 8) (cursor host)))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "optional_reference_record_reads_preserve_cell_identity"
+    "true\ntrue\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_shared_record_field_does_not_select_smallest_nominal_record () =
+  let source = {|
+(type-record block (uuid :string) (title :string))
+(type-record deletion (uuid :string))
+
+(defn contains-uuid? [values uuid]
+  (some (fn [value] (= (:uuid value) uuid)) values))
+
+(println (boolean (contains-uuid? [(record block (uuid "a") (title "A"))] "a")))
+(println (boolean (contains-uuid? (list (record deletion (uuid "b"))) "b")))
+(println (boolean (contains-uuid? [(record block (uuid "a") (title "A"))] "b")))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "shared_record_field_does_not_select_smallest_nominal_record"
+    "true\ntrue\nfalse\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_shared_single_field_variant_state_stays_structural () =
+  let source = {|
+(type-variant pending-state Queued Submitted Retryable)
+(type-record pending-operation (operation-id :string) (state :pending-state))
+(type-record route (uuid :string) (state :string))
+
+(defn retryable? [operation]
+  (match (:state operation)
+    Queued true
+    Retryable true
+    Submitted true
+    _ false))
+
+(println (boolean (retryable? (record pending-operation (operation-id "a") (state Queued)))))
+(println (retryable? (record pending-operation (operation-id "b") (state Submitted))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "shared_single_field_variant_state_stays_structural"
+    "true\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_filterv_named_predicate_preserves_shared_state_record () =
+  let chunks =
+    [
+      ( "test/filterv_state_ops.cljc",
+        {|
+(ns filterv-state.ops)
+(type-variant pending-state Queued Submitted Retryable)
+(type-record pending-operation (operation-id :string) (state :pending-state))
+|} );
+      ( "test/filterv_state_routes.cljc",
+        {|
+(ns filterv-state.routes)
+(type-record outliner-state (editing :option<string>))
+(type-record node-route (uuid :string) (state :outliner-state))
+|} );
+      ( "test/filterv_state_app.cljc",
+        {|
+(ns filterv-state.app
+  (:require [filterv-state.ops :as ops]
+            [filterv-state.routes :as routes]))
+
+(type-record host-options
+  (pending-operations :option<fn<list<ops/pending-operation>>>))
+
+(defn retryable-operation? [operation]
+  (match (:state operation)
+    ops/Queued true
+    ops/Retryable true
+    ops/Submitted true
+    _ false))
+
+(def staged [(record ops/pending-operation (operation-id "queued") (state ops/Queued))
+             (record ops/pending-operation (operation-id "done") (state ops/Submitted))])
+(def staged-ref (atom staged))
+
+(def routes [(record routes/node-route
+                (uuid "route")
+                (state (record routes/outliner-state (editing nil))))])
+
+(def default-options
+  (record host-options (pending-operations nil)))
+
+(def options
+  (assoc default-options
+         :pending-operations
+         (Some (fn []
+                 (apply list (filterv retryable-operation? @staged-ref))))))
+
+(println (count (filterv retryable-operation? staged)))
+(match (:pending-operations options)
+  (Some pending) (println (count (pending)))
+  None (println 0))
+(println (:uuid (first routes)))
+|} );
+    ]
+  in
+  let native = compile_chunks_with_stdlib Lg.Target.Native chunks in
+  assert_ocaml_runs "filterv_named_predicate_preserves_shared_state_record"
+    "2\n2\nroute\n" native;
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange chunks)
+
+let test_single_field_anonymous_records_do_not_cross_pollute_callbacks () =
+  let source = {|
+(type-record status (uuid :string))
+(type-record block (uuid :string) (title :string))
+(type-record outliner-state (editing :option<string>))
+(type-record node-route (uuid :string) (state :outliner-state))
+
+(defn same-status? [left right]
+  (= (when-some [status left] (:uuid status))
+     (when-some [status right] (:uuid status))))
+
+(defn same-summary? [left right]
+  (= (when-some [status left] (tuple (:uuid status) (:title status)))
+     (when-some [status right] (tuple (:uuid status) (:title status)))))
+
+(defn prepare-block [prepare block]
+  (prepare block))
+
+(println (same-status? (Some (record status (uuid "same")))
+                       (Some (record status (uuid "same")))))
+(println (same-summary? (Some (record block (uuid "summary") (title "Summary")))
+                        (Some (record block (uuid "summary") (title "Summary")))))
+(println (prepare-block (fn [asset] (= "asset" (:uuid asset)))
+                        (record block (uuid "asset") (title "Asset"))))
+(println (:uuid (record node-route
+                  (uuid "route")
+                  (state (record outliner-state (editing nil))))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "single_field_anonymous_records_do_not_cross_pollute_callbacks"
+    "true\ntrue\ntrue\nroute\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_inferred_symbols_distinguish_nullary_constructors_from_functions () =
   let source = {|
 (type-variant NodeKind (Dialog) (Drawer) (Text))
@@ -5968,6 +6236,153 @@ let test_keyword_callbacks_preserve_mutable_signal_item_types () =
   let native = compile Lg.Target.Native in
   assert_ocaml_runs "keyword_callbacks_preserve_mutable_signal_item_types" "" native;
   ignore (compile Lg.Target.Melange)
+
+let test_sampled_signals_keep_independent_nominal_payloads () =
+  let source = {|
+(type-record signal [value] (current :ref<value>))
+(type-record chat-model (search-open :bool) (rows :vector<outliner-row>))
+(type-record outliner-row (uuid :string) (depth :int))
+
+(signature sample [value] :fn<signal<value>;value>)
+(defn sample [source] @(:current source))
+
+(defn row-uuid [row]
+  (let [_depth (:depth row)]
+    (:uuid row)))
+
+(defn root-visible? [current]
+  (not (:search-open current)))
+
+(defn row-visible? [current row]
+  (and (root-visible? current)
+       (= (row-uuid row) "row-1")))
+
+(defn zoom-control [model-source row-source]
+  (let [current (sample model-source)
+        row (sample row-source)]
+    (if (row-visible? current row)
+      (row-uuid row)
+      "")))
+
+(def model-source
+  (record signal
+    (current (atom (record chat-model
+                     (search-open false)
+                     (rows []))))))
+
+(def row-source
+  (record signal
+    (current (atom (record outliner-row
+                     (uuid "row-1")
+                     (depth 0))))))
+
+(println (zoom-control model-source row-source))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "sampled_signals_keep_independent_nominal_payloads" "row-1\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_ref_record_accessor_constraints_merge () =
+  let source = {|
+(type-record snapshot (db :string))
+(type-record runtime-state (snapshot :snapshot) (search-index-is-fresh :bool))
+(type-record graph-runtime (state :ref<runtime-state>) (search-index :option<string>))
+
+(defn state [runtime] @(:state runtime))
+(defn db [runtime] (:db (:snapshot (state runtime))))
+
+(defn refresh-search-affected [runtime]
+  (when (:search-index-is-fresh (state runtime))
+    (match (:search-index runtime)
+      (Some _search-index) (println (db runtime))
+      None nil))
+  (println "done"))
+
+(defn refresh-search-affected-uninstantiated [runtime]
+  (when (:search-index-is-fresh (state runtime))
+    (println (db runtime)))
+  (println "done"))
+
+(def runtime
+  (record graph-runtime
+    (state (atom (record runtime-state
+                   (snapshot (record snapshot (db "db")))
+                   (search-index-is-fresh true))))
+    (search-index (Some "index"))))
+
+(refresh-search-affected runtime)
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nested_ref_record_accessor_constraints_merge" "db\ndone\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_later_ref_record_update_preserves_prior_fields () =
+  let source = {|
+(type-record sidebar-pages (value :string))
+(type-record snapshot (db :string))
+(type-record runtime-state
+  (snapshot :snapshot)
+  (sidebar-cache :option<tuple<string;sidebar-pages>>)
+  (search-index-is-fresh :bool))
+(type-record graph-runtime (state :ref<runtime-state>) (search-index :option<string>))
+
+(defn state [runtime] @(:state runtime))
+(defn db [runtime] (:db (:snapshot (state runtime))))
+
+(defn refresh-search-affected [runtime]
+  (when (:search-index-is-fresh (state runtime))
+    (when-some [search-index (:search-index runtime)]
+      (println (str search-index ":" (db runtime)))))
+  (println "done"))
+
+(defn sidebar-pages [runtime]
+  (let [database (db runtime)]
+    (match (:sidebar-cache (state runtime))
+      (Some (tuple cached pages))
+      (if (identical? cached database)
+        pages
+        (let [pages (record sidebar-pages (value database))]
+          (swap! (:state runtime) assoc :sidebar-cache (Some (tuple database pages)))
+          pages))
+      None
+      (let [pages (record sidebar-pages (value database))]
+        (swap! (:state runtime) assoc :sidebar-cache (Some (tuple database pages)))
+        pages))))
+
+(def runtime
+  (record graph-runtime
+    (state (atom (record runtime-state
+                   (snapshot (record snapshot (db "db")))
+                   (sidebar-cache nil)
+                   (search-index-is-fresh true))))
+    (search-index (Some "index"))))
+
+(refresh-search-affected runtime)
+(println (:value (sidebar-pages runtime)))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "later_ref_record_update_preserves_prior_fields"
+    "index:db\ndone\ndb\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_swap_record_update_preserves_record_target () =
+  let source = {|
+(type-record runtime-state (journal-limit :int))
+(type-record graph-runtime (state :ref<runtime-state>))
+
+(defn load-older-journals [runtime]
+  (swap! (:state runtime) update :journal-limit + 2)
+  (println (:journal-limit @(:state runtime))))
+
+(def runtime
+  (record graph-runtime
+    (state (atom (record runtime-state (journal-limit 4))))))
+
+(load-older-journals runtime)
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "swap_record_update_preserves_record_target" "6\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_declared_defn_signature_contextualizes_parameters () =
   let source =
@@ -6749,12 +7164,129 @@ let test_membership_on_record_fields_keeps_static_collections () =
      "(has-entry? (record index (entries {\"a\" 1})) 1)";
      "(in-bounds? (record row (cells [\"a\"])) \"a\")"]
 
+let test_into_remove_predicates_use_target_identifiers () =
+  let source = {|
+(type-record entry (id :int) (title :string))
+(type-record entry-queue
+  (stage :fn<entry;result<unit;string>>)
+  (pending :fn<vector<entry>>))
+(defn create-queue []
+  (let [entries (atom [])]
+    (record entry-queue
+      (stage (fn [entry]
+               (swap! entries
+                 (fn [items]
+                   (into [entry] (remove #(= (:id %) (:id entry)) items))))
+               (Ok (ocaml.Stdlib/ignore 0))))
+      (pending (fn [] @entries)))))
+(def first-entry (record entry (id 1) (title "first")))
+(def second-entry (record entry (id 2) (title "second")))
+(def replacement (record entry (id 3) (title "replacement")))
+(def entries (atom [first-entry second-entry]))
+(swap! entries (fn [items] (into [replacement] (remove #(= (:id %) 1) items))))
+(println (= [3 2] (mapv :id @entries)))
+(println (= [1 2] (mapv :id (into [first-entry] (remove (fn [entry-value] (= (:id entry-value) 3)) @entries)))))
+(println (= [1 3] (mapv :id (into [first-entry] (remove (fn [type] (= (:id type) 2)) @entries)))))
+(def queue (create-queue))
+((:stage queue) first-entry)
+((:stage queue) second-entry)
+((:stage queue) first-entry)
+(println (= [1 2] (mapv :id ((:pending queue)))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "into_remove_predicate_identifiers" "true\ntrue\ntrue\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_swap_updater_parameters_use_target_identifiers () =
+  let source = {|
+(def cell (atom 0))
+(defn bump [reference]
+  (swap! reference #(+ % 1))
+  (swap! reference (fn [current-value] (+ current-value 2)))
+  (swap! reference (fn [type] (+ type 3))))
+(bump cell)
+(println @cell)
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "swap_updater_target_identifiers" "6\n" native;
+  ignore (compile_string_with_stdlib ~target:Melange source |> expect_ok)
+
+let test_and_guards_preserve_boolean_parameter_storage () =
+  let source = {|
+(require [ocaml.Bool :as boolean])
+(defn enabled-number [enabled text]
+  (let [result (if (and enabled (= text "x")) 1 0)]
+    (+ result (boolean/to-int enabled))))
+(assert (= 2 (enabled-number true "x")))
+(assert (= 0 (enabled-number false "x")))
+(assert (= 1 (enabled-number true "y")))
+(defn optional-guard [value]
+  (if (and value true) 1 0))
+(assert (= 0 (optional-guard nil)))
+(assert (= 0 (optional-guard (Some false))))
+(assert (= 1 (optional-guard (Some true))))
+|} in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "and_guards_preserve_boolean_parameter_storage" "" native;
+  ignore (compile_string_with_stdlib ~target:Melange source |> expect_ok)
+
+let test_recursive_destructuring_preserves_homogeneous_tuple_storage () =
+  let source = {|
+(require [ocaml.String :as strings])
+(defn pair [text] (Ok (tuple text "b")))
+(defn unwrap [result]
+  (match result (Ok value) value (Error message) (throw (Failure message))))
+(defn repeat-pair [remaining]
+  (let [[left right] (unwrap (pair "a"))]
+    (if (> remaining 0)
+      (repeat-pair (dec remaining))
+      (strings/cat left right))))
+(defn repeat-vector [remaining]
+  (let [[left right] ["c" "d"]]
+    (if (> remaining 0)
+      (repeat-vector (dec remaining))
+      (strings/cat left right))))
+(println (repeat-pair 2))
+(println (repeat-vector 2))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_destructuring_homogeneous_tuple" "ab\ncd\n" output;
+  ignore (compile_string_with_stdlib ~target:Melange source |> expect_ok)
+
 let test_recursive_variant_identity_adaptation () =
+  let open Lg.Types in
+  let alias = TOcaml "Recursive_alias.t" in
+  let row payload string_ty =
+    TPoly_variant { tags = [ "List", Some (TList payload); "String", Some string_ty ];
+                    bound = Exact_row }
+  in
+  let manifest = row (row alias TString) TString in
+  let expansions = ref 0 in
+  let resolve_alias ty =
+    incr expansions;
+    if !expansions > 20 then failwith "recursive alias unification did not terminate";
+    if ty = alias then Some manifest else None
+  in
+  (match Lg.Type_solver.unify ~resolve_alias Lg.Type_solver.empty
+           (row alias TString) manifest with
+  | Ok _ -> ()
+  | Error _ -> failwith "different expansion depths of one recursive alias did not unify");
+  expansions := 0;
+  (match Lg.Type_solver.unify ~resolve_alias Lg.Type_solver.empty
+           (row alias TInt) manifest with
+  | Error _ -> ()
+  | Ok _ -> failwith "recursive alias unification skipped an incompatible sibling payload");
   let dir = Filename.concat (test_dir ()) "recursive_json_fixture" in
   if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
   let fixture = {|
 type t = [ `Assoc of (string * t) list | `List of t list | `String of string | `Null ]
 let to_assoc : t -> (string * t) list = function `Assoc fields -> fields | _ -> []
+let sample (_ : string) : [ `Assoc of (string * t) list | `List of t list | `String of string | `Null ] =
+  `Assoc ["answer", `String "value"]
+let member name (input : t) : t =
+  match List.assoc_opt name (to_assoc input) with Some value -> value | None -> `Null
+type holder = { payload : t }
+let holder text = { payload = sample text }
 |} in
   Fun.protect
     ~finally:(fun () ->
@@ -6783,10 +7315,67 @@ let to_assoc : t -> (string * t) list = function `Assoc fields -> fields | _ -> 
   (match input (tag Assoc _) (json-util/to-assoc input) _ (list)))
 (run! #(println (count (fields (encode %))))
       [(Text "hello") (Object [(tuple "nested" (Text "world"))])])
+(defn object-value [body]
+  (let [input (json-util/sample body)]
+    (match input (tag Assoc _) input _ (throw (Failure "not an object")))))
+(defn member [name input]
+  (match input (tag Assoc _) (json-util/member name input) _ (tag Null)))
+(defn text-field [name input]
+  (match (member name input) (tag String text) (Some text) _ nil))
+(defn retry-count [remaining]
+  (let [input (:payload (json-util/holder "wire"))
+        text (text-field "answer" input)]
+    (if (> remaining 0)
+      (retry-count (dec remaining))
+      (or text "missing"))))
+(println (retry-count 2))
+(defn retry-object [remaining]
+  (let [input (object-value "wire")
+        text (text-field "answer" input)]
+    (if (> remaining 0)
+      (retry-object (dec remaining))
+      (or text "missing"))))
+(println (retry-object 2))
 |} in
   let output = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "recursive_variant_identity_adaptation" "2\n2\n"
-    ("module Recursive_json_fixture = struct\n" ^ fixture ^ "end\n" ^ output))
+  assert_ocaml_runs "recursive_variant_identity_adaptation" "2\n2\nvalue\nvalue\n"
+    ("module Recursive_json_fixture = struct\n" ^ fixture ^ "end\n" ^ output);
+  match compile_string_with_stdlib
+          (source ^ "\n(json-util/to-assoc (tag String 1))") with
+  | Error _ -> ()
+  | Ok _ -> failwith "host variant alias accepted an incompatible payload")
+
+let test_match_tuple_open_variant_payload_is_not_seqable () =
+  let source = {|
+(ns tuple-regression
+  (:require [ocaml.Rrbvec :as vector]))
+
+(type-variant semantic-value
+  (Text :string)
+  (Count :int)
+  (Fields :vector<tuple<string;semantic-value>>))
+
+(defn object [entries] (tag Assoc (vector/to-list entries)))
+
+(defn json-array [entries] (tag List (vector/to-list entries)))
+
+(defn encode [input]
+  (let [[kind value]
+        (match input
+          (Text value) (tuple "string" (tag String value))
+          (Count value) (tuple "int" (tag Int value))
+          (Fields entries)
+          (tuple "map"
+                 (json-array
+                  (mapv (fn [[key value]]
+                          (object [(tuple "key" (tag String key))
+                                   (tuple "value" (encode value))]))
+                        entries))))]
+    (object [(tuple "type" (tag String kind)) (tuple "value" value)])))
+|}
+  in
+  ignore (compile_string_with_stdlib source |> expect_ok);
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_seqable_record_elements_adapt_nested_maps () =
   let definitions = {|
@@ -14161,6 +14750,39 @@ let test_generic_callback_capability_does_not_wrap_value_type () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_nullable_projection_equality_preserves_both_option_layers () =
+  let source = {|
+(defn same-status? [left right]
+  (= (when-some [status left] (:uuid status))
+     (when-some [status right] (:uuid status))))
+(assert (same-status? nil nil))
+(assert (same-status? (Some {:uuid "a"}) (Some {:uuid "a"})))
+(assert (not (same-status? (Some {:uuid "a"}) (Some {:uuid "b"}))))
+(assert (not (same-status? nil (Some {:uuid "a"}))))
+(assert (not (same-status? (Some {:uuid "a"}) nil)))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring compiled "Runtime_dynamic" then
+    failwith "nullable projection equality must remain static";
+  assert_ocaml_runs "nullable_projection_equality_preserves_both_option_layers"
+    "" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nullable_callback_result_survives_when_some_binding () =
+  let source = {|
+(type-record callbacks (resolver :option<fn<int;option<string>>>))
+(defn capture [resolver]
+  (let [page (when-some [resolve resolver] (resolve 1))]
+    (if-some [page page] page "missing")))
+(defn run [callbacks] (capture (:resolver callbacks)))
+(assert (= "found" (run (record callbacks (resolver (Some (fn [_] (Some "found"))))))))
+(assert (= "missing" (run (record callbacks (resolver (Some (fn [_] nil)))))))
+(assert (= "missing" (run (record callbacks (resolver nil)))))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nullable_callback_result_survives_when_some_binding" "" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_nullable_equality_evaluates_each_operand_once () =
   let source =
     {|
@@ -17634,6 +18256,68 @@ let test_recursive_option_array_return_is_inferred_from_static_branches () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_recursive_unit_return_seeds_from_host_call () =
+  let source =
+    {|
+(require [ocaml.Stdlib :as stdlib])
+
+(def visited (atom []))
+
+(defn remove-tree [depth]
+  (swap! visited conj depth)
+  (try
+    (when (> depth 0)
+      (run! (fn [child] (remove-tree child)) [(dec depth)]))
+    (catch _ (stdlib/ignore 0)))
+  (stdlib/ignore 0))
+
+(remove-tree 2)
+(assert (= [2 1 0] @visited))
+(println "ok")
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_unit_return_seeds_from_host_call" "ok\n"
+    ocaml_source
+
+let test_string_record_fields_preserve_sequence_observations () =
+  let source = {|
+(require [ocaml.String :as host])
+
+(defn observed-first [response]
+  (empty? (:body response))
+  (host/length (:body response)))
+
+(defn string-first [response]
+  (let [size (host/length (:body response))]
+    (empty? (:body response))
+    size))
+
+(defn nested [request]
+  (empty? (:body (:response request)))
+  (host/length (:body (:response request))))
+
+(assert (= 3 (observed-first {:body "abc"})))
+(assert (= 0 (observed-first {:body ""})))
+(assert (= 3 (string-first {:body "abc"})))
+(assert (= 0 (string-first {:body ""})))
+(assert (= 3 (nested {:response {:body "abc"}})))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "string_record_fields_preserve_sequence_observations" "" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  let incompatible = source ^ {|
+(defn numeric-body [response]
+  (run! inc (:body response))
+  (host/length (:body response)))
+(numeric-body {:body "abc"})
+|} in
+  List.iter (fun target ->
+    match compile_string_with_stdlib ~target incompatible with
+    | Error _ -> ()
+    | Ok _ -> failwith "string record field accepted numeric sequence elements")
+    [Lg.Target.Native; Lg.Target.Melange]
+
 let test_typed_recursive_functions_require_valid_signatures () =
   let inferred =
     Lg.Compiler.compile_string {|
@@ -18419,6 +19103,182 @@ let test_map_destructuring_infers_tuple_entries_without_parameter_hints () =
   assert_ocaml_runs "map_destructuring_infers_tuple_entries_without_parameter_hints" ""
     compiled;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_some_destructured_lookup_preserves_independent_tuple_positions () =
+  let source = {|
+(defn lookup-value [entries name]
+  (some (fn [[key value]] (when (= key name) value)) entries))
+(defn increment-answer [entries]
+  (when-some [value (lookup-value entries "answer")]
+    (inc value)))
+(assert (= (Some 42) (increment-answer [(tuple "answer" 41)])))
+(assert (= nil (increment-answer [(tuple "other" 41)])))
+(assert (= (Some 2) (increment-answer [(tuple "answer" 1) (tuple "answer" 99)])))
+(assert (= nil (increment-answer [])))
+(defn read-text [entries]
+  (match (lookup-value entries "text")
+    (Some (tag Text value)) value
+    _ "missing"))
+(assert (= "present" (read-text [(tuple "text" (tag Text "present"))])))
+(assert (= "missing" (read-text [(tuple "other" (tag Text "present"))])))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring compiled "Runtime_dynamic" then
+    failwith "destructured tuple lookup must remain static";
+  assert_ocaml_runs "some_destructured_lookup_preserves_independent_tuple_positions"
+    "" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_projected_map_value_option_field_does_not_double_wrap () =
+  let source = {|
+(type-record block (uuid :string) (parent-id :option<string>))
+(type-record outliner-context (blocks :list<block>))
+
+(defn selected-roots [context selected]
+  (let [by-uuid (into {} (map #(tuple (:uuid %) %) (:blocks context)))
+        selected-ancestor? (fn [block]
+                             (loop [parent (:parent-id block)]
+                               (if-some [uuid parent]
+                                 (cond (contains? selected uuid) true
+                                       :else (recur (match (get by-uuid uuid)
+                                                      (Some ancestor) (:parent-id ancestor)
+                                                      None nil)))
+                                 false)))]
+    (apply list
+           (filter #(and (contains? selected (:uuid %))
+                         (not (selected-ancestor? %)))
+                   (:blocks context)))))
+
+(def root (record block (uuid "root") (parent-id nil)))
+(def child (record block (uuid "child") (parent-id (Some "root"))))
+(def context (record outliner-context (blocks (apply list [root child]))))
+
+(match (first (selected-roots context #{"root" "child"}))
+  (Some block) (assert (= "root" (:uuid block)))
+  None (assert false))
+(match (first (selected-roots context #{"child"}))
+  (Some block) (assert (= "child" (:uuid block)))
+  None (assert false))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring compiled "Some (ancestor.parent_id)" then
+    failwith "projected option field must not be wrapped in a second option";
+  assert_ocaml_runs "projected_map_value_option_field_does_not_double_wrap" ""
+    compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_into_map_accepts_nested_option_row_value () =
+  let source = {|
+(type-record status (uuid :string) (title :string))
+(type-record block (uuid :string) (title :string) (status :option<status>))
+
+(defn same-status? [left right]
+  (= (when-some [status left] (:uuid status))
+     (when-some [status right] (:uuid status))))
+
+(defn reconcile [blocks]
+  (let [by-uuid (into {} (map (fn [block] (tuple (:uuid block) block)) blocks))]
+    (when-some [authoritative (get by-uuid "a")]
+      (same-status? (:status authoritative) (:status authoritative)))))
+
+(println (reconcile [(record block
+                       (uuid "a")
+                       (title "Title")
+                       (status (Some (record status (uuid "s") (title "Done")))))]))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "into_map_accepts_nested_option_row_value" "true\n" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reduce_conj_reverse_into_preserves_map_get_option () =
+  let source = {|
+(type-record block (uuid :string) (title :string))
+(type-record row (block :block))
+
+(defn target-urls [blocks]
+  (let [[_ targets]
+        (reduce
+          (fn [[current targets] block]
+            (let [target (if (= (:title block) "video") (Some (:title block)) current)]
+              (tuple target
+                     (if-some [url target]
+                       (conj targets (tuple (:uuid block) url))
+                       targets))))
+          (tuple nil []) blocks)]
+    targets))
+
+(defn row-json [url row]
+  (if-some [value url] value (:title (:block row))))
+
+(defn rows-json [rows]
+  (let [targets (into {} (reverse (target-urls (map :block rows))))]
+    (map (fn [row] (row-json (get targets (:uuid (:block row))) row)) rows)))
+
+(println (first (rows-json [(record row (block (record block (uuid "a") (title "video"))))])))
+|}
+  in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "reduce_conj_reverse_into_preserves_map_get_option" "video\n"
+    compiled
+
+let test_map_get_uses_optional_parameter_context () =
+  let source = {|
+(defn row-json [^:option<string> url fallback]
+  (if-some [value url] value fallback))
+
+(defn rows-json [targets row]
+  (row-json (get targets "a") row))
+
+(println (rows-json {"a" "video"} "missing"))
+(println (rows-json {} "missing"))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "map_get_uses_optional_parameter_context"
+    "video\nmissing\n" compiled
+
+let test_host_variant_tuple_sequence_adapts_payload_capabilities () =
+  let dir = Filename.concat (test_dir ()) "variant_sequence_fixture" in
+  if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
+  Fun.protect ~finally:(fun () ->
+    Array.iter (fun name -> Sys.remove (Filename.concat dir name)) (Sys.readdir dir);
+    Unix.rmdir dir) (fun () ->
+    let fixture = Filename.concat dir "variant_sequence_fixture.ml" in
+    write_file fixture {|
+type t = [ `String of string | `Null | `Assoc of (string * t) list ]
+let entries () : (string * t) list =
+  ["text", `String "hello"; "empty", `String ""; "null", `Null;
+   "nested", `Assoc ["child", `String "kept"]]
+|};
+    if Sys.command (compile_only_command dir fixture) <> 0 then
+      failwith "variant sequence fixture did not compile";
+    Lg.Ocaml_signature.set_melange_target false;
+    Lg.Ocaml_signature.add_include_dirs [dir];
+    let source = {|
+(ns variant-sequence-client (:require [ocaml.Variant_sequence_fixture :as host]))
+(defn lookup-field [fields name]
+  (some (fn [[key value]] (when (= key name) value)) fields))
+(defn populated? [fields name]
+  (match (lookup-field fields name)
+    (Some (tag String value)) (not (empty? value))
+    _ false))
+(let [fields (host/entries)]
+  (assert (populated? fields "text"))
+  (assert (not (populated? fields "empty")))
+  (assert (not (populated? fields "null")))
+  (assert (not (populated? fields "nested")))
+  (assert (not (populated? fields "missing"))))
+|} in
+    let compiled = compile_string_with_stdlib source |> expect_ok in
+    let generated = Filename.concat dir "variant_sequence_generated.ml" in
+    write_file generated compiled;
+    if Sys.command (compile_only_command dir generated) <> 0 then
+      failwith "variant sequence generated code did not compile";
+    let output = Filename.concat dir "result.out" in
+    if Sys.command (run_compiled_module_command dir
+      [Filename.concat dir "variant_sequence_fixture.cmo";
+       Filename.concat dir "variant_sequence_generated.cmo"] output) <> 0 then
+      failwith "variant sequence generated code did not run";
+    if read_file output <> "" then failwith "unexpected variant sequence output")
 
 let test_some_preserves_host_tuple_elements () =
   let dir = Filename.concat (test_dir ()) "host_tuple_fixture" in
@@ -25023,12 +25883,200 @@ let test_assoc_callback_preserves_nominal_record_collection_fields () =
                 (expected (Some (String-value "old")))
                 (value (Some (String-value "new"))))])))
 (println (:uuid (normalize-properties sample)))
+
+(type-record encryption-options (encrypt-title :fn<string;result<string;string>>))
+(def defaults (record encryption-options (encrypt-title (fn [value] (Ok value)))))
+(defn encrypted-options []
+  (assoc defaults :encrypt-title (fn [value] (Ok (str "enc:" value)))))
+(match ((:encrypt-title (encrypted-options)) "title")
+  (Ok title) (println title)
+  (Error message) (throw (Failure message)))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
-    "assoc_callback_preserves_nominal_record_collection_fields" "u\n"
-    ocaml_source
+    "assoc_callback_preserves_nominal_record_collection_fields" "u\nenc:title\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_assoc_computed_record_field_uses_field_context () =
+  let source = {|
+(type-record operation (operation-id :string))
+(type-record pending (operation :operation))
+(type-record session-state (semantic-queue :vector<pending>))
+(type-record session (state :ref<session-state>))
+(defn state [session] @(:state session))
+(defn prioritize [session operation]
+  (let [queue (:semantic-queue (state session))
+        selected? (fn [pending] (= (:operation-id (:operation pending)) (:operation-id operation)))]
+    (swap! (:state session) assoc :semantic-queue
+           (into (filterv selected? queue) (remove selected? queue)))))
+(let [a (record operation (operation-id "a"))
+      b (record operation (operation-id "b"))
+      current (record session (state (atom (record session-state
+                                (semantic-queue [(record pending (operation a)) (record pending (operation b))])))))]
+  (prioritize current b)
+  (let [ids (mapv #(-> % :operation :operation-id) (:semantic-queue (state current)))]
+    (println (str (nth ids 0) ":" (nth ids 1)))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "assoc_computed_record_field_uses_field_context" "b:a\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
+let test_update_callback_does_not_inherit_enclosing_record_result () =
+  let source = {|
+(type-record pending (id :string))
+(type-record active (pending :pending))
+(type-record session-state (queue :vector<pending>) (active :option<active>))
+(type-record session (state :ref<session-state>))
+(defn state [session] @(:state session))
+(defn prepend! [session]
+  (when-some [active (:active (state session))]
+    (swap! (:state session) update :queue #(into [(:pending active)] %))))
+(let [first (record pending (id "first"))
+      last (record pending (id "last"))
+      current (record session (state (atom (record session-state (queue [last])
+                                           (active (Some (record active (pending first))))))))]
+  (prepend! current)
+  (assert (= ["first" "last"] (mapv :id (:queue @(:state current))))))
+|} in
+  let compiled = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring compiled "Runtime_dynamic" then
+    failwith "record field update must remain static";
+  assert_ocaml_runs "update_callback_does_not_inherit_enclosing_record_result"
+    "" compiled;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_if_some_assoc_branches_reuse_structural_row () =
+  let source = {|
+(defn update-metadata [metadata ^:option<int> maybe-t]
+  (if-some [t maybe-t]
+    (assoc metadata :baseline-t t)
+    metadata))
+(def with-t (update-metadata {:baseline-t 0} (Some 42)))
+(println (:baseline-t with-t))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "if_some_assoc_branches_reuse_structural_row" "42\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_return_param_record_update_preserves_call_site_nominal_fields () =
+  let source = {|
+(type-record snapshot-metadata
+  (url :string)
+  (content-encoding :option<string>)
+  (baseline-t :int)
+  (schema-version :string)
+  (row-count :int))
+
+(defn merge-pull-cursor [metadata body]
+  (try
+    (if (= body "ok")
+      (assoc metadata :baseline-t 9)
+      metadata)
+    (catch _ metadata)))
+
+(let [metadata (record snapshot-metadata
+                 (url "/snapshot")
+                 (content-encoding None)
+                 (baseline-t 7)
+                 (schema-version "1")
+                 (row-count 12))]
+  (assert (= (assoc metadata :baseline-t 9)
+             (merge-pull-cursor metadata "ok")))
+  (println (:url (merge-pull-cursor metadata "ok"))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "return-param record updates must stay static";
+  assert_ocaml_runs
+    "return_param_record_update_preserves_call_site_nominal_fields"
+    "/snapshot\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_some_infers_membership_keys_from_literal_set () =
+  let source = {|
+(defn missing? [values]
+  (not (some #(contains? #{"1" "85"} %) values)))
+
+(println (missing? ["2"]))
+(println (missing? ["2" "85"]))
+
+(defn read-title [decrypt]
+  (match (decrypt "2") (Ok title) title (Error message) message))
+
+(let [decrypted (atom [])
+      decrypt (fn [title] (swap! decrypted conj title) (Ok title))]
+  (println (read-title decrypt))
+  (println (not (some #(contains? #{"1" "85"} %) @decrypted))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "some_infers_membership_keys_from_literal_set" "true\nfalse\n2\ntrue\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_result_preserves_returned_record_parameter () =
+  let source = {|
+(type-record config (graph-id :string) (token :string))
+
+(type-record catalog-entry (graph-id :string) (title :string))
+
+(defn validate [config]
+  (if (= (:graph-id config) "") (Error "missing") (Ok config)))
+
+(defn token [^:config config] (:token config))
+
+(defn checked-token [config]
+  (match (validate config)
+    (Ok config) (token config)
+    (Error message) message))
+
+(println (checked-token (record config (graph-id "graph") (token "preserved"))))
+(println (checked-token (record config (graph-id "") (token "unused"))))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "result_preserves_returned_record_parameter" "preserved\nmissing\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_result_return_param_preserves_recursive_list_payload () =
+  let source = {|
+(type-record pending-id (value :int))
+
+(defn collect-loop [total index ids]
+  (let [_seen (count ids)]
+    (if (= index total)
+      (Ok ids)
+      (collect-loop total (inc index)
+        (list* (record pending-id (value index)) ids)))))
+
+(defn ^:result<list<pending-id>;string> collect []
+  (collect-loop 2 0 (list)))
+
+(match (collect)
+  (Ok ids)
+  (do
+    (println (count ids))
+    (println (:value (nth ids 0)))
+    (println (:value (nth ids 1))))
+  (Error message) (throw (Failure message)))
+|} in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "result_return_param_preserves_recursive_list_payload"
+    "2\n1\n0\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_keyword_conditions_do_not_infer_optional_storage () =
   let source = {|
@@ -29283,6 +30331,102 @@ let test_namespace_value_shadows_automatic_core_macro () =
   assert_ocaml_runs "namespace_value_shadows_automatic_core_macro" "true\n"
     native_source
 
+let test_record_reference_guards_preserve_storage_constraints () =
+  let source =
+    {|
+(type-record subscriber [value] (callback :fn<value;bool>))
+(type-record signal [value]
+  (current :ref<value>)
+  (subscribers :ref<vector<subscriber<value>>>)
+  (disposed :ref<bool>))
+
+(defn publish! [reactive next-value]
+  (when-not (deref (:disposed reactive))
+    (reset! (:current reactive) next-value)
+    (doseq [subscriber (deref (:subscribers reactive))]
+      ((:callback subscriber) next-value)))
+  true)
+
+(def observed (atom []))
+(def signal (record signal
+              (current (atom 0))
+              (subscribers (atom [(record subscriber
+                                    (callback (fn [value] (swap! observed conj value) true)))]))
+              (disposed (atom false))))
+(publish! signal 42)
+(println @(:current signal))
+(println (= [42] @observed))
+(reset! (:disposed signal) true)
+(publish! signal 99)
+(println @(:current signal))
+(println (= [42] @observed))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "record_reference_guards_preserve_storage_constraints"
+    "42\ntrue\n42\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_swap_record_field_conj_infers_event_storage () =
+  let source =
+    {|
+(type-record event (generation :int) (title :string))
+(type-record session [root] (root :root) (events :ref<vector<event>>))
+
+(defn record-event! [session generation title]
+  (swap! (:events session) conj (record event (generation generation) (title title)))
+  generation)
+
+(def session (record session (root "root") (events (atom []))))
+(println (record-event! session 1 "first"))
+(println (record-event! session 2 "second"))
+(println (= ["first" "second"] (mapv :title @(:events session))))
+(println (= [1 2] (mapv :generation @(:events session))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "swap_record_field_conj_infers_event_storage"
+    "1\n2\ntrue\ntrue\n" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  List.iter
+    (fun target ->
+      compile_string_with_stdlib ~target
+        (source ^ "\n(record-event! session \"invalid\" \"third\")\n")
+      |> expect_error_contains "int")
+    [ Lg.Target.Native; Lg.Target.Melange ]
+
+let test_qualified_map_preserves_namespace_binding () =
+  let chunks =
+    [
+      ( "test/qualified_map_provider.cljc",
+        {|
+(ns qualified-map.provider (:refer-clojure :exclude [map mapv seq reduce filter]))
+(defn map [f value] (f value))
+(defn mapv [f value] (f value))
+(defn seq [value] (inc value))
+(defn reduce [f value] (f value))
+(defn filter [_pred values] values)
+|} );
+      ( "test/qualified_map_consumer.cljc",
+        {|
+(ns qualified-map.consumer
+  (:require [qualified-map.provider :as provider]))
+(println (provider/map inc 41))
+(println (qualified-map.provider/map inc 42))
+(println (provider/mapv inc 43))
+(println (provider/seq 44))
+(println (provider/reduce inc 45))
+(println (= [1 2] (provider/filter (fn [_] false) [1 2])))
+(let [map provider/map] (println (map inc 46)))
+(println (= [2 3] (vec (map inc [1 2]))))
+|} );
+    ]
+  in
+  let native = compile_chunks_with_stdlib Lg.Target.Native chunks in
+  assert_ocaml_runs "qualified_map_preserves_namespace_binding"
+    "42\n43\n44\n45\n46\ntrue\n47\ntrue\n" native;
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange chunks)
+
 let test_source_integer_and_identifier_predicates_match_clojurescript () =
   let source =
     {|
@@ -31746,6 +32890,87 @@ let test_group_by_infers_fields_read_through_keep_destructuring () =
     "true\ntrue\n" native;
   ignore (compile_with_stdlib Lg.Target.Melange
     "test/group_by_keep_fields.cljc" source)
+
+let test_group_by_function_body_infers_bucket_value_fields_without_call_site () =
+  let source = {|
+(ns grouped-fields-body-test (:require [ocaml.String :as bytes]))
+(def ^:set<string> empty-labels #{})
+(defn duplicated-labels [candidates]
+  (let [by-label (group-by #(bytes/lowercase-ascii (:label %)) candidates)]
+    (into empty-labels
+          (keep (fn [[label values]]
+                  (when (> (count (set (map :value values))) 1)
+                    label))
+                by-label))))
+|}
+  in
+  ignore
+    (compile_with_stdlib Lg.Target.Native
+       "test/group_by_body_fields.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/group_by_body_fields.cljc" source)
+
+let test_truthy_nullable_condition_does_not_unwrap_unused_payload () =
+  let source = {|
+(type-record runtime (path :string))
+(type-record snapshot (statuses :list<tuple<string;string>>))
+(defn ops-list [path] [path])
+(defn stage [runtime operation-id]
+  (let [snapshot (record snapshot (statuses (list (tuple "known" "Submitted"))))
+        known? (some #(= (first %) operation-id) (:statuses snapshot))
+        existing (if known? (ops-list (:path runtime)) [])]
+    (count existing)))
+(println (stage (record runtime (path "root")) "known"))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/truthy_unused_nullable_payload.cljc" source
+  in
+  if string_contains_substring native "let known_ = Option.get known_" then
+    failwith "truthy nullable condition emitted unused payload unwrap";
+  assert_ocaml_runs "truthy_nullable_condition_does_not_unwrap_unused_payload"
+    "1\n" native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/truthy_unused_nullable_payload.cljc" source)
+
+let test_apply_list_constrains_function_parameter_as_seqable () =
+  let source = {|
+(defn append-rows [^:string path ^:list<int> rows] rows)
+(defn activate [path rows]
+  (append-rows path (apply list rows)))
+|}
+  in
+  ignore
+    (compile_with_stdlib Lg.Target.Native
+       "test/apply_list_parameter_seqable.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/apply_list_parameter_seqable.cljc" source)
+
+let test_apply_list_uses_imported_seqable_parameter_context () =
+  let chunks =
+    [
+      ( "test/apply_list_store.cljc",
+        {|
+(ns apply-list-store)
+(type-record row (value :int))
+(defn append-rows [path rows]
+  (mapv #(:value %) rows))
+|} );
+      ( "test/apply_list_consumer.cljc",
+        {|
+(ns apply-list-consumer
+  (:require [apply-list-store :as store]))
+(defn activate [path rows]
+  (store/append-rows path (apply list rows)))
+|} );
+    ]
+  in
+  ignore (compile_chunks_with_stdlib Lg.Target.Native chunks);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange chunks)
 
 let test_match_collection_updates_preserve_nominal_elements () =
   let source = {|
@@ -53151,6 +54376,10 @@ let tests =
     ("subs rejects non-int indexes", test_subs_rejects_non_int_indexes);
     ( "type relations are explicit and strict",
       test_type_relations_are_explicit_and_strict );
+    ( "fresh anonymous records merge across branches",
+      test_fresh_anonymous_records_merge_across_branches );
+    ( "fresh anonymous record branches emit shared record type",
+      test_fresh_anonymous_record_branches_emit_shared_record_type );
     ( "type solver unifies sequence representations",
       test_type_solver_unifies_sequence_representations );
     ( "type solver preserves shared and independent variables",
@@ -53348,6 +54577,7 @@ let tests =
     ( "run infers unannotated collection", test_run_infers_unannotated_collection );
     ( "mapv preserves source record callback rows", test_mapv_preserves_source_record_callback_rows );
     ( "tuple branches preserve vector storage", test_tuple_branches_preserve_vector_storage );
+    ( "payload constructor namespace identity", test_payload_constructor_namespace_identity );
     ( "variant constructors use valid OCaml names", test_variant_constructors_use_valid_ocaml_names );
     ( "tuple vector patterns infer comparable fields", test_tuple_vector_patterns_infer_comparable_fields );
     ( "inferred callback captures shadow global functions",
@@ -53356,6 +54586,14 @@ let tests =
       test_inferred_symbols_distinguish_nullary_constructors_from_functions );
     ( "keyword callbacks preserve mutable signal item types",
       test_keyword_callbacks_preserve_mutable_signal_item_types );
+    ( "sampled signals keep independent nominal payloads",
+      test_sampled_signals_keep_independent_nominal_payloads );
+    ( "nested ref record accessor constraints merge",
+      test_nested_ref_record_accessor_constraints_merge );
+    ( "later ref record update preserves prior fields",
+      test_later_ref_record_update_preserves_prior_fields );
+    ( "swap record update preserves record target",
+      test_swap_record_update_preserves_record_target );
     ( "declared defn signature contextualizes parameters",
       test_declared_defn_signature_contextualizes_parameters );
     ( "explicit sum constructors keep collections static",
@@ -53394,8 +54632,18 @@ let tests =
       test_record_set_fields_combine_seqable_and_membership_constraints );
     ( "membership on record fields keeps static collections",
       test_membership_on_record_fields_keeps_static_collections );
+    ( "into remove predicates use target identifiers",
+      test_into_remove_predicates_use_target_identifiers );
+    ( "swap updater parameters use target identifiers",
+      test_swap_updater_parameters_use_target_identifiers );
+    ( "and guards preserve boolean parameter storage",
+      test_and_guards_preserve_boolean_parameter_storage );
+    ( "recursive destructuring preserves homogeneous tuple storage",
+      test_recursive_destructuring_preserves_homogeneous_tuple_storage );
     ( "recursive variant identity adaptation",
       test_recursive_variant_identity_adaptation );
+    ( "match tuple open variant payload is not seqable",
+      test_match_tuple_open_variant_payload_is_not_seqable );
     ( "seqable tuple elements preserve capability payloads",
       test_seqable_tuple_elements_preserve_capability_payloads );
     ( "seqable record elements adapt nested maps",
@@ -54338,6 +55586,10 @@ let tests =
     ( "typed recursive functions", test_typed_recursive_functions );
     ( "recursive option array return is inferred from static branches",
       test_recursive_option_array_return_is_inferred_from_static_branches );
+    ( "recursive unit return seeds from host call",
+      test_recursive_unit_return_seeds_from_host_call );
+    ( "string record fields preserve sequence observations",
+      test_string_record_fields_preserve_sequence_observations );
     ( "typed recursive functions validate signatures",
       test_typed_recursive_functions_require_valid_signatures );
     ( "multi-arity defn dispatches fixed arities",
@@ -54406,6 +55658,16 @@ let tests =
       test_multi_arity_export_preserves_inferred_optional_parameter );
     ( "contains uses collection form type", test_contains_uses_collection_form_type );
     ( "some preserves filtered tuple elements", test_some_preserves_filtered_tuple_elements );
+    ( "some destructured lookup preserves independent tuple positions",
+      test_some_destructured_lookup_preserves_independent_tuple_positions );
+    ( "projected map value option field does not double wrap",
+      test_projected_map_value_option_field_does_not_double_wrap );
+    ( "into map accepts nested option row value",
+      test_into_map_accepts_nested_option_row_value );
+    ( "reduce conj reverse into preserves map get option",
+      test_reduce_conj_reverse_into_preserves_map_get_option );
+    ( "map get uses optional parameter context",
+      test_map_get_uses_optional_parameter_context );
     ( "map destructuring infers tuple entries without parameter hints",
       test_map_destructuring_infers_tuple_entries_without_parameter_hints );
     ( "some preserves host tuple elements", test_some_preserves_host_tuple_elements );
@@ -54881,6 +56143,14 @@ let tests =
       test_group_by_preserves_full_bucket_elements_when_key_uses_row_subset );
     ( "group-by preserves full concat elements with shorthand key",
       test_group_by_preserves_full_concat_elements_with_shorthand_key );
+    ( "group-by function body infers bucket value fields without call site",
+      test_group_by_function_body_infers_bucket_value_fields_without_call_site );
+    ( "truthy nullable condition does not unwrap unused payload",
+      test_truthy_nullable_condition_does_not_unwrap_unused_payload );
+    ( "apply list constrains function parameter as seqable",
+      test_apply_list_constrains_function_parameter_as_seqable );
+    ( "apply list uses imported seqable parameter context",
+      test_apply_list_uses_imported_seqable_parameter_context );
     ( "into tuple map preserves full values when key uses row subset",
       test_into_tuple_map_preserves_full_values_when_key_uses_row_subset );
     ( "match collection updates preserve nominal elements",
@@ -54988,6 +56258,18 @@ let tests =
       test_assoc_adapts_record_collection_fields );
     ( "assoc callback preserves nominal record collection fields",
       test_assoc_callback_preserves_nominal_record_collection_fields );
+    ( "assoc computed record field uses field context",
+      test_assoc_computed_record_field_uses_field_context );
+    ( "if-some assoc branches reuse structural row",
+      test_if_some_assoc_branches_reuse_structural_row );
+    ( "return-param record update preserves call-site nominal fields",
+      test_return_param_record_update_preserves_call_site_nominal_fields );
+    ( "some infers membership keys from literal set",
+      test_some_infers_membership_keys_from_literal_set );
+    ( "result preserves returned record parameter",
+      test_result_preserves_returned_record_parameter );
+    ( "result return-param preserves recursive list payload",
+      test_result_return_param_preserves_recursive_list_payload );
     ( "keyword conditions do not infer optional storage",
       test_keyword_conditions_do_not_infer_optional_storage );
     ( "swap update conj preserves record element context",
@@ -55229,6 +56511,24 @@ let tests =
       test_source_binding_control_macros_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
+    ( "qualified map preserves namespace binding",
+      test_qualified_map_preserves_namespace_binding );
+    ( "shared record field does not select smallest nominal record",
+      test_shared_record_field_does_not_select_smallest_nominal_record );
+    ( "optional reference record reads preserve cell identity",
+      test_optional_reference_record_reads_preserve_cell_identity );
+    ( "reference accessor keeps declared payload with shared fields",
+      test_reference_accessor_keeps_declared_payload_with_shared_fields );
+    ( "shared single field variant state stays structural",
+      test_shared_single_field_variant_state_stays_structural );
+    ( "filterv named predicate preserves shared state record",
+      test_filterv_named_predicate_preserves_shared_state_record );
+    ( "single field anonymous records do not cross pollute callbacks",
+      test_single_field_anonymous_records_do_not_cross_pollute_callbacks );
+    ( "record reference guards preserve storage constraints",
+      test_record_reference_guards_preserve_storage_constraints );
+    ( "swap record field conj infers event storage",
+      test_swap_record_field_conj_infers_event_storage );
     ( "source integer and identifier predicates match ClojureScript",
       test_source_integer_and_identifier_predicates_match_clojurescript );
     ( "batched core functions infer int params",
@@ -56972,6 +58272,14 @@ let tests =
       test_optional_self_protocol_fallback_preserves_return_type );
     ( "generic callback capability does not wrap value type",
       test_generic_callback_capability_does_not_wrap_value_type );
+    ( "update callback does not inherit enclosing record result",
+      test_update_callback_does_not_inherit_enclosing_record_result );
+    ( "host variant tuple sequence adapts payload capabilities",
+      test_host_variant_tuple_sequence_adapts_payload_capabilities );
+    ( "nullable callback result survives when-some binding",
+      test_nullable_callback_result_survives_when_some_binding );
+    ( "nullable projection equality preserves both option layers",
+      test_nullable_projection_equality_preserves_both_option_layers );
     ( "nullable equality evaluates each operand once",
       test_nullable_equality_evaluates_each_operand_once );
   ]

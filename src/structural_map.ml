@@ -118,7 +118,57 @@ let record_expr fields values =
     return_param_index = None;
   }
 
+let named_record_with_value_arguments record values =
+  let value_type value =
+    match Semantic_ir.type_annotations value with
+    | ty :: _ -> Some ty
+    | [] -> None
+  in
+  let rec argument_for parameter field_ty value_ty =
+    match (field_ty, value_ty) with
+    | TVar name, ty when name = parameter -> Some ty
+    | (TUnknown | TMeta _ | TNil), ty when parameter = "a" -> Some ty
+    | TNullable field_ty, TNullable value_ty
+    | TArray field_ty, TArray value_ty
+    | TRef field_ty, TRef value_ty
+    | TList field_ty, TList value_ty
+    | TVector field_ty, TVector value_ty
+    | TSet field_ty, TSet value_ty
+    | TSeq field_ty, TSeq value_ty ->
+        argument_for parameter field_ty value_ty
+    | TOcaml_app (_, field_args), TOcaml_app (_, value_args)
+    | TTuple field_args, TTuple value_args
+      when List.length field_args = List.length value_args ->
+        let rec find = function
+          | [], [] -> None
+          | field_ty :: field_rest, value_ty :: value_rest -> (
+              match argument_for parameter field_ty value_ty with
+              | Some _ as result -> result
+              | None -> find (field_rest, value_rest))
+          | _ -> None
+        in
+        find (field_args, value_args)
+    | _ -> None
+  in
+  let argument_for_value parameter ((field : field), value) =
+    match value_type value with
+    | None -> None
+    | Some value_ty -> argument_for parameter field.ty value_ty
+  in
+  if record.nominal || record.type_parameters = [] then record
+  else
+    let type_arguments =
+      List.map2
+        (fun parameter fallback ->
+          values
+          |> List.find_map (argument_for_value parameter)
+          |> Option.value ~default:fallback)
+        record.type_parameters record.type_arguments
+    in
+    { record with type_arguments }
+
 let named_record_expr record values =
+  let record = named_record_with_value_arguments record values in
   {
     ty = TNamed_record record;
     semantic_expr = Semantic_ir.annotate (TNamed_record record)
@@ -134,12 +184,23 @@ let named_record_expr record values =
 let as_named_record record target =
   named_record_expr record (values_for target record.fields)
 
-let replace_field target fields keyword expression =
+let replace_field ?replacement_ty target fields keyword expression =
+  let replacement_field (field : field) =
+    match replacement_ty with
+    | Some ty -> { field with ty }
+    | None -> field
+  in
   let replacement_values () =
     List.map
       (fun (field : field) ->
-        if field.keyword = keyword then (field, expression)
+        if field.keyword = keyword then (replacement_field field, expression)
         else (field, field_expr target field))
+      fields
+  in
+  let fields =
+    List.map
+      (fun (field : field) ->
+        if field.keyword = keyword then replacement_field field else field)
       fields
   in
   match target.ty with
@@ -232,7 +293,7 @@ let assoc target fields keyword value =
         (Printf.sprintf "cannot assoc %s as %s because it is already %s" keyword
            (source_name value.ty) (source_name field.ty))
   | Some _ ->
-      Ok (replace_field target fields keyword value.semantic_expr)
+      Ok (replace_field ~replacement_ty:value.ty target fields keyword value.semantic_expr)
   | None ->
       let runtime_map =
         fields <> []

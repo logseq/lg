@@ -14,10 +14,22 @@ type local_function = {
 let letfn_counter = ref 0
 let canonical tys = Type_solver.canonical (TTuple tys)
 
+let resolve_host_alias = function
+  | TOcaml name -> (
+      match Ocaml_signature.type_manifest name with
+      | Ok ((TPoly_variant _ | TRecord _ | TNamed_record _) as manifest) ->
+          Some manifest
+      | Ok _ | Error _ -> (
+          match Ocaml_signature.record_type name with
+          | Ok record -> Some record
+          | Error _ -> None))
+  | _ -> None
+
 let resolve_constraint_type scope env ty =
   let ty = Function_elaborator.infer_named_record scope env
       (Types.constraint_value_type ty) in
   match ty with
+  | TOcaml _ -> Option.value (resolve_host_alias ty) ~default:ty
   | TOcaml_app (name, arguments) ->
       let candidates =
         Env.filter_record_bindings
@@ -92,7 +104,8 @@ let constraints scope env members types expressions =
   Result.bind collect (fun () ->
       let unify result (expected, actual) =
         Result.bind result (fun substitutions ->
-            match Type_solver.unify substitutions expected actual with
+            match Type_solver.unify ~resolve_alias:resolve_host_alias
+                    substitutions expected actual with
             | Ok substitutions -> Ok substitutions
             | Error conflict ->
                 Error.error

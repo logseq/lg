@@ -639,6 +639,15 @@ let form_dependencies ?(ignore_declarations = false) ~scope
     | FList (FSymbol ("deftype" | "defrecord") :: _) -> true
     | _ -> false
   in
+  let type_definition_form = function
+    | FList
+        (FSymbol
+          ( "extern-type" | "type-variant" | "type-alias" | "type-record"
+          | "external-record" )
+        :: _) ->
+        true
+    | _ -> false
+  in
   match form with
   | FList (FSymbol "declare+" :: _) when ignore_declarations -> []
   | FList (FSymbol "declare" :: _) when ignore_declarations -> []
@@ -704,10 +713,15 @@ let form_dependencies ?(ignore_declarations = false) ~scope
                   else all)
                candidates)
       in
-      (resolve_dependencies ~prefer_declarations providers
-         (dependency_symbols form)
+      let value_dependencies, type_dependencies =
+        if type_definition_form form then
+          ([], dependency_symbols form @ record_type_symbols form @ signed_dependencies)
+        else
+          (dependency_symbols form, record_type_symbols form @ signed_dependencies)
+      in
+      (resolve_dependencies ~prefer_declarations providers value_dependencies
       @ resolve_dependencies ~prefer_declarations:false type_providers
-          (record_type_symbols form @ signed_dependencies))
+          type_dependencies)
       |> List.filter (fun dependency -> dependency <> index)
       |> List.sort_uniq Int.compare
 

@@ -488,22 +488,24 @@
      `(clojure.test/pass!)
 
      (and (seq? form) (= 'thrown? (first form)))
-     (let [body (drop 2 form)]
+     (let [exception-type (second form)
+           body (drop 2 form)]
        `(try
           ~@body
           (clojure.test/fail! ~(str form) ~message)
-          (catch js/Error _error
+          (catch ~exception-type _error
             (clojure.test/pass!))))
 
      (and (seq? form) (= 'thrown-with-msg? (first form)))
-     (let [pattern (first (drop 2 form))
+     (let [exception-type (second form)
+           pattern (first (drop 2 form))
            body (drop 3 form)]
        `(try
           ~@body
           (clojure.test/fail!
            (str "exception matching " ~pattern ", but no exception was thrown")
            ~message)
-          (catch js/Error error#
+          (catch ~exception-type error#
             (let [actual-message# (clojure.test/exception-message error#)]
               (if (clojure.core/re-find ~pattern actual-message#)
                 (clojure.test/pass!)

@@ -215,6 +215,14 @@ and open_seqable_constraint ty =
       Type_solver.is_open element_ty && Type_solver.is_open storage_ty
   | None -> false
 
+and flatten_contains_storage key_ty value_ty =
+  match Types.contains_constraint_info value_ty with
+  | Some (nested_key_ty, nested_value_ty) ->
+      flatten_contains_storage
+        (refine_type key_ty nested_key_ty)
+        nested_value_ty
+  | None -> (key_ty, value_ty)
+
 and refine_nonmatching_type existing inferred =
   match (existing, inferred) with
   | existing, TString when open_seqable_constraint existing -> TString
@@ -222,7 +230,8 @@ and refine_nonmatching_type existing inferred =
   | existing, inferred
     when Option.is_some (Types.truthy_constraint_info existing) ->
       let value_ty = Types.truthy_constraint_info existing |> Option.get in
-      Types.truthy_constraint (refine_type value_ty inferred)
+      if Types.same_shape value_ty inferred then existing
+      else Types.truthy_constraint (refine_type value_ty inferred)
   | existing, inferred
     when Option.is_some (Types.hashable_constraint_info existing) ->
       Types.hashable_constraint
@@ -287,6 +296,12 @@ and refine_nonmatching_type existing inferred =
       let inferred_key, inferred_value =
         Types.contains_constraint_info inferred |> Option.get
       in
+      let existing_key, existing_value =
+        flatten_contains_storage existing_key existing_value
+      in
+      let inferred_key, inferred_value =
+        flatten_contains_storage inferred_key inferred_value
+      in
       Types.contains_constraint_with_value
         (refine_type existing_key inferred_key)
         (refine_type existing_value inferred_value)
@@ -295,15 +310,31 @@ and refine_nonmatching_type existing inferred =
       let key_ty, value_ty =
         Types.contains_constraint_info existing |> Option.get
       in
-      Types.contains_constraint_with_value key_ty
-        (refine_type value_ty inferred)
+      let key_ty, value_ty = flatten_contains_storage key_ty value_ty in
+      if
+        match inferred with
+        | TRecord _ | TNamed_record _ -> true
+        | _ -> false
+      then existing
+      else if Types.same_shape value_ty inferred then existing
+      else
+        Types.contains_constraint_with_value key_ty
+          (refine_type value_ty inferred)
   | existing, inferred
     when Option.is_some (Types.contains_constraint_info inferred) ->
       let key_ty, value_ty =
         Types.contains_constraint_info inferred |> Option.get
       in
-      Types.contains_constraint_with_value key_ty
-        (refine_type existing value_ty)
+      let key_ty, value_ty = flatten_contains_storage key_ty value_ty in
+      if
+        match existing with
+        | TRecord _ | TNamed_record _ -> true
+        | _ -> false
+      then inferred
+      else if Types.same_shape existing value_ty then inferred
+      else
+        Types.contains_constraint_with_value key_ty
+          (refine_type existing value_ty)
   | TMap_keys, ((TRecord _ | TNamed_record _) as map_ty)
   | ((TRecord _ | TNamed_record _) as map_ty), TMap_keys ->
       map_ty
@@ -393,6 +424,9 @@ and refine_nonmatching_type existing inferred =
       Types.normalize_nullable (TNullable (refine_type existing inferred))
   | TOcaml_app ("option", [ existing ]), TNullable inferred ->
       TOcaml_app ("option", [ refine_type existing inferred ])
+  | (TNullable _ | TOcaml_app ("option", [ _ ])) as existing, inferred
+    when Option.is_some (Types.truthy_constraint_info inferred) ->
+      refine_type existing (Types.truthy_constraint_info inferred |> Option.get)
   | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
     when Option.is_some (Types.protocol_constraint_info inferred) ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
@@ -452,6 +486,11 @@ and refine_nonmatching_type existing inferred =
       TTuple (List.map2 (fun existing inferred ->
         if tuple_gains_capability existing inferred then refine_type existing inferred
         else existing) existing inferred)
+  | TOcaml_app (existing_name, existing_args), TOcaml_app (inferred_name, inferred_args)
+    when String.equal existing_name inferred_name
+         && List.length existing_args = List.length inferred_args ->
+      TOcaml_app
+        (existing_name, List.map2 refine_type existing_args inferred_args)
   | TFn ([ predicate_arg ], TBool), TSet element
   | TSet element, TFn ([ predicate_arg ], TBool) ->
       TSet (refine_type element predicate_arg)
@@ -459,9 +498,7 @@ and refine_nonmatching_type existing inferred =
   | TNamed_record existing, TNamed_record inferred
     when Type_id.equal existing.type_id inferred.type_id ->
       let type_arguments =
-        if
-          List.length existing.type_arguments
-          = List.length inferred.type_arguments
+        if List.length existing.type_arguments = List.length inferred.type_arguments
         then List.map2 refine_type existing.type_arguments inferred.type_arguments
         else existing.type_arguments
       in
@@ -471,6 +508,21 @@ and refine_nonmatching_type existing inferred =
           type_arguments;
           fields = merge_record_fields existing.fields inferred.fields;
         }
+  | TNamed_record existing, TNamed_record inferred
+    when (not existing.nominal) && not inferred.nominal ->
+      TNamed_record
+        {
+          existing with
+          fields = merge_record_fields existing.fields inferred.fields;
+        }
+  | TNamed_record existing, TRecord inferred when not existing.nominal ->
+      TNamed_record
+        {
+          existing with
+          fields = merge_record_fields existing.fields inferred;
+        }
+  | TRecord existing, TNamed_record inferred when not inferred.nominal ->
+      TRecord (merge_record_fields existing inferred.fields)
   | (TRecord _ as structural), (TNamed_record _ as named)
     when inferred_row_compatible structural named ->
       named

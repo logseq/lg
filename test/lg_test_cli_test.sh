@@ -51,6 +51,47 @@ EOF
   fi
 )
 
+mkdir -p "$project/exception-tests"
+cat > "$project/exception-tests/matching.cljc" <<'EOF'
+(ns sample.matching-exceptions
+  (:require [clojure.test :refer [deftest is]]))
+
+(deftest matching-exception-types-pass
+  (is (thrown? Failure (throw (Failure "expected"))))
+  (is (thrown? Invalid_argument (throw (Invalid_argument "expected"))))
+  (is (thrown-with-msg? Failure #"expected" (throw (Failure "expected"))))
+  (is (thrown? js/Error (throw (Invalid_argument "catch all")))))
+EOF
+
+(cd "$project" && "$lg_cli" test exception-tests/matching.cljc)
+
+cat > "$project/exception-tests/wrong-type.cljc" <<'EOF'
+(ns sample.wrong-exception-type
+  (:require [clojure.test :refer [deftest is]]))
+
+(deftest wrong-exception-type-fails
+  (is (thrown? Failure (throw (Invalid_argument "expected")))))
+EOF
+
+cat > "$project/exception-tests/wrong-message-type.cljc" <<'EOF'
+(ns sample.wrong-message-exception-type
+  (:require [clojure.test :refer [deftest is]]))
+
+(deftest matching-message-with-wrong-type-fails
+  (is (thrown-with-msg? Failure #"expected" (throw (Invalid_argument "expected")))))
+EOF
+
+for fixture in wrong-type wrong-message-type; do
+  if output=$(cd "$project" && "$lg_cli" test "exception-tests/$fixture.cljc" 2>&1); then
+    printf 'Expected %s to reject the wrong exception type.\n%s\n' "$fixture" "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"[invalid] expected"* || "$output" != *"1 test run"* ]]; then
+    printf 'Expected an exception-type failure, not a build failure.\n%s\n' "$output" >&2
+    exit 1
+  fi
+done
+
 context_project=$(mktemp -d)
 trap 'rm -rf "$project" "$context_project"' EXIT
 

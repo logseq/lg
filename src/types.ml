@@ -827,6 +827,8 @@ let rec row_compatible ~expected ~actual =
   | _, TVar _ ->
       true
   | TNullable expected, TNullable actual
+  | TNullable expected, TOcaml_app ("option", [ actual ])
+  | TOcaml_app ("option", [ expected ]), TNullable actual
   | TArray expected, TArray actual
   | TRef expected, TRef actual
   | TList expected, TList actual

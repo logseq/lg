@@ -233,13 +233,16 @@ let into target source =
             | TUnknown | TMeta _ | TVar _ -> true
             | _ -> false
           in
+          let compatible expected actual =
+            unresolved expected
+            || unresolved actual
+            || Types.equal expected actual
+            || Types.row_compatible ~expected ~actual
+          in
           (match source_inner with
           | TTuple [ source_key; source_value ]
-            when (unresolved target_key || unresolved source_key
-                 || Types.equal target_key source_key)
-                 && (unresolved target_value
-                    || unresolved source_value
-                    || Types.equal target_value source_value) ->
+            when compatible target_key source_key
+                 && compatible target_value source_value ->
               let result_key =
                 if unresolved target_key && not (unresolved source_key) then
                   source_key
@@ -248,7 +251,80 @@ let into target source =
               let result_value =
                 if unresolved target_value && not (unresolved source_value) then
                   source_value
+                else if
+                  (not (Types.equal target_value source_value))
+                  && Types.row_compatible ~expected:target_value
+                       ~actual:source_value
+                then source_value
                 else target_value
+              in
+              let source_list_expr =
+                if Types.equal result_value source_value then source_list_expr
+                else
+                  match Types.record_fields target_value with
+                  | Some fields
+                    when Types.row_compatible ~expected:target_value
+                           ~actual:source_value ->
+                      let source_fields =
+                        Types.record_fields source_value
+                        |> Option.value ~default:[]
+                      in
+                      let entry_name = "__lg_into_entry" in
+                      let value =
+                        typed_ir source_value
+                          (apply "snd" [ Semantic_ir.Ident entry_name ])
+                      in
+                      let values =
+                        List.map
+                          (fun (field : field) ->
+                            let source_field =
+                              Types.find_field field.keyword source_fields
+                              |> Option.value ~default:field
+                            in
+                            let source_field_value =
+                              "__lg_into_source_field_" ^ source_field.ocaml_name
+                            in
+                            let source_pattern =
+                              Semantic_ir.PConstraint
+                                ( Semantic_ir.PRecord
+                                    [
+                                      ( source_field.ocaml_name,
+                                        Semantic_ir.PVar source_field_value );
+                                    ],
+                                  Types.ocaml_name source_value )
+                            in
+                            let source_field_expr =
+                              Semantic_ir.Apply
+                                ( Semantic_ir.Fun
+                                    ( [ source_pattern ],
+                                      Semantic_ir.Ident source_field_value ),
+                                  [ value.semantic_expr ] )
+                            in
+                            (field, source_field_expr))
+                          fields
+                      in
+                      let adapted_value =
+                        match target_value with
+                        | TNamed_record record ->
+                            Structural_map.named_record_expr record values
+                        | _ ->
+                            Structural_map.record_expr fields values
+                      in
+                      apply "List.map"
+                        [
+                          Semantic_ir.Fun
+                            ( [ Semantic_ir.PVar entry_name ],
+                              Semantic_ir.Tuple
+                                [
+                                  apply "fst" [ Semantic_ir.Ident entry_name ];
+                                  adapted_value.semantic_expr;
+                                ] );
+                          Semantic_ir.Constraint
+                            ( source_list_expr,
+                              "(" ^ Types.ocaml_name source_key ^ " * "
+                              ^ Types.ocaml_name source_value ^ ") list" );
+                        ]
+                  | Some _ | None -> source_list_expr
               in
               Ok
                 (typed_ir (Types.dynamic_map result_key result_value)

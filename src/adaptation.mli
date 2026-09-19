@@ -222,6 +222,10 @@ and row_field_plan =
       adaptation : t;
     }
   | Missing_optional_field of Semantic_type.field
+  | Missing_constrained_field of {
+      expected : Semantic_type.field;
+      adaptation : t;
+    }
   | Missing_extension_field of {
       expected : Semantic_type.field;
       adaptation : t;

@@ -244,7 +244,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let contextual_field_type env field_ty =
     let field_ty = clj_function_type field_ty in
     match (field_ty, Env.expected_type env) with
-    | (TUnknown | TMeta _ | TVar _), Some expected
+    | (TUnknown | TMeta _), Some expected
       when not
              (Types.equal expected TUnknown
              || match expected with TVar _ -> true | _ -> false) ->
@@ -403,6 +403,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     | _ -> false
   in
   let compile_function_arg_for_value scope env value_ty extra_tys form =
+    let env = Env.with_expected_type None env in
     let parameter_tys = value_ty :: extra_tys in
     let compile_contextual_call () =
       let parameter_names =
@@ -1094,6 +1095,37 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | _ -> Error.error "subvec expects a vector")
       | Ok _ -> Error.error "subvec expects vector, start, and optional stop"
     and compile_nth scope env arg_forms =
+      let expected_result = Env.expected_type env in
+      let collection_env =
+        match expected_result with
+        | Some expected ->
+            Env.with_expected_type
+              (Some (Types.seqable_constraint expected))
+              env
+        | None -> Env.with_expected_type None env
+      in
+      let index_env = Env.with_expected_type (Some TInt) env in
+      let default_env = Env.with_expected_type expected_result env in
+      let compile_nth_args = function
+        | [ collection_form; index_form ] ->
+            Result.bind
+              (compile_expr scope collection_env collection_form)
+              (fun collection ->
+                Result.map
+                  (fun index -> [ collection; index ])
+                  (compile_expr scope index_env index_form))
+        | [ collection_form; index_form; default_form ] ->
+            Result.bind
+              (compile_expr scope collection_env collection_form)
+              (fun collection ->
+                Result.bind
+                  (compile_expr scope index_env index_form)
+                  (fun index ->
+                    Result.map
+                      (fun default -> [ collection; index; default ])
+                      (compile_expr scope default_env default_form)))
+        | forms -> compile_args_for scope env forms
+      in
       let int_index index =
         if Types.equal index.ty TInt then Ok index
         else if
@@ -1108,7 +1140,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           Error.error
             ("nth index must be int, got " ^ Types.source_name index.ty)
       in
-      match compile_args_for scope env arg_forms with
+      match compile_nth_args arg_forms with
       | Error _ as err -> err
       | Ok [ collection; index ] ->
           Result.bind (int_index index) (fun index ->
@@ -1257,11 +1289,26 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           when Type_solver.is_open value_ty
                && not (Type_solver.is_open expected) ->
             expected
+        | value_ty, _
+          when Types.is_dynamic value_ty -> (
+            match Types.dynamic_constraint_info value_ty with
+            | Some (TUnknown | TMeta _ | TVar _) | None ->
+                Types.dynamic_constraint TUnknown
+            | Some constrained -> constrained)
         | _ when unresolved value_ty -> (
             match default with
             | Some (default, _) when not (unresolved default.ty) -> default.ty
             | None | Some _ -> Types.dynamic_constraint TUnknown)
         | _ -> value_ty
+      in
+      let optional_context_value_type fallback =
+        match Env.expected_type env with
+        | Some (TNullable value_ty) | Some (TOcaml_app ("option", [ value_ty ]))
+          when not (unresolved value_ty) ->
+            Some value_ty
+        | Some (TNullable _) | Some (TOcaml_app ("option", [ _ ])) ->
+            Some fallback
+        | Some _ | None -> None
       in
       let compile_transient_get target key default =
         match target.ty with
@@ -1280,6 +1327,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 in
                 let result_value_ty = result_value_type value_ty default in
                 match default with
+                | None
+                  when Option.is_some
+                         (optional_context_value_type result_value_ty) ->
+                    let result_value_ty =
+                      Option.get (optional_context_value_type result_value_ty)
+                    in
+                    Ok
+                      (typed_ir (TNullable result_value_ty)
+                         (apply (operation "map_get_option")
+                            [ target.semantic_expr; key ]))
                 | None when Types.is_dynamic result_value_ty ->
                     Ok
                       (typed_ir result_value_ty
@@ -1333,6 +1390,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 let operation name = runtime_map_operation key_ty name in
                 let result_value_ty = result_value_type value_ty default in
                 match default with
+                | None
+                  when Option.is_some
+                         (optional_context_value_type result_value_ty) ->
+                    let result_value_ty =
+                      Option.get (optional_context_value_type result_value_ty)
+                    in
+                    Ok
+                      (typed_ir (TNullable result_value_ty)
+                         (apply (operation "get_option")
+                            [ target.semantic_expr; key ]))
                 | None when Types.is_dynamic result_value_ty ->
                     Ok
                       (typed_ir result_value_ty
@@ -1400,13 +1467,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       match arg_forms with
       | [ target_form; FKeyword keyword ] -> (
           let dynamic_lookup result_ty target =
-            typed_ir result_ty
-              (apply "Lg_runtime.Runtime_dynamic.get"
-                 [
-                   target.semantic_expr;
-                   apply "Lg_runtime.Runtime_dynamic.keyword"
-                     [ Semantic_ir.String keyword ];
-                 ])
+            let lookup =
+              apply "Lg_runtime.Runtime_dynamic.get"
+                [
+                  target.semantic_expr;
+                  apply "Lg_runtime.Runtime_dynamic.keyword"
+                    [ Semantic_ir.String keyword ];
+                ]
+            in
+            match Env.expected_type env with
+            | Some expected
+              when not (Types.is_dynamic expected)
+                   && not (Types.equal expected TUnknown) -> (
+                match dynamic_unpack env expected lookup with
+                | Ok unpacked -> typed_ir expected unpacked
+                | Error _ -> typed_ir result_ty lookup)
+            | Some _ | None -> typed_ir result_ty lookup
           in
           let target_env =
             match target_form with
@@ -1912,9 +1988,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       let dynamic = Types.dynamic_constraint TUnknown in
                       Result.map
                         (fun key ->
-                          typed_ir dynamic
-                            (apply "Lg_runtime.Runtime_dynamic.get"
-                               [ dynamic_constraint_value target; key ]))
+                          let lookup =
+                            apply "Lg_runtime.Runtime_dynamic.get"
+                              [ dynamic_constraint_value target; key ]
+                          in
+                          match expected_type with
+                          | Some expected
+                            when not (Types.is_dynamic expected)
+                                 && not (Types.equal expected TUnknown) -> (
+                              match dynamic_unpack env expected lookup with
+                              | Ok unpacked -> typed_ir expected unpacked
+                              | Error _ -> typed_ir dynamic lookup)
+                          | Some _ | None -> typed_ir dynamic lookup)
                         (pack_dynamic_value env dynamic index)
                   | _ ->
                       Error.error
@@ -2312,8 +2397,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       match arg_forms with
       | target :: pairs when List.exists needs_binding (target :: operands pairs) ->
           Result.bind (compile_expr scope env target) (fun receiver ->
-          match Function_elaborator.infer_named_record scope env receiver.ty with
-          | TNamed_record { nominal = true; _ } -> compile_assoc_bound scope env arg_forms
+          let receiver_ty =
+            Function_elaborator.infer_named_record scope env receiver.ty
+          in
+          match receiver_ty with
+          | TRecord _ | TNamed_record _ -> compile_assoc_bound scope env arg_forms
           | _ ->
           incr assoc_expansion_counter;
           let prefix = "__lg_assoc_" ^ string_of_int !assoc_expansion_counter ^ "_" in
@@ -2340,12 +2428,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | forms -> forms
           in
           let pair_forms = resolve_pair_keys pair_forms in
-          let rec compile_record_pairs acc = function
+          let rec compile_record_pairs fields acc = function
             | [] -> Ok (List.rev acc)
             | FKeyword keyword :: value_form :: rest -> (
-                match compile_expr scope env value_form with
+                let expected =
+                  Option.map (fun (field : field) -> field.ty)
+                    (find_field keyword fields)
+                in
+                match
+                  compile_expr scope (Env.with_expected_type expected env)
+                    value_form
+                with
                 | Error _ as err -> err
-                | Ok value -> compile_record_pairs ((keyword, value) :: acc) rest)
+                | Ok value ->
+                    compile_record_pairs fields ((keyword, value) :: acc) rest)
             | _ -> Error.error "assoc expects map followed by keyword/value pairs"
           in
           let adapt_dynamic_fields fields pairs =
@@ -2513,7 +2609,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     if has_non_keyword_key then
                       compile_expr scope env
                         (protocol_assoc_form target_form pair_forms)
-                    else
+                    else (
+                      match validate_declared_fields pair_forms with
+                      | Ok () -> (
+                          match compile_record_pairs record.fields [] pair_forms with
+                          | Error _ as err -> err
+                          | Ok pairs ->
+                              Result.bind
+                                (adapt_dynamic_fields record.fields pairs)
+                                (assoc_record_pairs target))
+                      | Error declared_error -> (
                       match compile_vector_pairs [] pair_forms with
                         | Error _ as err -> err
                         | Ok [] -> assert false
@@ -2545,18 +2650,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             { updated with ty = target.ty }
                               remaining_pairs
                         | None -> (
-                            match validate_declared_fields pair_forms with
-                            | Error _ as err -> err
-                            | Ok () -> (
-                                match compile_record_pairs [] pair_forms with
-                                | Error _ as err -> err
-                                | Ok pairs ->
-                                    Result.bind
-                                      (adapt_dynamic_fields record.fields pairs)
-                                      (assoc_record_pairs target)))
-                      ))
+                            Error declared_error)
+                      ))))
                 | TRecord fields | TNamed_record { fields; _ } -> (
-                    match compile_record_pairs [] pair_forms with
+                    match compile_record_pairs fields [] pair_forms with
                     | Error _ as err -> err
                     | Ok pairs ->
                         Result.bind (adapt_dynamic_fields fields pairs)
@@ -2568,7 +2665,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       |> List.exists (function FKeyword _ -> false | _ -> true)
                     in
                     if not has_non_keyword_key then
-                      match compile_record_pairs [] pair_forms with
+                      match compile_record_pairs [] [] pair_forms with
                       | Error _ as err -> err
                       | Ok pairs ->
                           assoc_record_pairs (Structural_map.record_expr [] [])
@@ -2709,7 +2806,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       [
                         ((TRecord fields | TNamed_record { fields; _ }) as inner);
                       ] ) ) -> (
-                  match compile_record_pairs [] pair_forms with
+                  match compile_record_pairs fields [] pair_forms with
                   | Error _ as err -> err
                   | Ok pairs ->
                       Result.bind (adapt_dynamic_fields fields pairs)
@@ -3325,18 +3422,37 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | _ -> arg_forms
     in
     let dynamic = Types.dynamic_constraint TUnknown in
-    let prepare expected argument =
+    let nil_predicate_witness value_ty =
+      let witness_argument = "__lg_update_nil_predicate_value" in
+      let witness_value = Semantic_ir.Ident witness_argument in
+      Semantic_ir.Fun
+        ( [ Semantic_ir.PVar witness_argument ],
+          Expression_support.nil_predicate_expression value_ty witness_value )
+    in
+    let rec prepare expected argument =
       if Types.is_dynamic expected then pack_dynamic_value env expected argument
       else if Types.is_dynamic argument.ty then
         dynamic_unpack env expected argument.semantic_expr
-      else if
-        Types.assignable ~policy:Host_boundary ~expected ~actual:argument.ty
-      then Ok argument.semantic_expr
       else
-        Error.error
-          ("update called with incompatible arguments: expected "
-         ^ Types.source_name expected ^ ", got "
-          ^ Types.source_name argument.ty)
+        match
+          ( Types.nil_predicate_constraint_info expected,
+            Types.nil_predicate_constraint_info argument.ty )
+        with
+        | Some value_ty, None ->
+            Result.bind (prepare value_ty argument) (fun value ->
+                Ok
+                  (Semantic_ir.Tuple
+                     [ nil_predicate_witness value_ty; value ]))
+        | _ ->
+            if
+              Types.assignable ~policy:Host_boundary ~expected
+                ~actual:argument.ty
+            then Ok argument.semantic_expr
+            else
+              Error.error
+                ("update called with incompatible arguments: expected "
+               ^ Types.source_name expected ^ ", got "
+                ^ Types.source_name argument.ty)
     in
     let instantiate_updater param_tys return_ty extra_args =
       let templates = drop 1 param_tys in
@@ -3623,6 +3739,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           match target_and_fn with
           | Error _ as err -> err
           | Ok (target, fn, extra_args) -> (
+            let updater_source_return_ty =
+              match fn_form with
+              | FSymbol name -> (
+                  match lookup_function scope env name with
+                  | Ok { ty = TFn (_, return_ty); _ } -> Some return_ty
+                  | Ok _ | Error _ -> None)
+              | _ -> None
+            in
             let updater_row_type =
               match fn_form with
               | FSymbol name -> (
@@ -3650,8 +3774,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       compile_extension target fields keyword fn extra_args
                   | Some field -> (
                       match fn.ty with
-                      | TFn (param_tys, ret) -> (
-                        match update_call_signature param_tys ret extra_args with
+                      | TFn (param_tys, declared_ret) -> (
+                        match update_call_signature param_tys declared_ret extra_args with
                         | Some (param_tys, ret, extra_args) ->
                         let param_tys, ret =
                           match param_tys with
@@ -3778,10 +3902,66 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           Result.bind
                             (prepare_all [] param_tys (old_value :: extra_args))
                             (fun arguments ->
+                              let result_ty =
+                                match updater_source_return_ty with
+                                | Some (TNamed_record record)
+                                  when not record.nominal ->
+                                    TNamed_record record
+                                | _ -> (
+                                match declared_ret with
+                                | TNamed_record record when not record.nominal ->
+                                    declared_ret
+                                | _ -> ret)
+                              in
                               let result =
-                                typed_ir ret
+                                typed_ir result_ty
                                   (Semantic_ir.Apply
                                      (fn.semantic_expr, arguments))
+                              in
+                              let result =
+                                match (field.ty, result.ty) with
+                                | TNamed_record target_record,
+                                  TNamed_record source_record
+                                  when (not target_record.nominal)
+                                       && (not source_record.nominal)
+                                       && Types.row_compatible
+                                            ~expected:field.ty
+                                            ~actual:result.ty ->
+                                    {
+                                      result with
+                                      ty = field.ty;
+                                      record_values = None;
+                                      semantic_expr =
+                                        (Structural_map.as_named_record
+                                           target_record
+                                           { result with record_values = None })
+                                          .semantic_expr;
+                                    }
+                                | TRecord target_fields, TRecord _
+                                  when Types.row_compatible
+                                         ~expected:field.ty
+                                         ~actual:result.ty
+                                       &&
+                                       (match
+                                          Semantic_ir.unlocated
+                                            result.semantic_expr
+                                        with
+                                       | Semantic_ir.Apply _
+                                       | Semantic_ir.Uncurried_apply _ ->
+                                           true
+                                       | _ -> false) ->
+                                    {
+                                      result with
+                                      ty = field.ty;
+                                      record_values = None;
+                                      semantic_expr =
+                                        (Structural_map.record_expr
+                                           target_fields
+                                           (Structural_map.values_for result
+                                              target_fields))
+                                          .semantic_expr;
+                                    }
+                                | _ -> result
                               in
                               let stored =
                                 if Types.is_dynamic field.ty then

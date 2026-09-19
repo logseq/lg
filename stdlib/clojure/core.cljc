@@ -227,7 +227,7 @@
   (-empty [coll]))
 
 (defprotocol ICollection
-  (-conj [coll value]))
+  (-conj [coll value] :self))
 
 (defprotocol IIndexed
   (-nth [coll index] [coll index not-found]))
@@ -1484,18 +1484,30 @@
     (Some _) (Some value)
     None None))
 
+(defn- tree-set-comparator [set]
+  (tree-map-comparator (:mapping set)))
+
+(defn- tree-set-equiv [set other]
+  (if (= (tree-map-size (:mapping set))
+         (tree-map-size (:mapping other)))
+    (every?
+     (fn [value]
+       (match (tree-set-get other value)
+         (Some _) true
+         None false))
+     (tree-set-values set true))
+    false))
+
+(defn- tree-set-count [set]
+  (tree-map-size (:mapping set)))
+
+(defn- tree-set-empty-like [set]
+  (tree-set-empty (tree-set-comparator set) (:metadata set)))
+
 (extend-type persistent-tree-set
   IEquiv
   (-equiv [set other]
-    (if (= (tree-map-size (:mapping set))
-           (tree-map-size (:mapping other)))
-      (every?
-       (fn [value]
-         (match (tree-set-get other value)
-           (Some _) true
-           None false))
-       (tree-set-values set true))
-      false))
+    (tree-set-equiv set other))
   ISeqable
   (-seq [set]
     (tree-set-values set true))
@@ -1514,10 +1526,10 @@
     (tree-set-disjoin set value))
   ICounted
   (-count [set]
-    (tree-map-size (:mapping set)))
+    (tree-set-count set))
   IEmptyableCollection
   (-empty [set]
-    (tree-set-empty (tree-map-comparator (:mapping set)) (:metadata set)))
+    (tree-set-empty-like set))
   IMeta
   (-meta [set]
     (:metadata set))
@@ -1534,7 +1546,7 @@
   (-entry-key [_set entry]
     entry)
   (-comparator [set]
-    (tree-map-comparator (:mapping set)))
+    (tree-set-comparator set))
   IReversible
   (-rseq [set]
     (tree-set-values set false)))

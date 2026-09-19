@@ -484,7 +484,7 @@ let rec truthiness_expression ?(constrained_identifier = true) ?env ty
                   [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ value ]) ] ) ))
   | TBool -> expression
   | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]
-  | TNullable payload_ty ->
+  | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
       let truthy_payload =
         let payload = Semantic_ir.Ident "truthy_value" in
         match payload_ty with
@@ -508,7 +508,7 @@ let rec truthiness_expression ?(constrained_identifier = true) ?env ty
                 ("Some", Some (Semantic_ir.PVar "truthy_value")),
               truthy_payload );
           ] )
-  | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
+  | TOcaml "option" ->
       Semantic_ir.Match
         ( expression,
           [
@@ -679,6 +679,86 @@ let rec implicit_edn_branch_value ty =
   | ty -> Edn_value_elaborator.is_packable ty
 
 let rec merge_branch_types left right =
+  let compiler_generated_anonymous_record (record : named_record) =
+    let name = record.type_name in
+    let is_generated_name =
+      String.length name > 1
+      && name.[0] = 't'
+      && String.for_all
+           (fun character -> character >= '0' && character <= '9')
+           (String.sub name 1 (String.length name - 1))
+    in
+    (not record.nominal) && record.extensible && is_generated_name
+  in
+  let merge_named_record_fields left_fields right_fields =
+    let rec merge_fields merged = function
+      | [] -> Some (List.rev merged)
+      | (left_field : field) :: rest -> (
+          match Types.find_field left_field.keyword right_fields with
+          | None -> None
+          | Some right_field ->
+              Option.bind
+                (merge_branch_types left_field.ty right_field.ty)
+                (fun ty -> merge_fields ({ left_field with ty } :: merged) rest))
+    in
+    merge_fields [] left_fields
+  in
+  let anonymous_record_type_arguments record fields =
+    let rec find_map2 f left right =
+      match (left, right) with
+      | [], [] -> None
+      | left :: left_rest, right :: right_rest -> (
+          match f left right with
+          | Some _ as result -> result
+          | None -> find_map2 f left_rest right_rest)
+      | _ -> None
+    in
+    let field_by_keyword keyword fields =
+      Types.find_field keyword fields
+    in
+    let rec argument_for parameter original merged =
+      match (original, merged) with
+      | TVar name, ty when name = parameter -> Some ty
+      | (TUnknown | TMeta _ | TNil), ty when parameter = "a" -> Some ty
+      | TNullable original, TNullable merged
+      | TArray original, TArray merged
+      | TRef original, TRef merged
+      | TList original, TList merged
+      | TVector original, TVector merged
+      | TSet original, TSet merged
+      | TSeq original, TSeq merged ->
+          argument_for parameter original merged
+      | TOcaml_app (_, original), TOcaml_app (_, merged)
+      | TTuple original, TTuple merged
+        when List.length original = List.length merged ->
+          find_map2 (argument_for parameter) original merged
+      | TRecord original_fields, TRecord merged_fields ->
+          original_fields
+          |> List.find_map (fun (field : field) ->
+                 match field_by_keyword field.keyword merged_fields with
+                 | None -> None
+                 | Some merged_field ->
+                     argument_for parameter field.ty merged_field.ty)
+      | TNamed_record original, TNamed_record merged
+        when List.length original.type_arguments
+             = List.length merged.type_arguments ->
+          find_map2
+            (argument_for parameter)
+            original.type_arguments merged.type_arguments
+      | _ -> None
+    in
+    let argument_for_field parameter (field : field) =
+      match field_by_keyword field.keyword fields with
+      | None -> None
+      | Some merged_field -> argument_for parameter field.ty merged_field.ty
+    in
+    List.map2
+      (fun parameter fallback ->
+        record.fields
+        |> List.find_map (argument_for_field parameter)
+        |> Option.value ~default:fallback)
+      record.type_parameters record.type_arguments
+  in
   let host_record_type = function
     | TOcaml type_name -> (
         match Ocaml_signature.record_type type_name with
@@ -709,6 +789,18 @@ let rec merge_branch_types left right =
   | left, right when Types.equal left right -> Some left
   | left, right ->
     match (left, right) with
+    | TNamed_record left_record, TNamed_record right_record
+      when compiler_generated_anonymous_record left_record
+           && compiler_generated_anonymous_record right_record
+           && Types.row_compatible ~expected:left ~actual:right
+           && Types.row_compatible ~expected:right ~actual:left ->
+        Option.map
+          (fun fields ->
+            let type_arguments =
+              anonymous_record_type_arguments left_record fields
+            in
+            TNamed_record { left_record with fields; type_arguments })
+          (merge_named_record_fields left_record.fields right_record.fields)
     | TNamed_record left_record, TNamed_record right_record
       when left_record.type_name = right_record.type_name
            && List.length left_record.type_arguments
@@ -757,18 +849,9 @@ let rec merge_branch_types left right =
         merge_branch_types named structural
     | TRecord left_fields, TRecord right_fields
       when List.length left_fields = List.length right_fields ->
-        let rec merge_fields merged = function
-          | [] -> Some (TRecord (List.rev merged))
-          | (left_field : field) :: rest -> (
-              match Types.find_field left_field.keyword right_fields with
-              | None -> None
-              | Some right_field ->
-                  Option.bind
-                    (merge_branch_types left_field.ty right_field.ty)
-                    (fun ty ->
-                      merge_fields ({ left_field with ty } :: merged) rest))
-        in
-        merge_fields [] left_fields
+        Option.map
+          (fun fields -> TRecord fields)
+          (merge_named_record_fields left_fields right_fields)
     | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args)
       when left_name = right_name
            && List.length left_args = List.length right_args ->
@@ -797,12 +880,12 @@ let rec merge_branch_types left right =
     | (TNamed_record _ as named), TRecord _
       when Types.row_compatible ~expected:right ~actual:named ->
         Some named
-    | (TRecord _ as structural), TNamed_record _
+    | (TRecord _ as structural), (TNamed_record _ as named)
       when Types.row_compatible ~expected:structural ~actual:right ->
-        Some structural
-    | TNamed_record _, (TRecord _ as structural)
+        Some named
+    | (TNamed_record _ as named), (TRecord _ as structural)
       when Types.row_compatible ~expected:structural ~actual:left ->
-        Some structural
+        Some named
     | left, right when protocol_has_value right left ->
         Some right
     | left, right when protocol_has_value left right ->
@@ -1381,8 +1464,21 @@ let merge_branch_expressions left right =
       | Some result_ty ->
           let coerce branch =
             let expression =
-              coerce_expression_to_type result_ty branch.ty
-                branch.semantic_expr
+              match (result_ty, branch.ty) with
+              | TNamed_record target_record, TNamed_record source_record
+                when (not target_record.nominal)
+                     && (not source_record.nominal)
+                     && not
+                          (Type_id.equal target_record.type_id
+                             source_record.type_id)
+                     && Types.row_compatible ~expected:result_ty
+                          ~actual:branch.ty ->
+                  let branch = { branch with record_values = None } in
+                  (Structural_map.as_named_record target_record branch)
+                    .semantic_expr
+              | _ ->
+                  coerce_expression_to_type result_ty branch.ty
+                    branch.semantic_expr
             in
             match Semantic_ir.unlocated expression with
             | Semantic_ir.Ident name
@@ -1543,36 +1639,28 @@ let anonymous_record_type_parameters fields =
 
 let allocate_anonymous_record ~owner env next_type fields =
   let owner = Source_context.anonymous_record_owner owner in
-  let existing =
-    match Env.find_anonymous_record ~owner fields env with
-    | Some _ as record -> record
-    | None -> Env.find_anonymous_record_by_layout ~owner fields env
+  let type_name = "t" ^ string_of_int next_type in
+  let set_module_name = "Set_" ^ type_name in
+  let type_id =
+    Type_id.create
+      ~owner:(if String.equal owner "" then [] else [ owner ])
+      ~name:type_name
   in
-  match existing with
-  | Some record -> { record; env; next_type; fresh = false }
-  | None ->
-      let type_name = "t" ^ string_of_int next_type in
-      let set_module_name = "Set_" ^ type_name in
-      let type_id =
-        Type_id.create
-          ~owner:(if String.equal owner "" then [] else [ owner ])
-          ~name:type_name
-      in
-      let record =
-        match
-          Types.named_record ~type_id ~extensible:true ~type_name ~set_module_name
-            ~type_parameters:(anonymous_record_type_parameters fields)
-            fields
-        with
-        | TNamed_record record -> record
-        | _ -> assert false
-      in
-      {
-        record;
-        env = Env.add_anonymous_record ~owner record env;
-        next_type = next_type + 1;
-        fresh = true;
-      }
+  let record =
+    match
+      Types.named_record ~type_id ~extensible:true ~type_name ~set_module_name
+        ~type_parameters:(anonymous_record_type_parameters fields)
+        fields
+    with
+    | TNamed_record record -> record
+    | _ -> assert false
+  in
+  {
+    record;
+    env = Env.add_anonymous_record ~owner record env;
+    next_type = next_type + 1;
+    fresh = true;
+  }
 
 type nested_record_allocation = {
   nested_fields : field list;
@@ -2060,30 +2148,46 @@ let dynamic_key_record_type env expected_field_ty =
   | [] | _ :: _ :: _ -> None
 
 let lookup_function_ty scope env name =
+  let ocaml_function_type target =
+    match Ocaml_signature.value_signature target with
+    | Ok signature ->
+        let parameters =
+          List.map
+            (fun (parameter : Ocaml_signature.parameter) ->
+              clj_function_type parameter.ty)
+            signature.parameters
+        in
+        let parameters =
+          match parameters with [ TUnit ] -> [] | _ -> parameters
+        in
+        Ok (TFn (parameters, clj_function_type signature.return_type))
+    | Error _ -> (
+        match Ocaml_signature.constructor_signature target with
+        | Ok signature ->
+            Ok (TFn (signature.payload_types, signature.result_type))
+        | Error _ as error -> error)
+  in
+  let precise_ocaml_binding () =
+    Option.bind (Resolver.ocaml_call_target scope env name) (fun target ->
+        match ocaml_function_type target with
+        | Ok ty -> Some ty
+        | Error _ -> None)
+  in
   match lookup_function scope env name with
+  | Ok fn
+    when Types.is_dynamic fn.ty
+         || Types.contains_dynamic fn.ty
+         || Types.equal fn.ty TUnknown -> (
+      match precise_ocaml_binding () with
+      | Some ty -> Ok ty
+      | None -> Ok fn.ty)
   | Ok fn -> Ok fn.ty
   | Error original_error -> (
       match Resolver.ocaml_call_target scope env name with
       | Some target -> (
-          match Ocaml_signature.value_signature target with
-          | Ok signature ->
-              let parameters =
-                List.map
-                  (fun (parameter : Ocaml_signature.parameter) ->
-                    clj_function_type parameter.ty)
-                  signature.parameters
-              in
-              let parameters =
-                match parameters with [ TUnit ] -> [] | _ -> parameters
-              in
-              Ok
-                (TFn
-                   (parameters, clj_function_type signature.return_type))
-          | Error _ -> (
-              match Ocaml_signature.constructor_signature target with
-              | Ok signature ->
-                  Ok (TFn (signature.payload_types, signature.result_type))
-              | Error _ -> Error original_error))
+          match ocaml_function_type target with
+          | Ok ty -> Ok ty
+          | Error _ -> Error original_error)
       | None ->
       match record_constructor_type scope env name with
       | Some ty -> Ok ty
