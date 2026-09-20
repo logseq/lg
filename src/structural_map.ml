@@ -43,7 +43,7 @@ let record_type_application record =
   let type_name = Types.ocaml_record_type_name record.type_name in
   let argument_name = function
     | argument when contains_unresolved_type argument -> "_"
-    | argument -> Types.ocaml_name argument
+    | argument -> Types.ocaml_type_argument_name argument
   in
   match record.type_arguments with
   | [] -> type_name

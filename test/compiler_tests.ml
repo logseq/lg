@@ -54827,8 +54827,28 @@ let test_string_control_escapes_preserve_bytes () =
   compile_with_stdlib Lg.Target.Melange "test/string_control_escapes.cljc" source
   |> ignore
 
+let test_generic_record_callback_type_arguments_preserve_precedence () =
+  let source =
+    {|
+(type-record callback-box [a] (callback-value :a))
+(signature make-callback-box [a] :fn<a;callback-box<a>>)
+(defn make-callback-box [value]
+  (record callback-box (callback-value value)))
+(defn increment [^int value] (+ value 1))
+(defn run-box [^int value]
+  (let [box (make-callback-box increment)]
+    ((:callback-value box) value)))
+(println (run-box 41))
+|}
+  in
+  let output = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "generic_record_callback_type_arguments" "42\n" output;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let tests =
   [
+    ( "generic record callback type arguments preserve precedence",
+      test_generic_record_callback_type_arguments_preserve_precedence );
     ( "string control escapes preserve bytes", test_string_control_escapes_preserve_bytes );
     ( "inference keeps local uuid separate from core function", test_inference_keeps_local_uuid_separate_from_core_function );
     ( "list star infers generic tail", test_list_star_infers_generic_tail );
