@@ -5143,9 +5143,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | FSymbol target -> (
               let alias_binding =
                 match
-                  Env.to_bindings env
-                  |> List.find_map (fun (key, binding) ->
-                         if key = target then Some binding else None)
+                  Env.find_opt target env
                 with
                 | Some binding -> Some binding
                 | None -> (

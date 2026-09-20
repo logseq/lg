@@ -558,14 +558,22 @@ compiler-libs environment across chunks.
 - previous prefix key;
 - input path and source.
 
-Both fresh and saved-state compilation cache every source prefix. A fully warm
-saved-state build reads the cached generated source and final cacheable state
-without reconstructing the compiler-libs environment. Saved-state chunks already
-defer OCaml checking to the generated compilation unit, so a partial cache miss
-continues from the cached semantic state after registering the required package
-include directories; it does not parse the preceding generated sources. Fresh
-compilation restores its compiler-libs environment lazily at the first cache
-miss, using the preceding generated sources.
+Both fresh and saved-state compilation cache each file's generated output, but
+write cumulative semantic state only at checkpoints. The first checkpoint needs
+one second of accumulated compilation CPU time; later intervals are at least
+one second and twenty times the preceding checkpoint's write cost. The final
+prefix always has a checkpoint. `LG_COMPILE_CACHE_MIN_SECONDS` overrides this
+interval; zero retains a checkpoint for every file.
+
+Cache replay first finds the longest contiguous output prefix with a valid
+checkpoint. Missing or corrupt checkpoints fall back to an earlier checkpoint,
+or rebuild from the initial state. A changed suffix recompiles files after the
+last usable checkpoint, including any intervening output-only entries. A fully
+warm build reads the generated outputs and only the final checkpoint, without
+reconstructing the compiler-libs environment. When OCaml checking is enabled,
+the first cache miss restores that environment from the preceding generated
+sources before checking new code. Commands that defer OCaml checking to the
+complete generated compilation unit can resume directly from semantic state.
 
 The compiler-libs environment itself is removed from the cacheable state and
 reconstructed by parsing and typechecking cached OCaml sources.

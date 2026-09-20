@@ -4059,6 +4059,32 @@ let test_local_function_annotations_resolve_named_records () =
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "local function annotations must resolve to named records"
 
+let test_refining_identical_types_preserves_shared_structure () =
+  let open Lg.Types in
+  let rec shared depth =
+    if depth = 0 then TVector TInt
+    else let child = shared (depth - 1) in TTuple [ child; child ]
+  in
+  let ty = shared 14 in
+  let before = Gc.allocated_bytes () in
+  let refined = Lg.Type_inference_core.refine_type ty ty in
+  let allocated = Gc.allocated_bytes () -. before in
+  if refined != ty then
+    failwith "refining an identical type must preserve its shared structure";
+  if allocated > 100_000. then
+    failwith "refining an identical type must not traverse its shared subtrees";
+  let variable = Lg.Type_solver.fresh () in
+  let values =
+    [ variable; TVar "a"; TUnknown; TNullable TString;
+      TRef (TVector TInt); truthy_constraint TString;
+      TFn ([ variable ], variable) ]
+  in
+  List.iter (fun ty ->
+    if not (equal ty (Lg.Type_inference_core.refine_type ty ty)) then
+      failwith "identical refinement changed an existing constraint") values;
+  if Lg.Type_inference_core.refine_type TUnknown TInt <> TInt then
+    failwith "distinct type evidence must still refine unknown values"
+
 let test_empty_type_substitutions_preserve_type_identity () =
   let open Lg.Types in
   let ty =
@@ -8462,6 +8488,43 @@ let test_unresolved_declaration_index_tracks_aliases_and_overloads () =
   in
   if Lg.Compiler_environment.unresolved_declaration "shared" env then
     failwith "replacing the final forward declaration must clear the index"
+
+let test_assoc_field_inference_avoids_full_environment_scans () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state, prelude =
+    Lg.Compiler.compile_chunk stdlib.state
+      "(defrecord Counter [^:int count]) (def target (->Counter 0))"
+    |> expect_ok
+  in
+  let env =
+    List.init 20_000 Fun.id
+    |> List.fold_left
+         (fun env index ->
+           Lg.Compiler_environment.add
+             (Printf.sprintf "noise-%05d/value" index)
+             (Lg.Types.binding "unused" Lg.Types.TInt) env)
+         state.typecheck_state.env
+  in
+  let large_state =
+    { state with typecheck_state = { state.typecheck_state with env } }
+  in
+  let source =
+    "(println (let [a 40 b 41 c 42] (:count (assoc target :count c))))"
+  in
+  let compile state =
+    Gc.full_major ();
+    let before = Gc.allocated_bytes () in
+    let _, output = Lg.Compiler.compile_chunk state source |> expect_ok in
+    (output, Gc.allocated_bytes () -. before)
+  in
+  let _, small_allocations = compile state in
+  let output, large_allocations = compile large_state in
+  if large_allocations -. small_allocations > 5_000_000. then
+    failwith
+      (Printf.sprintf "assoc field inference allocated %.0f extra bytes for unrelated bindings"
+         (large_allocations -. small_allocations));
+  assert_ocaml_runs "assoc_field_lookup" "42\n"
+    (String.concat "\n" [ stdlib.ocaml_source; prelude; output ])
 
 let test_record_lookup_cost_is_independent_of_unrelated_bindings () =
   let record_ty =
@@ -55642,6 +55705,10 @@ let tests =
       test_unrelated_type_substitutions_preserve_type_identity );
     ( "type solver applies deep substitutions linearly",
       test_type_solver_applies_deep_substitutions_linearly );
+    ( "assoc field inference avoids full environment scans",
+      test_assoc_field_inference_avoids_full_environment_scans );
+    ( "refining identical types preserves shared structure",
+      test_refining_identical_types_preserves_shared_structure );
     ( "type solver preserves shared substitution DAGs",
       test_type_solver_preserves_shared_substitution_dags );
     ( "type solver applies wide substitutions linearly",
@@ -59597,6 +59664,13 @@ let run_tests_in_workers worker_count tests =
 
 let () =
   Printexc.record_backtrace true;
+  (* Inference allocates many short-lived type trees. Keep their collections
+     local to each worker instead of repeatedly promoting them to the major heap. *)
+  let gc = Gc.get () in
+  Gc.set
+    { gc with
+      minor_heap_size = max gc.minor_heap_size (2 * 1024 * 1024);
+      space_overhead = max gc.space_overhead 200 };
   let rec command_line_filter index =
     if index >= Array.length Sys.argv then None
     else

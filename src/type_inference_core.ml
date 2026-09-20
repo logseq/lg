@@ -73,7 +73,8 @@ let rec tuple_gains_capability existing inferred =
   | _ -> false
 
 let rec refine_type existing inferred =
-  match (existing, inferred) with
+  if existing == inferred then existing
+  else match (existing, inferred) with
   | TPoly_variant left, TPoly_variant right ->
       (match Variant_row.merge (fun left right -> Some (refine_type left right)) left right with
        | Some row -> TPoly_variant {row with bound = left.bound}

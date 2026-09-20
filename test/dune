@@ -603,3 +603,10 @@
  (action
   (chdir %{workspace_root}
    (run bash test/mobile_dependency_interfaces_test.sh))))
+
+(rule
+ (alias runtest)
+ (deps cli_checkpoint_cache_test.sh ../stdlib/lg_stdlib_native.state)
+ (action
+  (run bash %{dep:cli_checkpoint_cache_test.sh} %{exe:../bin/lg_cli.exe}
+   %{dep:../stdlib/lg_stdlib_native.state})))

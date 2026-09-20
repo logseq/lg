@@ -330,11 +330,14 @@ flow forward. A Dune rule can list `.cljc` files as dependencies, generate one
 `.ml` target with `--compile-files`, and compile it through an ordinary library
 or executable stanza; see `examples/multi_file/dune`.
 
-The CLI stores resumable compiler checkpoints only for file prefixes whose
-compilation reaches the configured cost threshold (100 ms by default). Cache
-entries are separated by compiler build identity, obsolete generations are
-removed, and the active generation has a 256 MiB default limit. The threshold
-and size limit are configurable with `LG_COMPILE_CACHE_MIN_SECONDS` and
+The CLI caches generated output for each file and saves resumable compiler
+checkpoints at cost-based intervals, plus the final prefix. The interval starts
+at one second of compilation CPU time and adapts to at least twenty times the
+previous checkpoint's write cost. Editing a file resumes from the preceding
+checkpoint and recompiles the intervening files. Set `LG_COMPILE_CACHE_MIN_SECONDS`
+to override the interval, or to zero for a checkpoint after every file. Entries
+are separated by compiler build identity; obsolete generations are removed.
+The active generation has a 2 GiB default limit, configurable with
 `LG_COMPILE_CACHE_MAX_BYTES`.
 
 Protocol signatures and implementations are preserved in the same incremental

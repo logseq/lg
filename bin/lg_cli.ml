@@ -510,7 +510,7 @@ let compiler_cache_identity =
   let identity = lazy (compute_compiler_cache_identity ()) in
   fun () -> Lazy.force identity
 
-let compile_files_cache_format_version = "compile-files-v6"
+let compile_files_cache_format_version = "compile-files-v7"
 
 let reader_target_cache_key = function
   | None -> "default"
@@ -666,10 +666,8 @@ let read_cached_prefix_output key =
           with
           | Ok cached_output ->
             let cached_output = (cached_output : cached_prefix_output) in
-            if cached_output.has_state then (
-              touch_cache_entry key;
-              Some cached_output)
-            else None
+            touch_cache_entry key;
+            Some cached_output
           | Error message ->
             report_corrupt_cache_entry key [ message ];
             Lg.Compiler_artifact.remove_if_present output_path;
@@ -691,27 +689,75 @@ let read_cached_prefix_state key =
             Lg.Compiler_artifact.remove_if_present state_path;
             None)
 
-let write_cached_prefix key (output : cached_prefix_write) =
-  if compile_cache_enabled () then
-    try
-      let started_at = Sys.time () in
-      with_compile_cache_lock (fun () ->
-          let directory = compile_cache_generation_directory () in
-          ensure_directory directory;
-          Lg.Compiler_artifact.write ~kind:"prefix-output"
-            ~path:(cache_path key ".output")
-            {
-              source_packages = output.write_source_packages;
-              compilation = output.write_compilation;
-              has_state = true;
-            };
-          Lg.Compiler_artifact.write ~kind:"prefix-state"
-            ~path:(cache_path key ".state")
-            { state = output.write_state });
-      if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
-        Printf.eprintf "lg: wrote cached prefix: %.3fs\n%!"
-          (Sys.time () -. started_at)
-    with _ -> ()
+(* Output-only entries are usable only through a validated checkpoint. Reading
+   the longest cached prefix first avoids recompiling its unchecked gaps. *)
+let cached_prefixes ~target ?reader_target initial_key sources =
+  let rec scan key entries = function
+    | [] -> entries
+    | (path, source) :: rest ->
+        let key = next_prefix_key ~target ?reader_target key path source in
+        match read_cached_prefix_output key with
+        | None -> entries
+        | Some output -> scan key ((key, output) :: entries) rest
+  in
+  let rec checkpoint = function
+    | [] -> (Hashtbl.create 0, None)
+    | (key, output) :: rest as entries ->
+        if not output.has_state then checkpoint rest
+        else
+          match read_cached_prefix_state key with
+          | None -> checkpoint rest
+          | Some state ->
+              let outputs = Hashtbl.create (List.length entries) in
+              List.iter (fun (key, output) -> Hashtbl.add outputs key output) entries;
+              (outputs, Some (key, state))
+  in
+  checkpoint (scan initial_key [] sources)
+
+let cached_compiler_state checkpoint key =
+  match checkpoint with
+  | Some (checkpoint_key, state) when String.equal checkpoint_key key ->
+      Replayed state
+  | Some _ | None -> Cached key
+
+let prefix_cache_writer () =
+  let explicit_interval =
+    Option.bind (Sys.getenv_opt "LG_COMPILE_CACHE_MIN_SECONDS")
+      float_of_string_opt
+  in
+  let interval = ref (Option.value explicit_interval ~default:1.) in
+  let accumulated = ref 0. in
+  fun ~elapsed ~final key (output : cached_prefix_write) ->
+    accumulated := !accumulated +. elapsed;
+    let has_state = final || !accumulated >= !interval in
+    if compile_cache_enabled () then
+      try
+        let started_at = Sys.time () in
+        with_compile_cache_lock (fun () ->
+            let directory = compile_cache_generation_directory () in
+            ensure_directory directory;
+            Lg.Compiler_artifact.write ~kind:"prefix-output"
+              ~path:(cache_path key ".output")
+              {
+                source_packages = output.write_source_packages;
+                compilation = output.write_compilation;
+                has_state;
+              };
+            if has_state then
+              Lg.Compiler_artifact.write ~kind:"prefix-state"
+                ~path:(cache_path key ".state")
+                { state = output.write_state });
+        let write_elapsed = Sys.time () -. started_at in
+        if has_state then (
+          accumulated := 0.;
+          (* Amortize snapshots to about 5% of compilation CPU time. The final
+             state is always saved, even for a single cheap source file. *)
+          if Option.is_none explicit_interval then
+            interval := max 1. (20. *. write_elapsed));
+        if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+          Printf.eprintf "lg: wrote cached prefix: %.3fs\n%!"
+            (Sys.time () -. started_at)
+      with _ -> ()
 
 let timed_step label f =
   if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then (
@@ -2042,8 +2088,17 @@ let order_input_paths ?reader_target:_ _target _compiler_state input_paths =
 let compile_files ?(use_cache = true) ?(check_ocaml = true) ?reader_target
     target input_paths =
   let input_paths = expand_input_paths input_paths in
-  let rec loop prefix_key compiler_state packages outputs diagnostics =
-    function
+  let initial_prefix_key =
+    if use_cache then
+      Digest.string
+        (String.concat "\000"
+           [ compiler_cache_identity (); compile_files_cache_format_version ])
+      |> Digest.to_hex
+    else "cache-disabled"
+  in
+  let write_cached_prefix = prefix_cache_writer () in
+  let rec loop cached_outputs checkpoint prefix_key compiler_state packages
+      outputs diagnostics = function
     | [] ->
         let packages = List.sort_uniq String.compare packages in
         let outputs = List.rev outputs in
@@ -2070,11 +2125,12 @@ let compile_files ?(use_cache = true) ?(check_ocaml = true) ?reader_target
               Lg.Compiler.prepared_source_required_packages prepared
             in
             match
-              if use_cache then read_cached_prefix_output prefix_key else None
+              Hashtbl.find_opt cached_outputs prefix_key
             with
             | Some cached ->
                 report_cache_hit input_path;
-                loop prefix_key (Cached prefix_key)
+                loop cached_outputs checkpoint prefix_key
+                  (cached_compiler_state checkpoint prefix_key)
                   (List.rev_append cached.source_packages packages)
                   (cached.compilation.ocaml_source :: outputs)
                   (cached.compilation.diagnostics :: diagnostics)
@@ -2098,34 +2154,32 @@ let compile_files ?(use_cache = true) ?(check_ocaml = true) ?reader_target
                     with
                     | Error _ as err -> err
                     | Ok (state, compilation) ->
-                    let _elapsed = Sys.time () -. started_at in
+                    let elapsed = Sys.time () -. started_at in
                     if use_cache then
-                      write_cached_prefix prefix_key
+                      write_cached_prefix ~elapsed ~final:(rest = []) prefix_key
                         {
                           write_source_packages = source_packages;
                           write_compilation = compilation;
                           write_state = Lg.Compiler.cacheable_state state;
                             };
-                        loop prefix_key (Live state)
+                        loop cached_outputs checkpoint prefix_key (Live state)
                           (List.rev_append source_packages packages)
                           (compilation.ocaml_source :: outputs)
                           (compilation.diagnostics :: diagnostics)
                           rest)))
   in
-  let initial_prefix_key =
-    if use_cache then
-      Digest.string
-        (String.concat "\000"
-           [ compiler_cache_identity (); compile_files_cache_format_version ])
-      |> Digest.to_hex
-    else "cache-disabled"
-  in
   let result =
     Result.bind
       (order_input_paths ?reader_target target Lg.Compiler.empty_state input_paths)
       (fun input_paths ->
-        loop initial_prefix_key (Live Lg.Compiler.empty_state) [] [] []
-          input_paths)
+        let cached_outputs, checkpoint =
+          if use_cache then
+            cached_prefixes ~target ?reader_target initial_prefix_key
+              (List.map (fun path -> (path, read_file path)) input_paths)
+          else (Hashtbl.create 0, None)
+        in
+        loop cached_outputs checkpoint initial_prefix_key
+          (Live Lg.Compiler.empty_state) [] [] [] input_paths)
   in
   if use_cache then prune_compile_cache ();
   result
@@ -2212,6 +2266,18 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
           (timed_step "order sources" (fun () ->
                order_prepared_sources ?reader_target target saved.state sources))
           (fun sources ->
+        let initial_prefix_key =
+          if use_cache then
+            saved_state_prefix_key ~target ?reader_target state_path
+          else "cache-disabled"
+        in
+        let cached_outputs, checkpoint =
+          if use_cache then
+            cached_prefixes ~target ?reader_target initial_prefix_key
+              (List.map (fun (path, source, _) -> (path, source)) sources)
+          else (Hashtbl.create 0, None)
+        in
+        let write_cached_prefix = prefix_cache_writer () in
         let rec compile prefix_key compiler_state outputs diagnostics =
           function
           | [] ->
@@ -2227,11 +2293,11 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
                 next_prefix_key ~target ?reader_target prefix_key input_path source
               in
               match
-                if use_cache then read_cached_prefix_output prefix_key else None
+                Hashtbl.find_opt cached_outputs prefix_key
               with
               | Some cached ->
                   report_cache_hit input_path;
-                  compile prefix_key (Cached prefix_key)
+                  compile prefix_key (cached_compiler_state checkpoint prefix_key)
                     (cached.compilation.ocaml_source :: outputs)
                     (cached.compilation.diagnostics :: diagnostics)
                     rest
@@ -2257,9 +2323,9 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
                       with
                       | Error _ as err -> err
                       | Ok (state, compilation) ->
-                          let _elapsed = Sys.time () -. started_at in
+                          let elapsed = Sys.time () -. started_at in
                           if use_cache then
-                            write_cached_prefix prefix_key
+                            write_cached_prefix ~elapsed ~final:(rest = []) prefix_key
                               {
                                 write_source_packages = [];
                                 write_compilation = compilation;
@@ -2269,11 +2335,6 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
                             (compilation.ocaml_source :: outputs)
                             (compilation.diagnostics :: diagnostics)
                             rest))
-        in
-        let initial_prefix_key =
-          if use_cache then
-            saved_state_prefix_key ~target ?reader_target state_path
-          else "cache-disabled"
         in
         compile initial_prefix_key (Replayed saved.state) [] [] sources))
     in
