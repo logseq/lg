@@ -653,7 +653,7 @@ let flush_run_jobs (jobs : run_job list) =
   | _ -> (
       let dir = test_dir () in
       let output_path = Filename.concat dir "run_batch.out" in
-      let batches = chunks_of 24 jobs in
+      let batches = chunks_of 64 jobs in
       let batch_files =
         batches
         |> List.mapi (fun batch_index jobs ->
@@ -1238,7 +1238,94 @@ let test_dissoc_missing_fields_is_noop () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok);
+  let provider =
+    {|
+(ns app.rpc)
+
+(type-record host-options
+  (open-graph :option<fn<string;result<unit;string>>>)
+  (graph-blocks :option<fn<list<string>>>)
+  (graph-normalize-titles :option<fn<string;list<string>;tuple<list<string>;list<tuple<string;string>>>>>))
+
+(def default-options
+  (record host-options
+    (open-graph nil)
+    (graph-blocks nil)
+    (graph-normalize-titles nil)))
+|}
+  in
+  let consumer =
+    {|
+(ns app.mobile
+  (:require [app.rpc :as rpc]))
+
+(defn options []
+  (assoc rpc/default-options
+         :graph-normalize-titles
+         (Some (fn [uuid titles]
+                 (tuple (apply list titles) (list (tuple uuid "Title")))))))
+
+(match (:graph-normalize-titles (options))
+  (Some normalize)
+  (let [[titles tags] (normalize "u" (list "Title"))]
+    (println (str (count titles) ":" (count tags))))
+  None (println "missing"))
+|}
+  in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state, provider_ocaml =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native stdlib.state provider
+    |> expect_ok
+  in
+  let _, consumer_ocaml =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native state consumer
+    |> expect_ok
+  in
+  assert_ocaml_runs
+    "assoc_callback_uses_imported_record_field_context"
+    "1:1\n"
+    (String.concat "\n"
+       [ stdlib.ocaml_source; provider_ocaml; consumer_ocaml ]);
+  let stdlib = compiled_stdlib Lg.Target.Melange in
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange stdlib.state provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
+
+let test_expected_apply_list_constrains_deref_reference_vector () =
+  let source =
+    {|
+(type-record block (uuid :string))
+(type-record host-options
+  (graph-blocks :option<fn<option<list<block>>>>))
+(def default-options
+  (record host-options (graph-blocks nil)))
+(defn local-block [uuid] (record block (uuid uuid)))
+(defn options []
+  (let [authoritative (atom [])
+        options (assoc default-options
+                       :graph-blocks
+                       (Some (fn [] (Some (apply list @authoritative)))))]
+    (reset! authoritative [(local-block "b")])
+    options))
+(match (:graph-blocks (options))
+  (Some load)
+  (match (load)
+    (Some blocks) (println (:uuid (first blocks)))
+    None (println "missing"))
+  None (println "missing"))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "expected_apply_list_constrains_deref_reference_vector"
+    "b\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_map_rejects_duplicate_fields () =
   let source = {|(def x {:name "Ada", :name "Grace"})|} in
@@ -26305,20 +26392,96 @@ let test_assoc_callback_preserves_nominal_record_collection_fields () =
 (type-record encryption-options (encrypt-title :fn<string;result<string;string>>))
 (def defaults (record encryption-options (encrypt-title (fn [value] (Ok value)))))
 (defn encrypted-options []
-  (assoc defaults :encrypt-title (fn [value] (Ok (str "enc:" value)))))
+  (let [encrypt-text (fn [value] (Ok (str "enc:" value)))]
+    (assoc defaults :encrypt-title encrypt-text)))
 (match ((:encrypt-title (encrypted-options)) "title")
   (Ok title) (println title)
   (Error message) (throw (Failure message)))
+
+(type-record optional-title-normalizer
+  (normalize :option<fn<string;list<string>;tuple<list<string>;list<tuple<string;string>>>>>))
+(def normalizer-defaults (record optional-title-normalizer (normalize None)))
+(defn normalizer-options []
+  (assoc normalizer-defaults
+         :normalize (Some (fn [uuid titles]
+                            (tuple titles (list (tuple uuid "Title")))))))
+(match (:normalize (normalizer-options))
+  (Some normalize)
+  (let [[titles tags] (normalize "u" (list "Title"))]
+    (println (str (count titles) ":" (count tags))))
+  None (println "missing"))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
-    "assoc_callback_preserves_nominal_record_collection_fields" "u\nenc:title\n"
+    "assoc_callback_preserves_nominal_record_collection_fields"
+    "u\nenc:title\n1:1\n"
     ocaml_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok);
+  let provider =
+    {|
+(ns app.runtime)
+
+(type-record runtime-options
+  (encrypt-title :fn<string;result<string;string>>))
+
+(def default-options
+  (record runtime-options (encrypt-title (fn [value] (Ok value)))))
+|}
+  in
+  let consumer =
+    {|
+(ns app.live
+  (:require [app.runtime :as runtime]))
+
+(defn options [enabled]
+  (let [encrypt-text (fn [value] (Ok (if enabled (str "enc:" value) value)))]
+    (assoc runtime/default-options :encrypt-title encrypt-text)))
+
+(defn with-callback [callback]
+  (callback "dir"))
+
+(defn nested-options [enabled]
+  (let [encrypt-text (fn [value] (Ok (if enabled (str "nested:" value) value)))]
+    (with-callback
+      (fn [dir]
+        (let [options (assoc runtime/default-options :encrypt-title encrypt-text)]
+          options)))))
+
+(match ((:encrypt-title (options true)) "title")
+  (Ok title) (println title)
+  (Error message) (throw (Failure message)))
+
+(match ((:encrypt-title (nested-options true)) "title")
+  (Ok title) (println title)
+  (Error message) (throw (Failure message)))
+|}
+  in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state, provider_ocaml =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native stdlib.state provider
+    |> expect_ok
+  in
+  let _, consumer_ocaml =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Native state consumer
+    |> expect_ok
+  in
+  assert_ocaml_runs
+    "assoc_imported_callback_uses_record_field_context"
+    "enc:title\nnested:title\n"
+    (String.concat "\n"
+       [ stdlib.ocaml_source; provider_ocaml; consumer_ocaml ]);
+  let stdlib = compiled_stdlib Lg.Target.Melange in
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange stdlib.state provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
 
 let test_assoc_computed_record_field_uses_field_context () =
   let source = {|
@@ -38830,7 +38993,7 @@ let test_source_cljs_test_synchronous_blocks_reject_invalid_arguments () =
   (:require [cljs.test :refer [run-block]]))
 (run-block "not a block")
 |}
-  |> expect_error_contains "expected of type";
+  |> expect_error_contains "cannot adapt char to test_action";
   compile_with_stdlib_result Lg.Target.Native
     "test/source_cljs_test_sync_blocks_bad_location.cljc"
     {|
@@ -38937,7 +39100,7 @@ let test_source_cljs_test_async_blocks_reject_invalid_arguments () =
   (:require [cljs.test :refer [block]]))
 (block (list 1 2))
 |}
-  |> expect_error_contains "expected of type";
+  |> expect_error_contains "cannot adapt int to test_action";
   compile_with_stdlib_result Lg.Target.Native
     "test/source_cljs_test_async_bad_done.cljc"
     {|
@@ -48603,7 +48766,9 @@ let test_assoc_rejects_untyped_nullable_maps () =
   |}
   in
   compile_string_with_stdlib source
-  |> expect_error_contains "assoc expects a map or vector"
+  |> expect_error_contains
+       "assoc requires an optional value with a concrete static map or record \
+        type"
 
 let test_assoc_accepts_nullable_static_maps () =
   let source =
@@ -49576,17 +49741,48 @@ let test_result_let_star_sequences_and_short_circuits () =
 (def destructured (let* [[a b] (Ok (tuple 20 22))] (Ok (+ a b))))
 (def empty (let* [] (Ok 7)))
 (def ordinary (let [a (Ok 9)] a))
+(defn enqueue [value]
+  (if (= value 0) (Error "zero") (Ok (stdlib/ignore 0))))
+(defn enqueue-all [values]
+  (cond
+    (empty? values) (Ok (stdlib/ignore 0))
+    :else (reduce
+            (fn [result value]
+              (let* [_ result]
+            (enqueue value)))
+            (Ok (stdlib/ignore 0))
+            values)))
+(type-record command (name :string))
+(defn completed [] [(record command (name "done"))])
+(defn ^:result<vector<command>;string> staged [values]
+  (let [enqueue-result
+        (cond
+          (empty? values) (Ok (stdlib/ignore 0))
+          :else (reduce
+                  (fn [result value]
+                    (let* [_ result]
+                      (enqueue value)))
+                  (Ok (stdlib/ignore 0))
+                  values))]
+    (match enqueue-result
+      (Error message) (Error message)
+      (Ok _) (Ok (completed)))))
+(println (= (Ok (stdlib/ignore 0)) (enqueue-all [1 2])))
+(println (= (Ok (stdlib/ignore 0)) (enqueue-all [])))
+(println (= (Error "zero") (enqueue-all [1 0])))
+(println (= (Ok [(record command (name "done"))]) (staged [1 2])))
+(println (= (Error "zero") (staged [1 0])))
 |} in
   let output = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "result_let_star_sequences" "1\n2\n0\n"
+  assert_ocaml_runs "result_let_star_sequences" "1\n2\n0\ntrue\ntrue\ntrue\ntrue\ntrue\n"
     (output ^ {|
 let () =
-  assert (success = Ok 5);
-  assert (failure = Error "stop");
-  assert (destructured = Ok 42);
-  assert (empty = Ok 7);
-  assert (ordinary = Ok 9)
-|});
+	  assert (success = Ok 5);
+	  assert (failure = Error "stop");
+	  assert (destructured = Ok 42);
+	  assert (empty = Ok 7);
+	  assert (ordinary = Ok 9)
+	|});
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_type_solver_unifies_named_host_records () =
@@ -56745,6 +56941,8 @@ let tests =
       test_assoc_adapts_record_collection_fields );
     ( "assoc callback preserves nominal record collection fields",
       test_assoc_callback_preserves_nominal_record_collection_fields );
+    ( "expected apply list constrains deref reference vector",
+      test_expected_apply_list_constrains_deref_reference_vector );
     ( "assoc computed record field uses field context",
       test_assoc_computed_record_field_uses_field_context );
     ( "if-some assoc branches reuse structural row",

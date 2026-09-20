@@ -1152,6 +1152,53 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                    then Some spec.source_name
                    else None)
           in
+          let source_name_matches name expected =
+            String.equal name expected
+            || String.equal (Names.sanitize_name name)
+                 (Names.sanitize_name expected)
+            ||
+            match String.rindex_opt name '/' with
+            | Some index ->
+                let local =
+                  String.sub name (index + 1)
+                    (String.length name - index - 1)
+                in
+                String.equal local expected
+                || String.equal (Names.sanitize_name local)
+                     (Names.sanitize_name expected)
+            | None -> false
+          in
+          let rec condition_uses_parameter parameter = function
+            | Ast.FList (Ast.FSymbol operator :: Ast.FSymbol condition :: _)
+              when (source_name_matches operator "if"
+                   || source_name_matches operator "when")
+                   && String.equal condition parameter ->
+                true
+            | Ast.FList (Ast.FSymbol "fn" :: _) -> false
+            | Ast.FList forms | Ast.FVector forms ->
+                List.exists (condition_uses_parameter parameter) forms
+            | Ast.FMap pairs ->
+                List.exists
+                  (fun (key, value) ->
+                    condition_uses_parameter parameter key
+                    || condition_uses_parameter parameter value)
+                  pairs
+            | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _
+            | Ast.FString _
+            | Ast.FRegex _ | Ast.FBool _ | Ast.FKeyword _ | Ast.FSymbol _
+            | Ast.FCoreSymbol _ ->
+                false
+          in
+          let condition_parameters =
+            specs
+            |> List.filter_map (fun (spec : Destructure.param_spec) ->
+                   if
+                     List.exists
+                       (condition_uses_parameter spec.source_name)
+                       body_forms
+                   then Some spec.source_name
+                   else None)
+          in
           let infer_structural_fields fields =
             TRecord
               (List.map
@@ -1173,6 +1220,14 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
               | ty -> infer_named_record scope env ty
             else
               match ty with
+              | ty
+                when List.mem name condition_parameters
+                     && Option.is_some (Types.record_fields ty)
+                     &&
+                     (match ty with
+                     | TNullable _ | TOcaml_app ("option", [ _ ]) -> false
+                     | _ -> true) ->
+                  TNullable (infer_named_record ?preferred_record scope env ty)
               | ty
                 when List.mem name hinted_field_access_parameters
                      && non_structural_record_like ty ->
@@ -1688,6 +1743,16 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
                                if Types.equal ty TUnknown
                                   || (spec.destructured
                                      && match ty with TMeta _ -> true | _ -> false)
+                               then (spec, inferred_ty)
+                               else if
+                                 List.mem spec.source_name condition_parameters
+                                 &&
+                                 match inferred_ty with
+                                 | TNullable inner
+                                 | TOcaml_app ("option", [ inner ]) ->
+                                     Types.assignable ~policy:Host_boundary
+                                       ~expected:inner ~actual:ty
+                                 | _ -> false
                                then (spec, inferred_ty)
                                else if
                                  Types.is_guarded_protocol_constraint inferred_ty

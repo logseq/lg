@@ -1179,6 +1179,10 @@ let constrained_identifier_pattern name ty =
   in
   build ty
 
+let callback_adapter_parameter_ty expected actual =
+  if Type_solver.is_open expected && not (Type_solver.is_open actual) then actual
+  else expected
+
 let constrained_argument_expression argument =
   match Semantic_ir.unlocated argument.semantic_expr with
   | Semantic_ir.Ident name when is_generated_callback_argument name ->
@@ -6087,11 +6091,12 @@ let rec emit_argument_adaptation env adaptation argument =
       let rec emit_arguments emitted expected actual adaptations names =
         match (expected, actual, adaptations, names) with
         | [], [], [], [] -> Ok (List.rev emitted)
-        | expected :: expected_rest,
-          _actual :: actual_rest,
-          adaptation :: adaptation_rest,
-          name :: name_rest ->
-            let incoming = typed_ir expected (Semantic_ir.Ident name) in
+          | expected :: expected_rest,
+            actual :: actual_rest,
+            adaptation :: adaptation_rest,
+            name :: name_rest ->
+            let incoming_ty = callback_adapter_parameter_ty expected actual in
+            let incoming = typed_ir incoming_ty (Semantic_ir.Ident name) in
             Result.bind
               (emit_argument_adaptation env adaptation incoming)
               (fun emitted_argument ->
@@ -6111,8 +6116,13 @@ let rec emit_argument_adaptation env adaptation argument =
             (fun result ->
               wrap_adapter
                 (Semantic_ir.Fun
-                   ( List.map2 constrained_identifier_pattern argument_names
-                       callback.expected_params,
+                   ( List.map2
+                       (fun name (expected, actual) ->
+                         constrained_identifier_pattern name
+                           (callback_adapter_parameter_ty expected actual))
+                       argument_names
+                       (List.combine callback.expected_params
+                          callback.actual_params),
                      result )))
             (emit_argument_adaptation env callback.result_adaptation result))
   | Adaptation.Constrained_result_callback callback ->
@@ -7303,9 +7313,15 @@ let plan_and_emit_argument_with_options env ?row_type_name
   | Error
       (Adaptation.Incompatible_types
         { expected = failed_expected; actual = failed_actual }) ->
+      let closed_sum_hint =
+        if Types.equal failed_actual (TOcaml "Lg_edn_backend.t") then
+          "; define a closed sum type containing every alternative instead of \
+           heterogeneous collection storage such as Lg_edn_backend.t Seq.t"
+        else ""
+      in
       Error.error
         ("cannot adapt " ^ Types.source_name failed_actual ^ " to "
-       ^ Types.source_name failed_expected)))))
+       ^ Types.source_name failed_expected ^ closed_sum_hint)))))
 
 let plan_and_emit_argument env ?row_type_name ~expected argument =
   plan_and_emit_argument_with_options env ?row_type_name ~expected argument
@@ -8756,6 +8772,11 @@ let create ~compile_expr =
               (Ok collection) value_forms)
     | _ -> Error.error "conj! expects a transient collection and values"
   and compile_get scope env arg_forms =
+    let unresolved_dynamic ty =
+      match Types.dynamic_constraint_info ty with
+      | Some TUnknown | Some (TMeta _) | Some (TVar _) -> true
+      | _ -> false
+    in
     let dynamic_lookup_result fallback semantic_expr =
       match Env.expected_type env with
       | Some expected
@@ -8843,6 +8864,18 @@ let create ~compile_expr =
         | (Error _ as error), _, _ -> error
         | _, (Error _ as error), _ -> error
         | _, _, (Error _ as error) -> error
+        | Ok target, Ok key, Ok default
+          when Types.is_dynamic target.ty && unresolved_dynamic target.ty
+               && Option.is_some
+                    (dynamic_boundary_error_message `Pack default.ty) ->
+            Ok
+              (typed_ir default.ty
+                 (Semantic_ir.Sequence
+                    [
+                      target.semantic_expr;
+                      key.semantic_expr;
+                      default.semantic_expr;
+                    ]))
         | Ok target, Ok key, Ok default when Types.is_dynamic target.ty -> (
             let expected = Types.dynamic_constraint TUnknown in
             match
@@ -11550,30 +11583,32 @@ let create ~compile_expr =
               | "None" ->
                   constructor (fun _ -> TOcaml_app ("option", [ TUnknown ])) 0
     | "Ok" ->
-        let expected_ok, expected_error =
+        let expected_ok =
           match Env.expected_type env with
-          | Some (TOcaml_app ("result", [ ok_ty; error_ty ])) ->
-              (Some ok_ty, error_ty)
-          | Some _ | None -> (None, TUnknown)
+          | Some (TOcaml_app ("result", [ ok_ty; _ ])) ->
+              Some ok_ty
+          | Some _ | None -> None
         in
         constructor
           (function
                       | [ value ] ->
-                          TOcaml_app ("result", [ Types.constraint_value_type value.ty; expected_error ])
+                          TOcaml_app
+                            ("result", [ Types.constraint_value_type value.ty; TUnknown ])
             | _ -> TUnknown)
           ?payload_tys:(Option.map (fun ty -> [ ty ]) expected_ok)
           1
     | "Error" ->
-        let expected_ok, expected_error =
+        let expected_error =
           match Env.expected_type env with
-          | Some (TOcaml_app ("result", [ ok_ty; error_ty ])) ->
-              (ok_ty, Some error_ty)
-          | Some _ | None -> (TUnknown, None)
+          | Some (TOcaml_app ("result", [ _; error_ty ])) ->
+              Some error_ty
+          | Some _ | None -> None
         in
         constructor
           (function
                       | [ value ] ->
-                          TOcaml_app ("result", [ expected_ok; Types.constraint_value_type value.ty ])
+                          TOcaml_app
+                            ("result", [ TUnknown; Types.constraint_value_type value.ty ])
             | _ -> TUnknown)
           ?payload_tys:(Option.map (fun ty -> [ ty ]) expected_error)
           1
@@ -21422,9 +21457,23 @@ let create ~compile_expr =
                   | [] | _ :: _ :: _ -> ret
                 in
                 let ret =
+                  let open_counted_return = function
+                    | ty -> (
+                        match Types.protocol_constraint_info ty with
+                        | Some (protocol_id, _, value_ty)
+                          when Protocol_id.equal protocol_id
+                                 Core_protocols.counted_id ->
+                            Type_solver.is_open value_ty
+                        | Some _ | None -> false)
+                  in
                   match (ret, Env.expected_type env) with
                   | (TUnknown | TMeta _ | TVar _), Some expected
                     when not (has_capability_constraint expected) ->
+                      expected
+                  | ret, Some expected
+                    when open_counted_return ret
+                         && Option.is_some
+                              (Types.seqable_constraint_info expected) ->
                       expected
                   | _ -> ret
                 in
@@ -23093,9 +23142,23 @@ let create ~compile_expr =
                                         ~expected:return_ty
                                         ~actual:witness_return_ty result))
                           | _ ->
+                              let closed_sum_hint =
+                                if
+                                  Types.is_dynamic receiver.ty
+                                  || Type_solver.is_open receiver.ty
+                                  ||
+                                  match receiver.ty with
+                                  | TUnknown | TMeta _ | TVar _ -> true
+                                  | _ -> false
+                                then
+                                  "; match a closed sum type over the \
+                                   supported receiver constructors"
+                                else ""
+                              in
                               Error.error
                                 ("no protocol implementation for " ^ name
-                               ^ " and " ^ source_name receiver.ty))
+                               ^ " and " ^ source_name receiver.ty
+                               ^ closed_sum_hint))
                       | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ])
                         -> (
                           let payload =
@@ -23439,9 +23502,23 @@ let create ~compile_expr =
                                           (branch :: compiled) rest)
                               in
                               if constructors = [] then
+                                let closed_sum_hint =
+                                  if
+                                    Types.is_dynamic receiver.ty
+                                    || Type_solver.is_open receiver.ty
+                                    ||
+                                    match receiver.ty with
+                                    | TUnknown | TMeta _ | TVar _ -> true
+                                    | _ -> false
+                                  then
+                                    "; match a closed sum type over the \
+                                     supported receiver constructors"
+                                  else ""
+                                in
                                 Error.error
                                   ("no protocol implementation for " ^ name
-                                 ^ " and " ^ source_name receiver.ty)
+                                 ^ " and " ^ source_name receiver.ty
+                                 ^ closed_sum_hint)
                               else
                                 Result.map
                                   (fun branches ->
@@ -23541,6 +23618,10 @@ let create ~compile_expr =
                                     then
                                       dynamic_unpack env expected
                                         argument.semantic_expr
+                                    else if Types.same_shape expected argument.ty
+                                    then
+                                      plan_and_emit_argument env ~expected
+                                        argument
                                     else
                                       match optional_payload expected with
                                       | Some _

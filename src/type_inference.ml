@@ -49,6 +49,18 @@ let expected_seqable_element_type ty =
   | Some _ as element -> element
   | None -> static_seqable_element_type ty
 
+let contextual_seqable_return_type expected_ty return_ty =
+  match Types.seqable_constraint_element expected_ty with
+  | None -> None
+  | Some element_ty -> (
+      match Types.constraint_value_type return_ty with
+      | TList _ -> Some (TList element_ty)
+      | TVector _ -> Some (TVector element_ty)
+      | TSet _ -> Some (TSet element_ty)
+      | TSeq _ -> Some (TSeq element_ty)
+      | TArray _ -> Some (TArray element_ty)
+      | _ -> None)
+
 let static_sequential_element_type ty =
   match Types.constraint_value_type ty with
   | TList element_ty | TVector element_ty | TSeq element_ty ->
@@ -2550,12 +2562,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   let rec infer_expected expected_ty params = function
     | FList
         [
-          FSymbol "__lg_apply";
+          FSymbol apply_name;
           FSymbol list_name;
           collection;
         ]
-      when has_source_name list_name "list"
-           || has_source_name list_name "__lg_list" -> (
+      when (has_source_name apply_name "apply" || String.equal apply_name "__lg_apply")
+           && (has_source_name list_name "list"
+           || has_source_name list_name "__lg_list") -> (
         match expected_ty with
         | TList element_ty ->
             infer_sequence_form element_ty params collection
@@ -2563,7 +2576,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             match expected_seqable_element_type expected_ty with
             | Some element_ty -> infer_sequence_form element_ty params collection
             | None -> infer_form params collection))
-    | (FList (FSymbol "__lg_apply" :: FSymbol name :: arguments) as form) -> (
+    | (FList (FSymbol apply_name :: FSymbol name :: arguments) as form)
+      when has_source_name apply_name "apply"
+           || String.equal apply_name "__lg_apply" -> (
         match List.rev arguments, lookup_inference_function_type params name [] with
         | collection :: reversed_fixed, Ok (TOverloaded_fn arities) ->
             let fixed = List.rev reversed_fixed in
@@ -2589,7 +2604,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         | Some known when not (Type_solver.is_open known)
                                           && (match known with TRecord _ -> false | _ -> true) ->
                             infer_form params collection
-                        | _ -> infer_expected (Types.seqable_constraint rest_ty) params collection))
+                        | _ -> infer_sequence_form rest_ty params collection))
             | _ -> infer_form params form)
         | _ -> infer_form params form)
     | FList (FSymbol "__lg_concat" :: collections) -> (
@@ -2707,6 +2722,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       when source_sequence_filter_name filter_name -> (
         match expected_seqable_element_type expected_ty with
         | Some element_ty when not (Types.is_dynamic element_ty) ->
+            let element_ty =
+              filter_predicate_parameter_type params predicate element_ty TBool
+            in
             Result.bind
               (infer_sequence_form element_ty params collection)
               (fun params ->
@@ -3242,6 +3260,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         with
         | Error _ as error -> error
         | Ok params ->
+            let params =
+              match (expected_ty, string_assoc_opt name params) with
+              | ( (TOcaml _ | TOcaml_app _ | TNamed_record _),
+                  Some (TFn _ as current_ty) ) ->
+                  let expected_fn_ty = TFn (parameter_types, expected_ty) in
+                  let refined = refine_type current_ty expected_fn_ty in
+                  if Types.equal refined current_ty then params
+                  else replace_param name refined params
+              | _, (Some _ | None) -> params
+            in
             List.fold_left2
               (fun result expected argument ->
                 Result.bind result (fun params ->
@@ -3292,10 +3320,20 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             FSymbol "__lg_first";
             FSymbol collection;
         ] -> (
+        let expected_element_ty =
+          match expected_ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+          | ty -> ty
+        in
         match string_assoc_opt collection params with
-        | Some _ | None -> constrain_seqable expected_ty params collection)
+        | Some _ | None -> constrain_seqable expected_element_ty params collection)
     | FList [ FSymbol "__lg_first"; collection ] ->
-        infer_sequence_form expected_ty params collection
+        let expected_element_ty =
+          match expected_ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+          | ty -> ty
+        in
+        infer_sequence_form expected_element_ty params collection
     | FList [ FSymbol field_access; target ]
       when String.starts_with ~prefix:".-" field_access ->
         let keyword =
@@ -3523,6 +3561,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | return_ty, _ -> return_ty
             in
             let expected_return_ty =
+              match
+                contextual_seqable_return_type expected_ty
+                  return_ty_for_unification
+              with
+              | Some expected_return_ty -> expected_return_ty
+              | None -> (
               match (expected_ty, parameter_tys, return_ty_for_unification) with
               | ( TConstraint
                     (Seqable_constraint
@@ -3533,7 +3577,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                           (Type_solver.unify Type_solver.empty parameter_ty
                              return_ty) ->
                   TSeq element_ty
-              | _ -> expected_ty
+              | _ -> expected_ty)
             in
             let expected_return_ty =
               Expression_support.contextual_variant_type expected_return_ty
@@ -4306,6 +4350,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 string_assoc_opt spec.source_name inferred)
         | (Ok _ | Error _), _ -> None)
     | _ -> None
+  and filter_predicate_parameter_type params predicate element_ty return_ty =
+    match expected_unary_function_param params return_ty predicate with
+    | Some predicate_ty -> refine_type element_ty predicate_ty
+    | None -> element_ty
   and inferred_function_parameter_types params = function
     | FSymbol name -> (
         let function_ty =
@@ -4422,6 +4470,20 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | _ -> false
   and infer_sequence_form element_ty params = function
     | FSymbol name -> constrain_seqable element_ty params name
+    | FList [ FSymbol deref_name; FSymbol reference ]
+      when String.equal deref_name "IDeref/-deref" -> (
+        match string_assoc_opt reference params with
+        | Some (TRef (TList _)) ->
+            constrain_symbol (TRef (TList element_ty)) params reference
+        | Some (TRef (TSeq _)) ->
+            constrain_symbol (TRef (TSeq element_ty)) params reference
+        | Some (TRef (TSet _)) ->
+            constrain_symbol (TRef (TSet element_ty)) params reference
+        | Some (TRef (TVector _ | TUnknown | TMeta _ | TVar _)) ->
+            constrain_symbol (TRef (TVector element_ty)) params reference
+        | Some _ | None ->
+            infer_expected (Types.seqable_constraint element_ty) params
+              (FList [ FSymbol "IDeref/-deref"; FSymbol reference ]))
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword
           (Types.seqable_constraint element_ty)
@@ -5221,6 +5283,20 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (inferred_or_fresh key_form)
                       (inferred_or_fresh value_form))
                    params)
+          | (TUnknown | TMeta _ | TVar _), _, None
+            when (match
+                    inferred_form_or_call_type ~lookup_function_ty params
+                      value_form
+                  with
+                  | TUnknown | TMeta _ | TVar _ -> false
+                  | ty -> not (Types.is_dynamic ty)) ->
+              constrain_symbol
+                (Types.dynamic_map
+                   (fresh_type_variable
+                      ("assoc_key_" ^ Names.sanitize_name name))
+                   (inferred_form_or_call_type ~lookup_function_ty params
+                      value_form))
+                params name
           | _, _, None ->
               constrain_symbol (Types.dynamic_constraint TUnknown) params name)
       | FSymbol name, _ ->
@@ -5939,12 +6015,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               element_ty
           | Some _ | None -> fresh_type_variable "filter_item"
         in
+        let predicate_result_ty = Types.truthy_constraint TUnknown in
+        let element_ty =
+          filter_predicate_parameter_type params predicate element_ty
+            predicate_result_ty
+        in
         Result.bind
           (infer_sequence_form element_ty params collection)
           (fun params ->
             infer_expected
-              (TFn ([ element_ty ], Types.truthy_constraint TUnknown))
-              params predicate)
+              (TFn ([ element_ty ], predicate_result_ty)) params predicate)
     | FList [ FSymbol keep_name; fn; collection ]
       when core_keep_function_name keep_name ->
         let inferred_element_ty = inferred_unary_function_param params fn in
@@ -6346,10 +6426,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   Error.error "compare arguments must have the same type"
             in
             let rec add_comparable = function
+              | TConstraint (Comparable_constraint _value_ty) as ty ->
+                  ty
               | TConstraint (Truthy_constraint value_ty) ->
                   Types.truthy_constraint (add_comparable value_ty)
               | TConstraint (Nil_predicate_constraint value_ty) ->
                   Types.nil_predicate_constraint (add_comparable value_ty)
+              | TNullable value_ty ->
+                  TNullable (add_comparable value_ty)
+              | TOcaml_app ("option", [ value_ty ]) ->
+                  TOcaml_app ("option", [ add_comparable value_ty ])
               | value_ty -> Types.comparable_constraint value_ty
             in
             Result.bind (unify_value params left_ty) (fun params ->
@@ -6894,6 +6980,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       when has_source_name predicate "__lg_nil-predicate" ->
         let inferred_ty = inferred_form_type params value in
         let expected_ty =
+          match value with
+          | FList [ FSymbol ("__lg_first" | "__lg_second"); _ ] ->
+              let payload_ty =
+                match inferred_ty with
+                | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+                | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+                | ty -> ty
+              in
+              TNullable (Types.nil_predicate_constraint payload_ty)
+          | _ -> (
           match inferred_ty with
           | TNullable ((TUnknown | TMeta _ | TVar _) as payload_ty) ->
               TNullable (Types.nil_predicate_constraint payload_ty)
@@ -6905,7 +7001,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | (TMeta _ as value_ty) -> TNullable value_ty
           | (TVar _) as value_ty ->
               Types.nil_predicate_constraint value_ty
-          | ty -> ty
+          | ty -> ty)
         in
         let nil_predicate_optional_seqable =
           Option.bind
@@ -8368,7 +8464,28 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | TSeq _ -> TSeq element_ty
           | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
               TSeq element_ty
-          | TSet _ -> (
+          | TSet inner -> (
+              let element_ty =
+                match inner with
+                | ty when Types.is_dynamic element_ty ->
+                    ty
+                | TUnknown | TMeta _ | TVar _ -> element_ty
+                | ty
+                  when Types.assignable ~policy:Host_boundary ~expected:ty
+                         ~actual:element_ty ->
+                    ty
+                | ty
+                  when (Types.is_dynamic ty || Type_solver.is_open ty)
+                       && not (Types.equal element_ty TUnknown)
+                       &&
+                       (match element_ty with
+                       | TMeta _ | TVar _ -> false
+                       | _ -> not (Types.is_dynamic element_ty)) ->
+                    element_ty
+                | ty when Types.is_dynamic ty || Type_solver.is_open ty ->
+                    refine_type ty element_ty
+                | ty -> refine_type ty element_ty
+              in
               match Types.set_module_name element_ty with
               | Ok _ -> TSet element_ty
               | Error _ -> Types.dynamic_constraint (TSet TUnknown))

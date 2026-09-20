@@ -2872,7 +2872,31 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | `Or, Some (TNullable _ | TOcaml_app ("option", [ _ ])) -> env
           | _ -> Env.with_expected_type None env
         in
-        match compile_args_for scope operand_env forms with
+        let compile_forms =
+          match (operator, Env.expected_type env, List.rev forms) with
+          | ( `Or,
+              Some ((TNullable _ | TOcaml_app ("option", [ _ ]))),
+              _ )
+          | _, None, _ | _, _, [] ->
+              compile_args_for scope operand_env forms
+          | `Or, Some expected, last :: reversed_prefix ->
+              let rec compile_prefix compiled = function
+                | [] ->
+                    Result.bind
+                      (compile_expr scope
+                         (Env.with_expected_type (Some expected) env)
+                         last)
+                      (fun last -> Ok (List.rev (last :: compiled)))
+                | form :: rest ->
+                    Result.bind
+                      (compile_expr scope operand_env form)
+                      (fun value -> compile_prefix (value :: compiled) rest)
+              in
+              compile_prefix [] (List.rev reversed_prefix)
+          | `And, Some _, _ ->
+              compile_args_for scope operand_env forms
+        in
+        match compile_forms with
         | Error _ as err -> err
         | Ok expressions -> (
             let contextual_expressions =
@@ -2978,6 +3002,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             (Semantic_ir.Apply
                                ( Semantic_ir.Ident "Option.get",
                                  [ raw_value ] ))
+                      | `Or, ty -> (
+                          match Types.truthy_constraint_info ty with
+                          | Some
+                              (TNullable payload_ty
+                              | TOcaml_app ("option", [ payload_ty ])) ->
+                              coerce_expression_to_type result_ty payload_ty
+                                (Semantic_ir.Apply
+                                   ( Semantic_ir.Ident "Option.get",
+                                     [ value_expression ] ))
+                          | Some _ | None ->
+                              coerce_expression_to_type result_ty value_ty
+                                value_expression)
                       | ( `And,
                           (TNullable payload_ty
                           | TOcaml_app ("option", [ payload_ty ])) )
@@ -3043,6 +3079,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                              (TNullable payload_ty
                              | TOcaml_app ("option", [ payload_ty ])) ) ->
                              payload_ty
+                         | `Or, false, ty -> (
+                             match Types.truthy_constraint_info ty with
+                             | Some
+                                 (TNullable payload_ty
+                                 | TOcaml_app ("option", [ payload_ty ])) ->
+                                 payload_ty
+                             | Some _ | None -> expression.ty)
                          | _ -> expression.ty
                        in
                        Some (Types.constraint_value_type value_ty))
@@ -4549,7 +4592,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       in
                       let rec bind_pattern aliases pattern ty =
                         match pattern with
-                        | FSymbol name -> (name, ty) :: aliases
+	                        | FSymbol "_" -> aliases
+	                        | FSymbol name -> (name, ty) :: aliases
                         | FVector forms -> (
                             match
                               ( Destructure.parse_sequence_pattern forms,
@@ -5074,9 +5118,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
             []
       in
-      let nested_parameters = nested_function_parameters value_form in
+      let dependency_forms = value_form :: forms in
+      let nested_parameters =
+        List.concat_map nested_function_parameters dependency_forms
+      in
       let captured_params =
-        Dependency_graph.symbols value_form
+        List.concat_map Dependency_graph.symbols dependency_forms
         |> List.sort_uniq String.compare
         |> List.filter_map (fun candidate ->
                if
@@ -5090,6 +5137,109 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                  match Resolver.lookup_binding scope env candidate with
                  | Ok (binding : Types.binding) -> Some (candidate, binding.ty)
                  | Error _ -> None)
+      in
+      let assoc_field_expected_type =
+        let target_fields = function
+          | FSymbol target -> (
+              let alias_binding =
+                match
+                  Env.to_bindings env
+                  |> List.find_map (fun (key, binding) ->
+                         if key = target then Some binding else None)
+                with
+                | Some binding -> Some binding
+                | None -> (
+                match String.split_on_char '/' target with
+                | [ alias; member ] ->
+                    let resolved =
+                      Env.resolve_namespace_alias ~scope alias env
+                    in
+                    (Env.binding_entries_named member env
+                    @ Env.binding_entries_named (Names.sanitize_name member) env)
+                    |> List.find_map (fun (key, binding) ->
+                           match resolved with
+                           | Some namespace
+                             when String.starts_with
+                                    ~prefix:(namespace ^ "/")
+                                    key ->
+                               Some binding
+                           | Some _ | None
+                             when String.ends_with
+                                    ~suffix:("/" ^ member)
+                                    key ->
+                               Some binding
+                           | _ -> None)
+                | _ -> None)
+              in
+              match alias_binding with
+              | Some (binding : Types.binding) -> Types.record_fields binding.ty
+              | None -> (
+              match Expression_support.lookup_function scope env target with
+              | Ok value -> Types.record_fields value.ty
+              | Error _ -> (
+                  match Expression_support.lookup_function_ty scope env target with
+                  | Ok ty -> Types.record_fields ty
+                  | Error _ -> None)))
+          | _ -> None
+        in
+        let rec scan = function
+          | FList (head :: target :: pairs) when assoc_head head -> (
+              match target_fields target with
+              | None -> scan_pairs pairs
+              | Some fields -> (
+                  match scan_assoc_pairs fields pairs with
+                  | Some _ as found -> found
+                  | None -> scan_pairs pairs))
+          | FList
+              ( (FSymbol "fn" | FSymbol "fn*")
+                :: FVector parameters :: body_forms )
+          | FList
+              ( (FSymbol "fn" | FSymbol "fn*")
+                :: FSymbol _ :: FVector parameters :: body_forms ) ->
+              scan_function_body parameters body_forms
+          | FList ((FSymbol "fn" | FSymbol "fn*") :: arities) ->
+              scan_function_arities arities
+          | FList forms | FVector forms -> scan_forms forms
+          | FMap pairs ->
+              scan_forms
+                (List.concat_map (fun (key, value) -> [ key; value ]) pairs)
+          | _ -> None
+        and assoc_head = function
+          | FSymbol assoc_name ->
+              assoc_name = "assoc" || assoc_name = "__lg_assoc"
+              || String.ends_with ~suffix:"/assoc" assoc_name
+          | FCoreSymbol Core_assoc -> true
+          | _ -> false
+        and scan_forms forms =
+          List.find_map scan forms
+        and scan_function_body parameters body_forms =
+          let parameter_names = Destructure.pattern_names (FVector parameters) in
+          if List.mem name parameter_names then None else scan_forms body_forms
+        and scan_function_arities = function
+          | FList (FVector parameters :: body_forms) :: rest -> (
+              match scan_function_body parameters body_forms with
+              | Some _ as found -> found
+              | None -> scan_function_arities rest)
+          | _form :: rest -> scan_function_arities rest
+          | [] -> None
+        and scan_pairs = function
+          | key :: value :: rest -> (
+              match scan value with
+              | Some _ as found -> found
+              | None -> (
+                  match scan key with
+                  | Some _ as found -> found
+                  | None -> scan_pairs rest))
+          | _ -> None
+        and scan_assoc_pairs fields = function
+          | FKeyword keyword :: FSymbol value_name :: _rest
+            when String.equal value_name name ->
+              Option.map (fun (field : field) -> field.ty)
+                (Types.find_field keyword fields)
+          | _key :: _value :: rest -> scan_assoc_pairs fields rest
+          | _ -> None
+        in
+        scan_forms forms
       in
       let initial_ty =
         match value_form with
@@ -5146,8 +5296,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           let inferred_ty =
             List.assoc_opt name inferred |> Option.value ~default:TUnknown
           in
-          Type_inference.refine_type initial_ty inferred_ty
-      | Error _ -> TUnknown
+          let inferred_ty =
+            match assoc_field_expected_type with
+            | Some expected -> Type_inference.refine_type inferred_ty expected
+            | None -> inferred_ty
+          in
+          (match (initial_ty, inferred_ty) with
+          | TFn (initial_params, _), TFn (inferred_params, _)
+            when List.length initial_params = List.length inferred_params
+                 && not (Type_solver.is_open inferred_ty) ->
+              inferred_ty
+          | _ -> Type_inference.refine_type initial_ty inferred_ty)
+      | Error _ ->
+          assoc_field_expected_type |> Option.value ~default:TUnknown
     in
     let expected_value_env env pattern value_form rest =
       let env = Env.with_expected_type None env in

@@ -273,6 +273,18 @@ let compile ~compile_named_fn ~prepare_recursive ~compile_body scope env
               functions
           in
           let complete env bindings recursive =
+            let body =
+              match compile_components env rest with
+              | Ok _ as body -> body
+              | Error (error : Error.t) when recursive ->
+                  Error
+                    {
+                      error with
+                      message =
+                        "incompatible recursive types: " ^ error.message;
+                    }
+              | Error _ as error -> error
+            in
             Result.map
               (fun body ->
                 {
@@ -282,7 +294,7 @@ let compile ~compile_named_fn ~prepare_recursive ~compile_body scope env
                        Semantic_ir.LetRecGroup (bindings, body.semantic_expr)
                      else Semantic_ir.Let (bindings, body.semantic_expr));
                 })
-              (compile_components env rest)
+              body
           in
           match members with
           | [ function_ ] ->
@@ -314,6 +326,25 @@ let compile ~compile_named_fn ~prepare_recursive ~compile_body scope env
                       add_function env f (Types.binding f.local_target_name ty))
                     env members types
                 in
+                let preflight_expressions =
+                  List.map
+                    (fun ty -> typed_ir ty (Semantic_ir.Ident "__lg_letfn_preflight"))
+                    types
+                in
+                Result.bind
+                  (constraints scope group_env members types preflight_expressions)
+                  (fun preflight_substitutions ->
+                let preflight_inferred =
+                  List.map (Type_solver.apply preflight_substitutions) types
+                in
+                let previous = canonical types
+                and current = canonical preflight_inferred in
+                if not (Types.equal previous current) then
+                  if List.exists (Types.equal current) seen then
+                    Error.error
+                      "letfn recursive type constraints do not converge"
+                  else solve (previous :: seen) preflight_inferred
+                else
                 let rec prepare acc = function
                   | [] -> Ok (List.rev acc)
                   | (f : local_function) :: rest ->
@@ -323,7 +354,18 @@ let compile ~compile_named_fn ~prepare_recursive ~compile_body scope env
                            f.local_body_forms) (fun expression ->
                           prepare (expression :: acc) rest)
                 in
-                Result.bind (prepare [] members) (fun expressions ->
+                let prepared =
+                  match prepare [] members with
+                  | Ok _ as prepared -> prepared
+                  | Error (error : Error.t) ->
+                      Error
+                        {
+                          error with
+                          message =
+                            "incompatible recursive types: " ^ error.message;
+                        }
+                in
+                Result.bind prepared (fun expressions ->
                     let unified =
                       constraints scope group_env members types expressions
                     in
@@ -364,7 +406,7 @@ let compile ~compile_named_fn ~prepare_recursive ~compile_body scope env
                         else if List.exists (Types.equal current) seen then
                           Error.error
                             "letfn recursive type constraints do not converge"
-                        else solve (previous :: seen) inferred))
+                        else solve (previous :: seen) inferred)))
               in
               solve [] initial)
     in

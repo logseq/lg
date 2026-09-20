@@ -2203,16 +2203,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               ]))
                   | _ -> Error.error "get expects a map")))
       | [ target_form; index_form; default_form ] -> (
-          match
-            ( compile_expr scope env target_form,
-              compile_expr scope env index_form,
-              compile_expr scope env default_form )
-          with
-          | (Error _ as err), _, _ -> err
-          | _, (Error _ as err), _ -> err
-          | _, _, (Error _ as err) -> err
-          | Ok target, Ok index, Ok default -> (
+          match compile_expr scope env target_form with
+          | Error _ as err -> err
+          | Ok target -> (
               let target = unwrap_protocol_value target in
+              match compile_expr scope env index_form with
+              | Error _ as err -> err
+              | Ok index -> (
+                  let default_expected =
+                    match Types.dynamic_map_types target.ty with
+                    | Some (key_ty, value_ty)
+                      when Types.assignable ~policy:Host_boundary
+                             ~expected:key_ty ~actual:index.ty ->
+                        Some value_ty
+                    | _ -> None
+                  in
+                  match
+                    compile_expr scope
+                      (Env.with_expected_type default_expected env)
+                      default_form
+                  with
+                  | Error _ as err -> err
+                  | Ok default -> (
               match (target.ty, index.ty) with
               | _, _
                 when Option.is_some
@@ -2344,7 +2356,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | _ ->
                       Error.error
                         ("get key type " ^ source_name index.ty
-                       ^ " is not supported for " ^ source_name target.ty)))))
+                       ^ " is not supported for " ^ source_name target.ty)))))))
       | _ -> Error.error "get expects 2 or 3 arguments"
     and compile_find scope env arg_forms =
       let arg_forms =
@@ -2464,7 +2476,21 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (FList (FSymbol "IFind/-find" :: arg_forms))))
       | _, Ok _ -> Error.error "find expects 2 arguments"
     and compile_assoc scope env arg_forms =
-      let needs_binding = function
+      let symbol_tail name =
+        match List.rev (String.split_on_char '/' name) with
+        | tail :: _ -> tail
+        | [] -> name
+      in
+      let rec pure_callback_value = function
+        | FList (FSymbol ("fn" | "fn*") :: _) -> true
+        | FList [ FSymbol wrapper; value ]
+          when List.mem (symbol_tail wrapper) [ "Some"; "Ok"; "Error" ] ->
+            pure_callback_value value
+        | _ -> false
+      in
+      let needs_binding form =
+        if pure_callback_value form then false
+        else match form with
         | FList _ | FMap _ | FVector _ -> true
         | _ -> false
       in
@@ -2474,27 +2500,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       in
       match arg_forms with
       | target :: pairs when List.exists needs_binding (target :: operands pairs) ->
-          Result.bind (compile_expr scope env target) (fun receiver ->
-          let receiver_ty =
-            Function_elaborator.infer_named_record scope env receiver.ty
-          in
-          match receiver_ty with
-          | TRecord _ | TNamed_record _ -> compile_assoc_bound scope env arg_forms
-          | _ ->
           incr assoc_expansion_counter;
           let prefix = "__lg_assoc_" ^ string_of_int !assoc_expansion_counter ^ "_" in
           let target_name = FSymbol (prefix ^ "target") in
           let rec bind_pairs index bindings args = function
             | key :: value :: rest ->
-                let name = FSymbol (prefix ^ string_of_int index) in
-                bind_pairs (index + 1) (value :: name :: bindings)
-                  (name :: key :: args) rest
+                if needs_binding value then
+                  let name = FSymbol (prefix ^ string_of_int index) in
+                  bind_pairs (index + 1) (value :: name :: bindings)
+                    (name :: key :: args) rest
+                else bind_pairs index bindings (value :: key :: args) rest
             | rest ->
                 FList [FSymbol "let";
                        FVector (target_name :: target :: List.rev bindings);
                        FList (FSymbol "__lg_assoc" :: target_name :: List.rev args @ rest)]
           in
-          compile_expr scope env (bind_pairs 0 [] [] pairs))
+          compile_expr scope env (bind_pairs 0 [] [] pairs)
       | _ -> compile_assoc_bound scope env arg_forms
     and compile_assoc_bound scope env arg_forms =
       match arg_forms with

@@ -3246,7 +3246,40 @@ and compile_definition scope env next_type form =
                       rest))
       in
       let refine_predeclared_bindings env name predeclared_ty actual_ty =
-        match Type_solver.unify Type_solver.empty predeclared_ty actual_ty with
+        let open_counted_return = function
+          | ty -> (
+              match Types.protocol_constraint_info ty with
+              | Some (protocol_id, _, value_ty)
+                when Protocol_id.equal protocol_id Core_protocols.counted_id ->
+                  contains_unresolved_type value_ty
+              | Some _ | None -> false)
+        in
+        let seqable_return = function
+          | TList _ | TVector _ | TSet _ | TSeq _ | TArray _ | TString ->
+              true
+          | ty ->
+              Option.is_some (Types.next_seq_element ty)
+              || Option.is_some (Types.seqable_constraint_info ty)
+        in
+        let counted_return_satisfied_by_seqable =
+          match (predeclared_ty, actual_ty) with
+          | TFn (predeclared_params, predeclared_return),
+            TFn (actual_params, actual_return)
+            when List.length predeclared_params = List.length actual_params
+                 && open_counted_return predeclared_return
+                 && seqable_return actual_return ->
+              Type_solver.unify Type_solver.empty
+                (TTuple predeclared_params) (TTuple actual_params)
+              |> Result.to_option
+          | _ -> None
+        in
+        let substitutions =
+          match counted_return_satisfied_by_seqable with
+          | Some substitutions -> Ok substitutions
+          | None ->
+              Type_solver.unify Type_solver.empty predeclared_ty actual_ty
+        in
+        match substitutions with
         | Error _ ->
             Error.error
               ("recursive function " ^ name
@@ -3363,6 +3396,7 @@ and compile_definition scope env next_type form =
               | Some (TFn (_, return_ty))
                 when not (Types.equal return_ty TUnknown)
                      && not (Types.is_dynamic return_ty)
+                     && not (contains_unresolved_type return_ty)
                      &&
                      (match return_ty with
                      | TMeta _ | TVar _ -> false

@@ -1792,7 +1792,9 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
         Types.source_name (Type_solver.canonical_scheme_body left)
         = Types.source_name (Type_solver.canonical_scheme_body right)
     | None, None when left.ty == right.ty -> true
-    | None, None -> Types.source_name left.ty = Types.source_name right.ty
+    | None, None ->
+        Types.source_name (Type_solver.canonical left.ty)
+        = Types.source_name (Type_solver.canonical right.ty)
     | Some _, None | None, Some _ -> false)
     && left.row_param_types = right.row_param_types
     && left.overload_row_param_types = right.overload_row_param_types

@@ -803,6 +803,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
           env
           |> Env.add (Names.scoped_key scope accumulator) accumulator_binding
           |> Env.add (Names.scoped_key scope element) element_binding
+          |> Env.with_expected_type (Some accumulator_ty)
         in
         let pattern binding ty =
           match ty with
@@ -844,6 +845,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         :: (FVector [ _accumulator; _element ] as params)
         :: body_forms) ->
         compile_contextual_fn scope env
+          ~expected_return_ty:accumulator_ty
           ~refine_open_overrides:(Type_solver.is_open accumulator_ty)
           ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
           params body_forms
@@ -854,6 +856,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         :: (FVector [ _accumulator; _element ] as params)
         :: body_forms) ->
         compile_contextual_fn scope env ~name
+          ~expected_return_ty:accumulator_ty
           ~refine_open_overrides:
             (match accumulator_ty with
             | TSet (TUnknown | TMeta _ | TVar _) -> true
@@ -894,6 +897,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                (Types.binding accumulator_name accumulator_ty)
           |> Env.add (Names.scoped_key scope item_name)
                (Types.binding item_name element_ty)
+          |> Env.with_expected_type (Some accumulator_ty)
         in
         compile_expr scope function_env
           (FList

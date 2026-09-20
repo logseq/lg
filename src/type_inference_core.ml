@@ -242,15 +242,15 @@ and refine_nonmatching_type existing inferred =
     when Option.is_some (Types.printable_constraint_info existing)
          && Option.is_none (Types.printable_constraint_info inferred) ->
       let value_ty = Types.printable_constraint_info existing |> Option.get in
-      if not (Type_solver.is_open inferred) && Types.same_shape value_ty inferred then
-        refine_type value_ty inferred
+      if not (Type_solver.is_open inferred) then
+        inferred
       else Types.printable_constraint (refine_type value_ty inferred)
   | existing, inferred
     when Option.is_some (Types.printable_constraint_info inferred)
          && Option.is_none (Types.printable_constraint_info existing) ->
       let value_ty = Types.printable_constraint_info inferred |> Option.get in
-      if not (Type_solver.is_open existing) && Types.same_shape existing value_ty then
-        refine_type existing value_ty
+      if not (Type_solver.is_open existing) then
+        existing
       else Types.printable_constraint (refine_type existing value_ty)
   | existing, inferred
     when Option.is_some (Types.printable_constraint_info existing) ->
@@ -532,11 +532,13 @@ and refine_nonmatching_type existing inferred =
   | (TRecord _ as structural), host
     when Option.is_some (host_record_type host) ->
       let named = Option.get (host_record_type host) in
-      refine_type structural named
+      if inferred_row_compatible structural named then host
+      else refine_type structural named
   | host, (TRecord _ as structural)
     when Option.is_some (host_record_type host) ->
       let named = Option.get (host_record_type host) in
-      refine_type named structural
+      if inferred_row_compatible structural named then host
+      else refine_type named structural
   | TRecord (_ :: _), ((TOcaml _ | TOcaml_app _) as host)
     ->
       host
