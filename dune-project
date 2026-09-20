@@ -25,6 +25,7 @@
   melange-edn-core
   melange-edn-native
   melange-edn-melange
+  melange-transit-core
   melange-transit-native
   melange-transit-melange
   yojson))

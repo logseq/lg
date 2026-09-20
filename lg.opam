@@ -18,6 +18,7 @@ depends: [
   "melange-edn-core"
   "melange-edn-native"
   "melange-edn-melange"
+  "melange-transit-core"
   "melange-transit-native"
   "melange-transit-melange"
   "yojson"
@@ -36,4 +37,13 @@ build: [
     "@runtest" {with-test}
     "@doc" {with-doc}
   ]
+]
+# These packages are not yet available in the default opam repository.
+pin-depends: [
+  ["melange-edn-core.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
+  ["melange-edn-native.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
+  ["melange-edn-melange.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
+  ["melange-transit-core.0.1.0" "git+https://github.com/RCmerci/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
+  ["melange-transit-native.0.1.0" "git+https://github.com/RCmerci/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
+  ["melange-transit-melange.0.1.0" "git+https://github.com/RCmerci/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
 ]
