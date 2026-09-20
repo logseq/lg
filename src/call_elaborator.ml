@@ -16218,11 +16218,7 @@ let create ~compile_expr =
       when (String.equal name "seq" || String.ends_with ~suffix:"/seq" name)
            && List.length arg_forms = 1 ->
         compile_collection_call scope env "__lg_seq" arg_forms
-    | name
-      when String.equal name "__lg_into"
-           || String.equal name "into"
-           || String.ends_with ~suffix:"/into" name
-           || String.ends_with ~suffix:"/__lg_into" name -> (
+    | "__lg_into" -> (
         match arg_forms with
         | [ target_form; transducer_form; source_form ] ->
             compile_into scope env target_form
@@ -17679,9 +17675,7 @@ let create ~compile_expr =
     let compile_source_for_target target =
       let complement_predicate = function
         | FList [ FSymbol complement_name; predicate_form ]
-          when String.equal complement_name "complement"
-               || String.equal complement_name "__lg_complement"
-               || String.ends_with ~suffix:"/complement" complement_name
+          when String.equal complement_name "__lg_complement"
                || String.ends_with ~suffix:"/__lg_complement" complement_name ->
             Some predicate_form
         | _ -> None
@@ -19149,10 +19143,6 @@ let create ~compile_expr =
           && List.length arg_forms >= 1
         then compile_map scope env arg_forms
         else if
-          is_core_binding "mapv"
-          && List.length arg_forms >= 1
-        then compile_mapv scope env arg_forms
-        else if
           is_core_map_predicate
           && List.length arg_forms = 1
         then
@@ -19448,7 +19438,15 @@ let create ~compile_expr =
                               let expected, actual =
                                 align_optional_inference expected argument.ty
                               in
-                              Type_solver.unify !substitutions expected actual
+                              (match expected, actual with
+                              | TNamed_record template, TNamed_record argument
+                                when template.nominal && argument.nominal
+                                     && Type_id.equal template.type_id argument.type_id
+                                     && template.type_arguments <> [] ->
+                                  Type_solver.unify !substitutions
+                                    (TTuple template.type_arguments)
+                                    (TTuple argument.type_arguments)
+                              | _ -> Type_solver.unify !substitutions expected actual)
                         in
                         substitutions :=
                           Result.value inferred ~default:!substitutions)
@@ -19670,7 +19668,7 @@ let create ~compile_expr =
                           then
                             match form with
                             | FList
-                                (FSymbol ("__lg_get" | "get") :: _)
+                                (FSymbol "__lg_get" :: _)
                             | FList (FCoreSymbol Core_get :: _) -> (
                                 match
                                   compile_expr scope
@@ -21524,7 +21522,7 @@ let create ~compile_expr =
                         then
                           match arg_form with
                           | FList
-                              (FSymbol ("__lg_get" | "get") :: _)
+                              (FSymbol "__lg_get" :: _)
                           | FList (FCoreSymbol Core_get :: _) -> (
                               match
                                 compile_expr scope
@@ -22610,7 +22608,7 @@ let create ~compile_expr =
                   && Option.is_some (optional_payload expected)
                   &&
                   match form with
-                  | FList (FSymbol ("__lg_get" | "get") :: _)
+                  | FList (FSymbol "__lg_get" :: _)
                   | FList (FCoreSymbol Core_get :: _) ->
                       true
                   | _ -> false
@@ -22623,7 +22621,7 @@ let create ~compile_expr =
                         then
                           match form with
                           | FList
-                              (FSymbol ("__lg_get" | "get") :: _)
+                              (FSymbol "__lg_get" :: _)
                           | FList (FCoreSymbol Core_get :: _) -> (
                               match
                                 compile_expr scope

@@ -1569,12 +1569,24 @@ let structure_of_items items =
       Ok (missing_root_set_definitions requested_sets items @ structure)
 
 let relocate_structure location structure =
-  let mapper =
+  let inherited_location parent current =
+    if current.Location.loc_ghost then parent else current
+  in
+  let rec mapper location =
     { Ast_mapper.default_mapper with
-      location =
-        (fun _mapper current -> if current.loc_ghost then location else current);
+      location = (fun _ current -> inherited_location location current);
+      type_declaration = (fun _ declaration ->
+        let nested = mapper (inherited_location location declaration.ptype_loc) in
+        Ast_mapper.default_mapper.type_declaration nested declaration);
+      label_declaration = (fun _ declaration ->
+        let nested = mapper (inherited_location location declaration.pld_loc) in
+        Ast_mapper.default_mapper.label_declaration nested declaration);
+      constructor_declaration = (fun _ declaration ->
+        let nested = mapper (inherited_location location declaration.pcd_loc) in
+        Ast_mapper.default_mapper.constructor_declaration nested declaration);
     }
   in
+  let mapper = mapper location in
   mapper.structure mapper structure
 
 let requested_sets_from_located_items items =

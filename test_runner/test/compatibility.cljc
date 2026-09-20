@@ -42,9 +42,9 @@
 (deftest exceptions
   (testing "portable thrown assertion"
     (is (= 2 @each-count))
-    (is (thrown? Exception
+    (is (thrown? js/Error
                  (throw (ex-info "boom" {}))))
-    (is (thrown-with-msg? ExceptionInfo #"bo+m"
+    (is (thrown-with-msg? js/Error #"bo+m"
                           (throw (ex-info "boom" {}))))
     (is (thrown-msg? "exact boom"
                      (throw (ex-info "exact boom" {}))))))

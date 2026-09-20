@@ -3509,7 +3509,12 @@ let workspace_dependencies sources =
                  in
                  String_set.union providers dependencies)
                (referenced_symbols source)
-               String_set.empty)
+               (String_map.fold (fun candidate _ dependencies ->
+                  if candidate <> filename
+                     && Ocaml_interface.source_stem candidate = Ocaml_interface.source_stem filename
+                     && (Filename.check_suffix candidate ".mli" || Filename.check_suffix filename ".mli")
+                  then String_set.add candidate dependencies else dependencies)
+                  sources String_set.empty))
            sources)
 
 let workspace_components sources =
@@ -3599,13 +3604,7 @@ let topological_workspace_order dependencies filenames =
   in
   List.rev ordered
 
-let source_stem filename =
-  [ ".lgi"; ".clj"; ".cljc"; ".cljs" ]
-  |> List.find_map (fun extension ->
-         if Filename.check_suffix filename extension then
-           Some (Filename.chop_suffix filename extension)
-         else None)
-  |> Option.value ~default:filename
+let source_stem = Ocaml_interface.source_stem
 
 let source_unit_group sources filename =
   let stem = source_stem filename in

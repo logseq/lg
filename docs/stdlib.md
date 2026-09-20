@@ -92,11 +92,17 @@ tests that intentionally exercise an empty compiler state. This prevents
 source-owned core names from being reintroduced as public compiler dispatch
 merely to keep legacy compiler-only test fixtures working.
 
-LG signature sidecars use the `.lgi` extension consistently. These files
-contain LG `signature` forms and are compiled by `lg_cli` before their matching
-`.cljc` source. The `.mli` extension is reserved for ordinary OCaml interfaces
-parsed by the OCaml compiler. The legacy `.mil` extension and LG signature forms
-stored in `.mli` files are rejected by repository architecture tests.
+Sidecars written in LG syntax use `.lgi`. These files contain LG `signature`
+forms and are compiled by `lg_cli` before their matching `.cljc` source.
+Alternatively, a matching `.mli` can declare types and value contracts in
+ordinary OCaml syntax, parsed with compiler-libs and checked through the same
+static LG pipeline. The CLI discovers adjacent `.mli` files for selected LG
+sources and directory builds; unrelated OCaml interfaces are not LG inputs.
+Existing stdlib `.lgi` files remain supported. The legacy `.mil` extension and
+LG signature forms stored in `.mli` files are rejected by architecture tests.
+
+See the [OCaml interface examples](../README.md#ocaml-interface-sidecars) for
+supported declarations, name mapping, arity representation, and limitations.
 
 Multi-file compilation prepares each source once. The parsed forms provide
 both required OCaml packages and the subsequent incremental compilation input;

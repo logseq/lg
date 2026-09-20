@@ -93,6 +93,10 @@ let infer_interface_with_filename ?(target = Target.default) ~filename source =
   Compiler_session.run (fun () ->
       Toolchain.interface ~target ~filename source)
 
+let infer_interface_from_state ?(target = Target.default) ~filename state source =
+  Compiler_session.run (fun () ->
+      Toolchain.interface_from_state ~target ~filename state source)
+
 let compile_parsetree ?(target = Target.default) source =
   Compiler_session.run (fun () ->
       Toolchain.implementation_parsetree ~target source)

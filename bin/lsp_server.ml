@@ -228,7 +228,8 @@ let source_roots_in_rule dune_dir words =
 let source_files_in_rule dune_dir words =
   words
   |> List.filter (fun word ->
-         (Filename.check_suffix word ".cljc" || Filename.check_suffix word ".lgi")
+         (Filename.check_suffix word ".cljc" || Filename.check_suffix word ".lgi"
+          || Filename.check_suffix word ".mli")
          && not (String.starts_with ~prefix:"%{" word))
   |> List.map (absolute_path_from dune_dir)
 
@@ -403,6 +404,8 @@ let semantic_analysis document =
 
 let lg_source_file path =
   Filename.check_suffix path ".cljc" || Filename.check_suffix path ".lgi"
+  || (Filename.check_suffix path ".mli"
+      && Sys.file_exists (Filename.chop_suffix path ".mli" ^ ".cljc"))
 
 let rec lg_files path =
   if Sys.is_directory path then

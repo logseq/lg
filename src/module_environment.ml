@@ -27,7 +27,7 @@ let changed_bindings previous updated =
          | None -> true
          | Some previous_binding -> previous_binding <> binding)
 
-let open_bindings scope env module_path =
+let open_bindings ?(qualified = false) scope env module_path =
   let prefix = module_path ^ "/" in
   let prefix_len = String.length prefix in
   let record_prefix = "__record/" ^ module_path ^ "/" in
@@ -37,9 +37,15 @@ let open_bindings scope env module_path =
     |> List.filter_map (fun (key, (binding : binding)) ->
            if String.length key > prefix_len && String.sub key 0 prefix_len = prefix then
              let local = String.sub key prefix_len (String.length key - prefix_len) in
-             let opened_binding =
-               { binding with ocaml_name = Names.sanitize_name local }
+             let member_name =
+               match String.rindex_opt binding.ocaml_name '.' with
+               | None -> binding.ocaml_name
+               | Some separator ->
+                   String.sub binding.ocaml_name (separator + 1)
+                     (String.length binding.ocaml_name - separator - 1)
              in
+             let opened_binding =
+               if qualified then binding else { binding with ocaml_name = member_name } in
              Some (Names.scoped_key scope local, opened_binding)
            else if
              String.length key > record_prefix_len

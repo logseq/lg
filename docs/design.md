@@ -195,6 +195,40 @@ operation, or zero-argument function result must remain the same type variable;
 the compiler must not materialize it as `dynamic<any>`. Sidecar signatures are
 authoritative contracts, not hints that body inference may widen.
 
+Ordinary OCaml `.mli` files may supply these contracts for the LG source with
+the same path stem. The OCaml parser reads the interface; its supported `val`
+and `type` declarations enter LG's static declaration pipeline before body
+inference. Interface type variables remain rigid. A missing implementation,
+ambiguous munged name, duplicate contract, unsupported declaration, or forbidden
+dynamic type is an error. The compiler must not silently ignore a declaration
+or replace it with an untyped constraint.
+
+Manifest interface types are defined in an ordinary generated OCaml module
+per source unit, preserving distinct type identities across namespaces. LG
+code can use the imported type names and constructors without emitting an
+OCaml `open` that could shadow another namespace's types. An abstract declaration
+requires a source type with the same parameter arity; a record declaration may
+instead constrain a matching LG `defrecord`. These sidecars follow `.lgi`
+contract semantics, including visibility of undeclared namespace members;
+they do not introduce module sealing. Pending interfaces survive saved-state
+serialization and are consumed only by their matching implementation. Workspace
+analysis must recheck that implementation when its interface changes.
+
+Interface contracts also cover definitions produced by source macros, using
+those definitions' expanded arities. Interface types are checked before the
+implementation's recursive binding analysis. Interface imports retain qualified
+OCaml references, including when a type and a function share a source name.
+Unambiguous imported interface types retain their defining module identity;
+built-in type names are never replaced by another interface's declarations.
+OCaml record names and labels remain accessible with their corresponding LG
+spelling, such as `search_hit` / `search-hit` and `display_name` / `:display-name`.
+Record labels use their emitted OCaml identity; runtime map keys remain exact.
+Exported record fields preserve qualified identities for module-local variants
+and aliases, including inside collections and callbacks.
+
+An explicit `defrecord` field annotation must agree with its declared record
+signature. A sidecar must not silently replace an incompatible field annotation.
+
 An explicit value signature is retained separately from inferred expression
 annotations through lowering. The generated binding checks the original
 signature with universally quantified type parameters, for recursive and

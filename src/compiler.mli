@@ -102,6 +102,13 @@ val infer_interface_with_filename :
   string ->
   (string, compile_error) result
 
+val infer_interface_from_state :
+  ?target:Target.t ->
+  filename:string ->
+  state ->
+  string ->
+  (string, compile_error) result
+
 val compile_parsetree :
   ?target:Target.t -> string -> (Parsetree.structure, compile_error) result
 

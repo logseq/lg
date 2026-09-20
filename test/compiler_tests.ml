@@ -54980,8 +54980,359 @@ let test_migration_callbacks_preserve_nominal_models () =
   assert_ocaml_runs "migration_callbacks_preserve_nominal_models" "" native;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let mli_sidecar_chunks interface implementation =
+  [ ("mli_sample.mli", interface); ("mli_sample.cljc", implementation) ]
+
+let test_mli_sidecar_values () =
+  let sources = mli_sidecar_chunks
+    {|val add_one : int -> int
+      val identity_value : 'a -> 'a
+      val apply_value : ('a -> 'b) -> 'a -> 'b
+      val answer : unit -> int
+      val maybe : int -> int option
+      val values : int list -> int list|}
+    {|(ns mli.sample)
+      (defn add-one [x] (+ x 1))
+      (defn identity-value [x] x)
+      (defn apply-value [f x] (f x))
+      (defn answer [] 42)
+      (defn maybe [x] (Some x))
+      (defn values [xs] xs)
+      (println (add-one (answer)))
+      (println (identity-value "ok"))
+      (println (apply-value add-one 8))
+      (println (count (values '(1 2))))|} in
+  assert_ocaml_runs "mli_sidecar_values" "43\nok\n9\n2\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_types () =
+  let sources = mli_sidecar_chunks
+    {|type user_id = int
+      type 'a box = { value : 'a }
+      type status = Ready | Failed of string
+      val make_box : int -> int box
+      val read_box : int box -> int
+      val status_text : status -> string|}
+    {|(ns mli.sample)
+      (defn make-box [x] (record box (value x)))
+      (defn read-box [x] (:value x))
+      (defn status-text [x] (match x Ready "ready" (Failed message) message))
+      (println (read-box (make-box 42)))
+      (println (status-text Ready))
+      (println (status-text (Failed "failed")))|} in
+  assert_ocaml_runs "mli_sidecar_types" "42\nready\nfailed\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_source_names () =
+  let sources = mli_sidecar_chunks
+    {|type task_status = { display_name : string; is_ready : bool }
+      val task_status : string -> task_status
+      val status_name : task_status -> string|}
+    {|(ns mli.sample)
+      (defn task-status [name]
+        (record task-status (display-name name) (is-ready true)))
+      (defn status-name [status]
+        (if (:is-ready status) (:display-name status) "pending"))
+      (println (status-name (task-status "ready")))
+      (println (status-name (assoc (task-status "before") :display-name "after")))
+      (println (status-name (update (task-status "before") :display-name (fn [_] "updated"))))|} in
+  assert_ocaml_runs "mli_sidecar_source_names" "ready\nafter\nupdated\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_external_record_names () =
+  let sources = [
+    ("records.mli", "type search_hit = { display_name : string }");
+    ("records.cljc", "(ns records)");
+    ("consumer.cljc", {|(ns consumer (:require [records :as model]))
+      (println (:display-name (record model/search-hit (display-name "found"))))
+      (println (get (hash-map :display_name "underscore" :display-name "hyphen") :display_name))
+      (println (get (hash-map :display_name "underscore" :display-name "hyphen") :display-name))|}) ] in
+  assert_ocaml_runs "mli_sidecar_external_record_names" "found\nunderscore\nhyphen\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_imported_variant () =
+  let sources = [
+    ("model.mli", "type action = Start | Stop");
+    ("model.cljc", "(ns model)");
+    ("view.mli", "val request : bool -> action");
+    ("view.cljc", {|(ns view (:require [model :as model]))
+      (defn request [start] (if start model/Start model/Stop))
+      (println (match (request true) model/Start "started" model/Stop "stopped"))|}) ] in
+  assert_ocaml_runs "mli_sidecar_imported_variant" "started\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources);
+  let primitive_sources = [
+    ("names.mli", "type int = string");
+    ("names.cljc", "(ns names)");
+    ("answer.mli", "val answer : unit -> int");
+    ("answer.cljc", "(ns answer) (defn answer [] 42) (println (answer))") ] in
+  assert_ocaml_runs "mli_imported_types_preserve_primitives" "42\n"
+    (compile_chunks_with_stdlib Lg.Target.Native primitive_sources)
+
+let test_mli_sidecar_macro_definitions () =
+  let sources = [
+    ("ui_macros.cljc", {|(ns ui.macros)
+      (defmacro defui [name args & body]
+        `(do (defn ~name [~'context ~@args] ~@body)))|});
+    ("mli_sample.mli", "val view : int -> int -> int");
+    ("mli_sample.cljc", {|(ns mli.sample (:require [ui.macros :refer [defui]]))
+      (defui view [value] (+ context value))
+      (println (view 20 22))|}) ] in
+  assert_ocaml_runs "mli_sidecar_macro_definitions" "42\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_nested_variant () =
+  let sources = mli_sidecar_chunks
+    {|type action = Start | Stop
+      type model = { actions : action Rrbvec.t }
+      val initial : unit -> model
+      val started : action Rrbvec.t -> bool
+      val active : model -> bool|}
+    {|(ns mli.sample)
+      (defn initial [] (record model (actions [Start])))
+      (defn started [actions] (match (nth actions 0) Start true Stop false))
+      (defn active [current] (started (:actions current)))
+      (println (active (initial)))|} in
+  assert_ocaml_runs "mli_sidecar_nested_variant" "true\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_generic_binary_record_callback () =
+  let source = compile_with_stdlib Lg.Target.Native "callback.cljc" {|(ns callback.sample)
+    (type-record box [value] (current :ref<value>))
+    (signature make [value] :fn<value;box<value>>)
+    (defn make [value] (record box (current (atom value))))
+    (signature combine [left right output]
+      :fn<fn<left;right;output>;box<left>;box<right>;output>)
+    (defn combine [f left right] (f @(:current left) @(:current right)))
+    (println (combine (fn [number text] (str number ":" text)) (make 1) (make "x")))|} in
+  assert_ocaml_runs "generic_binary_record_callback" "1:x\n" source
+
+let test_mli_sidecar_arities () =
+  let sources = mli_sidecar_chunks
+    {|val choose : (unit -> int) * ((int -> int) * unit)
+      val total : (int -> int Seq.t -> int) * unit|}
+    {|(ns mli.sample)
+      (defn choose ([] 42) ([x] x))
+      (defn total [x & xs] (reduce + x xs))
+      (println (choose))
+      (println (choose 9))
+      (println (total 1 2 3))|} in
+  assert_ocaml_runs "mli_sidecar_arities" "42\n9\n6\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_rejections () =
+  let cases = [
+    ("val number : int -> int", "(defn number [x] \"wrong\")");
+    ("val same : 'a -> 'a", "(defn same [x] 1)");
+    ("val same : 'a -> 'a", "(defn same [x] (+ x 1))");
+    ("val missing : int", "(def other 1)");
+    ("val foo_bar : int", "(def foo-bar 1) (def foo_bar 2)");
+    ("val number : int", "(signature number :string) (def number 1)");
+    ("val number : int\nval number : string", "(def number 1)");
+    ("val value : Lg_runtime.Runtime_dynamic.t", "(def value 1)");
+    ("val f : x:int -> int", "(defn f [x] x)");
+    ("module M : sig val x : int end", "(def x 1)");
+    ("type t", "(def x 1)");
+    ("type t = private int", "(def x 1)");
+  ] in
+  List.iter (fun (interface, implementation) ->
+    let result =
+      Result.bind
+        (Lg.Compiler.compile_chunk_with_filename ~filename:"mli_sample.mli"
+           (stdlib_state Lg.Target.Native) interface)
+        (fun (state, _) ->
+          Lg.Compiler.compile_chunk_with_filename ~filename:"mli_sample.cljc"
+            state ("(ns mli.sample) " ^ implementation)) in
+    match result with
+    | Ok _ -> failwith ("mli sidecar accepted invalid implementation: " ^ interface)
+    | Error error ->
+        if string_contains_substring error.message "unexpected token" then
+          failwith ("mli sidecar was not parsed as OCaml: " ^ error.message)) cases
+
+let test_mli_sidecar_abstract_and_record_overlay () =
+  let sources = mli_sidecar_chunks
+    {|type token
+      type person = { age : int }
+      val make_token : int -> token
+      val token_value : token -> int
+      val age_next : person -> int|}
+    {|(ns mli.sample)
+      (type-alias token :int)
+      (defrecord Person [age])
+      (defn make-token [x] x)
+      (defn token-value [x] x)
+      (defn age-next [p] (+ (:age p) 1))
+      (println (token-value (make-token 42)))
+      (println (age-next (->Person 9)))|} in
+  assert_ocaml_runs "mli_sidecar_abstract_and_record_overlay" "42\n10\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources)
+
+let test_mli_sidecar_workspace_order () =
+  let sources = mli_sidecar_chunks "val answer : unit -> int"
+    "(ns mli.sample) (defn answer [] 42)" in
+  let reversed = List.rev sources in
+  let ordered =
+    Lg.Toolchain.order_workspace_from_state (stdlib_state Lg.Target.Native)
+      reversed |> expect_ok in
+  if ordered <> ["mli_sample.mli"; "mli_sample.cljc"] then
+    failwith "mli interface must precede its matching implementation";
+  let _, errors = Lg.Toolchain.analyze_workspace_with_errors_from_state
+      (stdlib_state Lg.Target.Native) reversed |> expect_ok in
+  if errors <> [] then failwith "workspace analysis did not apply the mli contract"
+
+let test_mli_sidecar_saved_state () =
+  let state, _ = Lg.Compiler.compile_chunk_with_filename
+      ~filename:"mli_sample.mli" (stdlib_state Lg.Target.Native)
+      "val same : 'a -> 'a" |> expect_ok in
+  let restored : Lg.Compiler.state =
+    Marshal.from_string (Marshal.to_string (Lg.Compiler.cacheable_state state) []) 0 in
+  match Lg.Compiler.compile_chunk_with_filename ~filename:"mli_sample.cljc"
+      restored "(ns mli.sample) (defn same [x] 1)" with
+  | Ok _ -> failwith "saved state lost the mli polymorphic contract"
+  | Error _ -> ()
+
+let test_mli_sidecar_boundaries () =
+  let reject interface implementation =
+    let state, _ = Lg.Compiler.compile_chunk_with_filename ~filename:"boundary.mli"
+        (stdlib_state Lg.Target.Native) interface |> expect_ok in
+    match Lg.Compiler.compile_chunk_with_filename ~filename:"boundary.cljc"
+        state ("(ns boundary) " ^ implementation) with
+    | Error _ -> ()
+    | Ok _ -> failwith ("mli boundary was ignored: " ^ interface) in
+  reject "type 'a token" "(type-alias token :int)";
+  reject "type +'a token" "(type-alias token [a] :ref<a>)";
+  reject "type item = { value : int } [@@unboxed]" "(def x 1)";
+  reject "type person = { age : int }" "(defrecord Person [age name])";
+  reject "type person = { age : int }" "(defrecord Person [^string age])";
+  let source = compile_chunks_with_stdlib Lg.Target.Native
+    [ ("one.mli", "type item = { value : int } val make : int -> item");
+      ("two.mli", "type item = { value : string } val make : string -> item");
+      ("one.cljc", "(ns one) (defn make [x] (record item (value x)))");
+      ("two.cljc", "(ns two) (defn make [x] (record item (value x)))");
+      ("main.cljc", "(ns main) (println (:value (one/make 42))) (println (:value (two/make \"ok\")))") ] in
+  assert_ocaml_runs "mli_sidecar_boundaries" "42\nok\n" source;
+  (match Lg.Compiler.compile_chunk_with_filename ~filename:"syntax.mli"
+      (stdlib_state Lg.Target.Native) "val broken : ->" with
+   | Error {location = Some location; _} when location.loc_start.pos_fname = "syntax.mli" -> ()
+   | _ -> failwith "mli syntax errors must retain their interface filename")
+
+let test_mli_sidecar_workspace_invalidation () =
+  let interface = "file:///tmp/contracts/core.mli" in
+  let implementation = "file:///tmp/contracts/core.cljc" in
+  let index = Lg.Language_service.create_workspace_index
+      [(interface, "val answer : unit -> int");
+       (implementation, "(ns contracts.core) (defn answer [] 42)")] |> expect_ok in
+  let index, affected = Lg.Language_service.update_workspace_index index
+      ~filename:interface ~source:"val answer : unit -> string" |> expect_ok in
+  if not (List.mem implementation affected) then
+    failwith "changing an mli must invalidate its LG implementation";
+  if Option.is_none (Lg.Language_service.workspace_error index implementation) then
+    failwith "editor analysis lost the updated mli contract"
+
+let test_mli_sidecar_opened_constructors () =
+  let source = compile_string_with_stdlib
+    {|(module Status (type-variant status Ready (Failed :string)))
+      (open Status)
+      (defn describe [value] (match value Ready "ready" (Failed message) message))
+      (println (describe Ready))
+      (println (describe (Failed "failed")))|} |> expect_ok in
+  assert_ocaml_runs "mli_sidecar_opened_constructors" "ready\nfailed\n" source
+
+let test_mli_sidecar_recursive_types () =
+  let source = compile_chunks_with_stdlib Lg.Target.Native
+    (mli_sidecar_chunks
+       {|type 'a tree = Leaf of 'a | Branch of 'a tree * 'a tree
+         type user_id = int
+         val tree_size : int tree -> int
+         val next_id : user_id -> user_id|}
+       {|(ns mli.sample)
+         (defn tree-size [tree]
+           (match tree (Leaf _) 1
+             (Branch left right) (+ (tree-size left) (tree-size right))))
+         (defn next-id [id] (+ id 1))
+         (println (tree-size (Branch (Leaf 1) (Leaf 2))))
+         (println (next-id 41))|}) in
+  assert_ocaml_runs "mli_sidecar_recursive_types" "2\n42\n" source
+
+let test_mli_sidecar_source_annotations () =
+  let source = compile_chunks_with_stdlib Lg.Target.Native
+    (mli_sidecar_chunks
+       {|type person = { age_years : int }
+         val add_one : int -> int
+         val age_next : person -> int|}
+       {|(ns mli.sample)
+         (defrecord Person [^int age-years])
+         (defn add-one [^int x] (+ x 1))
+         (defn age-next [person] (add-one (:age-years person)))
+         (println (age-next (->Person 41)))|}) in
+  assert_ocaml_runs "mli_sidecar_source_annotations" "42\n" source
+
+let test_mli_sidecar_collection_types () =
+  let sources = mli_sidecar_chunks
+    {|val vector_size : int Rrbvec.t -> int
+      val array_size : int array -> int
+      val ref_value : int ref -> int
+      val pair_text : int * string -> string
+      val result_text : (int, string) result -> string
+      val tag_number : [ `Ready | `Value of int ] -> int|}
+    {|(ns mli.sample)
+      (defn vector-size [xs] (count xs))
+      (defn array-size [xs] (alength xs))
+      (defn ref-value [value] @value)
+      (defn pair-text [[_ text]] text)
+      (defn result-text [value] (match value (Ok _) "ok" (Error message) message))
+      (defn tag-number [value] (match value (tag Ready) 0 (tag Value x) x))
+      (println (vector-size [1 2]))
+      (println (array-size (into-array [1 2 3])))
+      (println (ref-value (atom 42)))
+      (println (pair-text (tuple 1 "pair")))
+      (println (result-text (Error "error")))
+      (println (tag-number (tag Value 9)))|} in
+  assert_ocaml_runs "mli_sidecar_collection_types" "2\n3\n42\npair\nerror\n9\n"
+    (compile_chunks_with_stdlib Lg.Target.Native sources);
+  ignore (compile_chunks_with_stdlib Lg.Target.Melange sources)
+
+let test_mli_sidecar_type_error_location () =
+  let state, _ = Lg.Compiler.compile_chunk_with_filename
+      ~filename:"location.mli" (stdlib_state Lg.Target.Native)
+      "type good = int\ntype bad = missing_type\n" |> expect_ok in
+  match Lg.Compiler.compile_chunk_with_filename ~filename:"location.cljc"
+      state "(ns location)" with
+  | Error { location = Some location; _ }
+    when location.loc_start.pos_fname = "location.mli"
+         && location.loc_start.pos_lnum = 2 -> ()
+  | Error error -> failwith ("mli type error lost its declaration location: " ^ error.message)
+  | Ok _ -> failwith "unbound interface type was accepted"
+
 let tests =
   [
+    ("mli sidecar boundaries", test_mli_sidecar_boundaries);
+    ("mli sidecar workspace invalidation", test_mli_sidecar_workspace_invalidation);
+    ("mli sidecar opened constructors", test_mli_sidecar_opened_constructors);
+    ("mli sidecar recursive types", test_mli_sidecar_recursive_types);
+    ("mli sidecar source annotations", test_mli_sidecar_source_annotations);
+    ("mli sidecar collection types", test_mli_sidecar_collection_types);
+    ("mli sidecar type error location", test_mli_sidecar_type_error_location);
+    ("mli sidecar macro definitions", test_mli_sidecar_macro_definitions);
+    ("mli sidecar nested variant", test_mli_sidecar_nested_variant);
+    ("mli sidecar external record names", test_mli_sidecar_external_record_names);
+    ("mli sidecar imported variant", test_mli_sidecar_imported_variant);
+    ("mli sidecar source names", test_mli_sidecar_source_names);
+    ("generic binary record callback", test_generic_binary_record_callback);
+    ("mli sidecar values", test_mli_sidecar_values);
+    ("mli sidecar types", test_mli_sidecar_types);
+    ("mli sidecar arities", test_mli_sidecar_arities);
+    ("mli sidecar rejections", test_mli_sidecar_rejections);
+    ("mli sidecar abstract and record overlay", test_mli_sidecar_abstract_and_record_overlay);
+    ("mli sidecar workspace order", test_mli_sidecar_workspace_order);
+    ("mli sidecar saved state", test_mli_sidecar_saved_state);
     ( "migration callbacks preserve nominal models",
       test_migration_callbacks_preserve_nominal_models );
     ( "generic record callback type arguments preserve precedence",

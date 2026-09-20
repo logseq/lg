@@ -333,8 +333,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 169; then
-  echo "compiler form dispatch changed: expected 169 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 172; then
+  echo "compiler form dispatch changed: expected 172 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -395,7 +395,7 @@ awk -F '\t' '
     } else if (canonical == "dotimes") {
       status = "special-form"
       reason = "compiler-owned-bounded-loop-expansion"
-    } else if (canonical ~ /^(catch|do|if|let|let\*|loop|recur|fn|quote|try|syntax-quote|match|let-some)$/) {
+    } else if (canonical ~ /^(catch|finally|do|if|let|let\*|loop|recur|fn|quote|try|syntax-quote|match|let-some)$/) {
       status = "special-form"
       reason = "compiler-owned-syntax-or-control-flow"
     } else if (canonical in call_status) {

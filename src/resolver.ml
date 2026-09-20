@@ -74,7 +74,11 @@ let qualify_record_type module_path record =
   }
 
 let lookup_record_type scope env type_name =
-  let lookup owner local_name = Env.find_opt (record_type_key owner local_name) env in
+  let lookup owner local_name =
+    match Env.find_opt (record_type_key owner local_name) env with
+    | Some _ as binding -> binding
+    | None -> Env.find_opt (record_type_key owner (Names.sanitize_name local_name)) env
+  in
   let local_lookup owner local_name =
     match lookup owner local_name with
     | Some ({ ty = TNamed_record record; _ } : binding) -> Ok record

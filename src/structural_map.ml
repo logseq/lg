@@ -185,6 +185,11 @@ let as_named_record record target =
   named_record_expr record (values_for target record.fields)
 
 let replace_field ?replacement_ty target fields keyword expression =
+  let keyword =
+    match find_field keyword fields with
+    | Some field -> field.keyword
+    | None -> keyword
+  in
   let replacement_field (field : field) =
     match replacement_ty with
     | Some ty -> { field with ty }
@@ -453,6 +458,7 @@ let update_value_as target fields keyword value_ty value_expr =
   match find_field keyword fields with
   | None -> Error.error ("cannot update unknown field " ^ keyword)
   | Some field ->
+      let keyword = field.keyword in
       let updated =
         {
           field with

@@ -795,6 +795,22 @@ let rec compile_module ?location ?signature_name ?signature_location
             (Env.protocols env)
         in
         let env = Env.with_protocols protocols env in
+        let qualify_local_name name =
+          match Resolver.lookup_type_declaration module_path env name with
+          | Some declaration
+            when Type_id.owner declaration.type_id = [module_path] ->
+              Type_registry.emitted_name ~scope:module_path
+                (Names.sanitize_name (Type_id.name declaration.type_id))
+          | _ -> name
+        in
+        let rec qualify_local_types = function
+          | TOcaml name -> TOcaml (qualify_local_name name)
+          | TOcaml_app (name, arguments) ->
+              TOcaml_app (qualify_local_name name, List.map qualify_local_types arguments)
+          | ty -> Semantic_type.map_children qualify_local_types ty
+        in
+        let public_bindings = List.map (fun (key, (binding : binding)) ->
+          key, { binding with ty = qualify_local_types binding.ty }) public_bindings in
         let env =
           match signature_name with
           | None -> env

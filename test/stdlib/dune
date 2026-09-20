@@ -1962,7 +1962,7 @@
    %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:source_core_mapv_bad_callback.cljc}
-   "mapv function type does not match collection")))
+   "does not match collection element string")))
 
 (rule
  (alias runtest)

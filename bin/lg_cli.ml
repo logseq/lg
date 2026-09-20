@@ -15,7 +15,7 @@ let usage () =
      --run-files-from <state> <implementation.ml> <input.cljc>... | repl \
      [--state <lg_stdlib_native.state>] | mobile build [options] [paths...] | \
      test [paths...] | --lsp [--state <saved-state>]. \
-     Batch commands default to all .clj, .cljc, .cljs, and .lgi files in the \
+     Batch commands default to all .clj, .cljc, .cljs, .lgi, and paired .mli files in the \
      current directory.";
   exit 2
 
@@ -39,21 +39,33 @@ let read_file path =
       let length = in_channel_length ic in
       really_input_string ic length)
 
-let source_extensions = [ ".lgi"; ".clj"; ".cljc"; ".cljs" ]
+let source_extensions = [ ".mli"; ".lgi"; ".clj"; ".cljc"; ".cljs" ]
 
 let sorted_readdir directory =
   try Sys.readdir directory |> Array.to_list |> List.sort String.compare
   with Sys_error _ -> []
 
+let matching_lg_source path =
+  let stem = Lg.Ocaml_interface.source_stem path in
+  [ ".cljc"; ".clj"; ".cljs" ]
+  |> List.find_map (fun extension ->
+       let candidate = stem ^ extension in
+       if Sys.file_exists candidate then Some candidate else None)
+
 let has_source_extension path =
-  List.exists (Filename.check_suffix path) source_extensions
+  if Filename.check_suffix path ".mli" then Option.is_some (matching_lg_source path)
+  else List.exists (Filename.check_suffix path) source_extensions
 
 let expand_input_path path =
   if Sys.file_exists path && Sys.is_directory path then
     Sys.readdir path |> Array.to_list |> List.sort String.compare
-    |> List.filter has_source_extension
     |> List.map (Filename.concat path)
-  else if Sys.file_exists path then [ path ]
+    |> List.filter has_source_extension
+  else if Sys.file_exists path then
+    let interface = Lg.Ocaml_interface.source_stem path ^ ".mli" in
+    if not (Lg.Ocaml_interface.is_interface path)
+       && has_source_extension path && Sys.file_exists interface
+    then [ interface; path ] else [ path ]
   else
     let sources =
       source_extensions
@@ -61,10 +73,6 @@ let expand_input_path path =
       |> List.filter Sys.file_exists
     in
     if sources = [] then [ path ] else sources
-
-let expand_input_paths paths =
-  let paths = if paths = [] then [ "." ] else paths in
-  List.concat_map expand_input_path paths
 
 let rec source_files_under directory =
   if not (Sys.file_exists directory && Sys.is_directory directory) then []
@@ -107,13 +115,30 @@ let unique_paths_preserving_order paths =
   in
   loop [] [] paths
 
+let has_pending_interface state path =
+  List.mem_assoc (Lg.Ocaml_interface.source_stem path)
+    state.Lg.Toolchain.pending_interfaces
+
+let expand_input_paths ?(state = Lg.Compiler.empty_state) paths =
+  let paths = if paths = [] then [ "." ] else paths in
+  List.concat_map expand_input_path paths
+  |> unique_paths_preserving_order
+  |> List.filter (fun path ->
+       not (Filename.check_suffix path ".mli" && has_pending_interface state path)
+       || List.mem path paths)
+
 type source_namespace_info = {
   path : string;
   namespace : string option;
   requires : string list;
 }
 
-let source_namespace_info path =
+let rec source_namespace_info path =
+  if Filename.check_suffix path ".mli" then
+    match matching_lg_source path with
+    | Some implementation -> { (source_namespace_info implementation) with path }
+    | None -> { path; namespace = None; requires = [] }
+  else
   let source = read_file path in
   match Lg.Lexer.tokenize source with
   | Error _ -> { path; namespace = None; requires = [] }
@@ -220,10 +245,10 @@ let order_paths_by_namespace_dependencies paths =
     List.sort
       (fun left right ->
         let left_rank =
-          if Filename.check_suffix left.path ".lgi" then 0 else 1
+          if Lg.Ocaml_interface.is_interface left.path then 0 else 1
         in
         let right_rank =
-          if Filename.check_suffix right.path ".lgi" then 0 else 1
+          if Lg.Ocaml_interface.is_interface right.path then 0 else 1
         in
         match Int.compare left_rank right_rank with
         | 0 -> String.compare left.path right.path
@@ -260,13 +285,13 @@ let order_paths_by_namespace_dependencies paths =
       let visited, ordered =
         match info.namespace with
         | None -> (visited, ordered)
-        | Some namespace when Filename.check_suffix info.path ".lgi" ->
+        | Some namespace when Lg.Ocaml_interface.is_interface info.path ->
             let _ = namespace in
             (visited, ordered)
         | Some namespace ->
             Hashtbl.find table namespace
             |> List.filter (fun sibling ->
-                   Filename.check_suffix sibling.path ".lgi"
+                   Lg.Ocaml_interface.is_interface sibling.path
                    && sibling.path <> info.path)
             |> List.fold_left
                  (fun (visited, ordered) interface_info ->
@@ -298,6 +323,9 @@ let order_paths_by_namespace_dependencies paths =
       ([], []) infos
   in
   List.rev ordered |> unique_preserving_order
+  |> List.stable_sort (fun left right ->
+       Bool.compare (not (Filename.check_suffix left ".mli"))
+         (not (Filename.check_suffix right ".mli")))
 
 let required_ocaml_module_roots sources =
   sources
@@ -2103,16 +2131,20 @@ let compile_files ?(use_cache = true) ?(check_ocaml = true) ?reader_target
   result
 
 let compile_file ?reader_target target input_path =
-  let source = read_file input_path in
-  match
-    Lg.Compiler.prepare_source ~target ?reader_target ~filename:input_path source
-  with
-  | Error _ as err -> err
-  | Ok prepared ->
-      let packages = Lg.Compiler.prepared_source_required_packages prepared in
-      Lg.Compiler.compile_prepared_chunk_with_diagnostics Lg.Compiler.empty_state
-        prepared
-      |> Result.map (fun (_state, compilation) -> (packages, compilation))
+  compile_files ~use_cache:false ?reader_target target [input_path]
+  |> Result.map (fun (_state, packages, ocaml_source, diagnostics) ->
+       (packages, { Lg.Compiler.ocaml_source; diagnostics }))
+
+let load_adjacent_interface target input_path state =
+  let interface = Lg.Ocaml_interface.source_stem input_path ^ ".mli" in
+  if Lg.Ocaml_interface.is_interface input_path
+     || has_pending_interface state input_path
+     || not (Sys.file_exists interface)
+  then Ok state
+  else
+    Lg.Compiler.compile_chunk_with_filename ~target ~filename:interface state
+      (read_file interface)
+    |> Result.map fst
 
 let compile_chunk_from_saved_state ?reader_target target state_path input_path =
   Result.bind (read_saved_compilation_state state_path) (fun saved ->
@@ -2134,20 +2166,22 @@ let compile_chunk_from_saved_state ?reader_target target state_path input_path =
               (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
                  [ saved.ocaml_source ])
               (fun state ->
-                Lg.Compiler.compile_prepared_chunk_with_diagnostics
-                  state prepared
+                Result.bind (load_adjacent_interface target input_path state)
+                  (fun state ->
+                    Lg.Compiler.compile_prepared_chunk_with_diagnostics
+                      state prepared)
                 |> Result.map (fun (state, compilation) ->
                        (state, packages, compilation)))))
 
 let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
     ?reader_target target state_path input_paths =
-  let input_paths = expand_input_paths input_paths in
   match
     timed_step ("read saved state " ^ state_path) (fun () ->
         read_saved_compilation_state state_path)
   with
   | Error _ as error -> error
   | Ok saved ->
+    let input_paths = expand_input_paths ~state:saved.state input_paths in
     if saved.target <> target then
       compiler_error "saved compiler state target does not match --target"
     else (
@@ -2248,7 +2282,11 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
 
 let infer_interface target input_path =
   let source = read_file input_path in
-  Lg.Compiler.infer_interface_with_filename ~target ~filename:input_path source
+  if Sys.file_exists (Lg.Ocaml_interface.source_stem input_path ^ ".mli") then
+    Result.bind (load_adjacent_interface target input_path Lg.Compiler.empty_state)
+      (fun state ->
+        Lg.Compiler.infer_interface_from_state ~target ~filename:input_path state source)
+  else Lg.Compiler.infer_interface_with_filename ~target ~filename:input_path source
 
 let report_diagnostics diagnostics =
   List.iter

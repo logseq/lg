@@ -404,6 +404,8 @@ let method_names form =
   collect [] form
 
 let rec provided_names = function
+  | FList (FSymbol ("module" | "module-functor" | "module-alias") :: FSymbol name :: _) ->
+      [ name ]
   | FList [ FSymbol "defn-signature"; definition ] -> provided_names definition
   | FList (FSymbol "do" :: forms) -> List.concat_map provided_names forms
   | FList (FSymbol "signature" :: FSymbol name :: _) -> (

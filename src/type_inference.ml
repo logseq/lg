@@ -15,15 +15,10 @@ let optional_type = function
   | _ -> false
 
 let contextual_lookup_argument expected = function
-  | FList ((FSymbol ("__lg_get" | "get") | FCoreSymbol Core_get) :: _)
+  | FList ((FSymbol "__lg_get" | FCoreSymbol Core_get) :: _)
     when optional_type expected ->
       true
   | _ -> false
-
-let contextual_lookup_form expected = function
-  | FList (FSymbol "get" :: rest) when optional_type expected ->
-      FList (FCoreSymbol Core_get :: rest)
-  | form -> form
 
 let builtin_poly_tag_payload_type = function
   | "String" -> Some TString
@@ -1442,8 +1437,7 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
       Expression_support.merge_branch_types then_ty TNil
       |> Option.value ~default:TUnknown
   | FList (FSymbol when_name :: _condition :: body_forms)
-    when has_source_name when_name "when"
-         || has_source_name when_name "__lg_when" -> (
+    when has_source_name when_name "__lg_when" -> (
       match List.rev body_forms with
       | [] -> TNil
       | result :: _ ->
@@ -1628,8 +1622,7 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
   | FList (FSymbol map_name :: fn :: collection_forms)
     when (has_source_name map_name "__lg_map"
          || has_source_name map_name "map"
-         || has_source_name map_name "__lg_mapv"
-         || has_source_name map_name "mapv")
+         || has_source_name map_name "__lg_mapv")
          && List.length collection_forms >= 2 ->
       let infer params form =
         match inferred_form_type params form with
@@ -1733,16 +1726,12 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
             | (Ok _ | Error _), _ -> TUnknown)
         | _ -> TUnknown
       in
-      if
-        has_source_name map_name "__lg_mapv"
-        || has_source_name map_name "mapv"
-      then TVector callback_return
+      if has_source_name map_name "__lg_mapv" then TVector callback_return
       else TSeq callback_return
   | FList [ FSymbol map_name; fn; collection ]
     when has_source_name map_name "__lg_map"
          || has_source_name map_name "map"
-         || has_source_name map_name "__lg_mapv"
-         || has_source_name map_name "mapv" ->
+         || has_source_name map_name "__lg_mapv" ->
       let collection_ty =
         match inferred_form_type params collection with
         | ty when Type_solver.is_open ty ->
@@ -1800,10 +1789,7 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
             | (Ok _ | Error _), _ -> TUnknown)
         | _ -> TUnknown
       in
-      if
-        has_source_name map_name "__lg_mapv"
-        || has_source_name map_name "mapv"
-      then TVector callback_return
+      if has_source_name map_name "__lg_mapv" then TVector callback_return
       else TSeq callback_return
   | FList
       [
@@ -3274,7 +3260,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (fun result expected argument ->
                 Result.bind result (fun params ->
                     infer_expected expected params
-                      (contextual_lookup_form expected argument)))
+                      argument))
               (Ok params) parameter_types args)
     | FList
       (FSymbol
@@ -4204,7 +4190,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | Error _ as err -> err
             | Ok params ->
                 infer_expected expected_ty params
-                  (contextual_lookup_form expected_ty arg))
+                  arg)
           (Ok params) param_tys args
     | Ok (TOverloaded_fn arities) -> (
         match select_fn_arity arities (List.length args) with
@@ -5974,7 +5960,20 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     in
     Result.bind (infer_expected collection_ty params target) (fun params ->
         infer_expected_all element_ty params values)
-  and infer_form params = function
+  and infer_form params form =
+    let form =
+      match form with
+      | FList (FSymbol "__lg_swap!" :: reference :: FSymbol updater :: arguments) ->
+          let value = FSymbol "__lg_inference_receiver" in
+          let invocation = FList (FSymbol updater :: value :: arguments) in
+          (match expand_form invocation with
+          | Ok (FList (FSymbol primitive :: expanded_arguments))
+            when primitive <> updater && expanded_arguments = value :: arguments ->
+              FList (FSymbol "__lg_swap!" :: reference :: FSymbol primitive :: arguments)
+          | _ -> form)
+      | _ -> form
+    in
+    match form with
     | FList (FCoreSymbol core_symbol :: arguments) ->
         let name =
           match core_symbol with
@@ -6581,7 +6580,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (fun result expected argument ->
                 Result.bind result (fun params ->
                     infer_expected expected params
-                      (contextual_lookup_form expected argument)))
+                      argument))
               (Ok params) parameter_tys arguments)
     | FList
         [ FSymbol "IDeref/-deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
@@ -6739,7 +6738,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | FList
         (FSymbol "__lg_swap!"
         :: FList [ FKeyword reference_keyword; FSymbol receiver ]
-        :: (FSymbol ("__lg_update" | "update") | FCoreSymbol Core_update)
+        :: (FSymbol "__lg_update" | FCoreSymbol Core_update)
         :: FKeyword field_keyword :: FSymbol updater :: extra_arguments) -> (
           match update_signature updater (List.length extra_arguments) with
           | None -> infer_all params extra_arguments
@@ -6764,9 +6763,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       when (match inferred_binding_form_type params reference_form with
             | TRef _ | TUnknown | TMeta _ | TVar _ -> true
             | _ -> false)
-           && (has_source_name conj_name "conj"
-              || String.equal conj_name "__lg_conj"
-              || String.ends_with ~suffix:"/conj" conj_name) ->
+           && has_source_name conj_name "__lg_conj" ->
         let inferred_value_type value =
           match inferred_form_type params value with
           | (TUnknown | TMeta _ | TVar _) as unresolved -> (

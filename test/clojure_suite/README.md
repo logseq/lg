@@ -17,7 +17,7 @@ test remains reproducible without committing a nested Git repository.
 Run the current native + Melange smoke with:
 
 ```bash
-rtk dune build @test/clojure_suite/clojure-test-suite-smoke
+dune build @test/clojure_suite/clojure-test-suite-smoke
 ```
 
 Known candidate failures from the local upstream clone are tracked in
@@ -46,7 +46,7 @@ reason for every target that is not executed by the smoke manifest. Verify the
 target-level closure with:
 
 ```bash
-rtk dune build \
+dune build \
   @test/clojure_suite/clojure-test-suite-promotion-audit
 ```
 

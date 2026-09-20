@@ -1670,7 +1670,11 @@ let rec refresh_named_record (fresh : named_record) ty =
         }
 
 let find_field keyword fields =
-  List.find_opt (fun field -> field.keyword = keyword) fields
+  match List.find_opt (fun field -> field.keyword = keyword) fields with
+  | Some _ as field -> field
+  | None ->
+      let name = Names.keyword_to_ocaml_name keyword in
+      List.find_opt (fun field -> not field.runtime_map && field.ocaml_name = name) fields
 let make_field ?location ?(quantified = []) ?(mutable_ = false) ?(runtime_map = false) keyword ty =
   {
     keyword;

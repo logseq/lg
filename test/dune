@@ -68,6 +68,13 @@
  (modules compiler_support_performance_tests)
  (libraries lg.compiler_support))
 
+(rule
+ (aliases mli-sidecar runtest)
+ (deps mli_sidecar_cli_test.sh ../bin/lg_cli.exe ../stdlib/lg_stdlib_native.state)
+ (action
+  (run sh %{dep:mli_sidecar_cli_test.sh} %{exe:../bin/lg_cli.exe}
+   %{dep:../stdlib/lg_stdlib_native.state})))
+
 (test
  (name language_service_navigation_tests)
  (deps ../stdlib/lg_stdlib_native.state)

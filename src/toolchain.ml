@@ -4,7 +4,8 @@ type parser_result = {
   ast : Ast.form list;
   locations : Location.t list;
   form_locations : Source_context.entry list;
-  parsed_as : [ `Lg ];
+  filename : string;
+  parsed_as : [ `Lg | `Mli of Parsetree.signature ];
 }
 
 type prepared_source = {
@@ -63,6 +64,7 @@ type state = {
   located_items : (Location.t * Lowered.compiled_item) list;
   requested_set_modules : string list;
   ocaml_env : Env.t option;
+  pending_interfaces : (string * Parsetree.signature) list;
 }
 
 let state_environment state =
@@ -918,6 +920,7 @@ module Lg_frontend : FRONTEND = struct
                         located_ast;
                     form_locations =
                       normalized_form_locations @ form_locations;
+                    filename;
                     parsed_as = `Lg;
                   })))
 
@@ -925,6 +928,14 @@ module Lg_frontend : FRONTEND = struct
 
   let implementation ?(target = Target.default) ?reader_features
       ?(filename = "<string>") source =
+    if Filename.check_suffix filename ".mli" then
+      Ocaml_interface.parse ~filename source
+      |> Result.map (fun signature ->
+           { target; filename;
+             source_unit = "interface_" ^ Digest.to_hex (Digest.string source);
+             ast = []; locations = []; form_locations = [];
+             parsed_as = `Mli signature })
+    else
     let reader_features_key =
       Option.value reader_features ~default:(Target.reader_features target)
       |> String.concat ","
@@ -1123,6 +1134,7 @@ let empty_state =
     located_items = [];
     requested_set_modules = [];
     ocaml_env = None;
+    pending_interfaces = [];
   }
 
 let cacheable_state state = { state with ocaml_env = None }
@@ -1220,7 +1232,8 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
   Ocaml_signature.set_melange_target (target = Target.Melange);
   let packages =
     match target with
-    | Target.Melange -> "melange" :: packages
+    | Target.Melange ->
+        "melange" :: "lg.rrbvec" :: "lg.runtime" :: "lg.edn-backend" :: packages
     | Target.Js_of_ocaml -> "re" :: "js_of_ocaml" :: packages
     | Target.Native ->
         "re" :: "lg.rrbvec" :: "lg.runtime" :: "lg.edn-backend.native"
@@ -2091,7 +2104,7 @@ let typecheck (parsed : parser_result) =
               typecheck_state;
             } )
 
-let typecheck_incremental state (parsed : parser_result) =
+let typecheck_lg_incremental state (parsed : parser_result) =
   let external_signature_dependencies =
     state.typecheck_state.env |> Compiler_environment.signatures
     |> Signature_overlay.value_type_dependencies
@@ -2183,6 +2196,73 @@ let typecheck_incremental state (parsed : parser_result) =
                 typecheck_state;
               } ))
 
+let interface_definition_forms state forms =
+  let rec collect (state : Typecheck.state) collected = function
+    | [] -> Ok (List.rev collected)
+    | (Ast.FList (Ast.FSymbol "do" :: forms)) :: rest ->
+        collect state collected (forms @ rest)
+    | (Ast.FList (Ast.FSymbol
+        ("namespace-scope" | "require" | "refer-clojure" | "defmacro"
+         | "macro-helper-defn" | "macro-helper-def") :: _) as form) :: rest ->
+        Result.bind (Typecheck.compile_forms_incremental state [form])
+          (fun (state, _) -> collect state (form :: collected) rest)
+    | (Ast.FList (Ast.FSymbol name :: arguments) as form) :: rest ->
+        (match Compiler_environment.find_macro ~scope:state.scope name state.env with
+        | Some definition ->
+            Result.bind (Macro_expander.expand ~call_site:form ~scope:state.scope
+              ~compiler_env:state.env definition arguments)
+              (fun expanded -> collect state collected (expanded :: rest))
+        | None -> collect state (form :: collected) rest)
+    | form :: rest -> collect state (form :: collected) rest
+  in
+  collect state [] forms
+
+let typecheck_incremental state (parsed : parser_result) =
+  let stem = Ocaml_interface.source_stem parsed.filename in
+  match parsed.parsed_as with
+  | `Mli signature ->
+      if List.mem_assoc stem state.pending_interfaces then
+        Error.error ("Duplicate OCaml interface for " ^ stem)
+      else
+        let state = { state with pending_interfaces =
+          (stem, signature) :: state.pending_interfaces } in
+        Ok (state, { ast = []; items = []; locations = [];
+                     typecheck_state = state.typecheck_state })
+  | `Lg ->
+      if Filename.check_suffix parsed.filename ".lgi" then
+        typecheck_lg_incremental state parsed
+      else match List.assoc_opt stem state.pending_interfaces with
+      | None -> typecheck_lg_incremental state parsed
+      | Some signature ->
+          let scope = List.find_map (function
+            | Ast.FList [Ast.FSymbol "namespace-scope"; Ast.FSymbol scope] -> Some scope
+            | _ -> None) parsed.ast
+            |> Option.value ~default:state.typecheck_state.scope in
+          Result.bind (interface_definition_forms state.typecheck_state parsed.ast)
+            (fun definitions ->
+          Result.bind (Ocaml_interface.translate ~filename:parsed.filename ~scope
+              ~env:state.typecheck_state.env definitions signature)
+            (fun (declarations, form_locations, type_module) ->
+              let ast, locations = List.split declarations in
+              let interface = { parsed with ast; locations; form_locations } in
+              let state = { state with pending_interfaces =
+                List.remove_assoc stem state.pending_interfaces } in
+              Result.bind (typecheck_lg_incremental state interface)
+                (fun (state, interface_typed) ->
+                  let state = match type_module with
+                    | None -> state
+                    | Some module_name ->
+                        let env = Module_environment.open_bindings ~qualified:true scope
+                          state.typecheck_state.env module_name in
+                        { state with typecheck_state = { state.typecheck_state with env } }
+                  in
+                  Result.map (fun (state, (typed : typed_result)) ->
+                    (state, { typed with
+                      ast = interface_typed.ast @ typed.ast;
+                      items = interface_typed.items @ typed.items;
+                      locations = interface_typed.locations @ typed.locations }))
+                    (typecheck_lg_incremental state parsed))))
+
 let prepare_source ?(target = Target.default) ?reader_target
     ?(filename = "<string>") source =
   let reader_features =
@@ -2235,18 +2315,17 @@ let analyze ?(target = Target.default) ?(filename = "<string>") source =
                       diagnostics = analysis.diagnostics;
                     })))
 
+let interface_of_analysis (analysis : language_analysis) =
+  Printtyp.wrap_printing_env ~error:false analysis.compiler_env (fun () ->
+      Format.asprintf "%a@." Printtyp.signature
+        (Lg_compiler_support.Ocaml_module.public_signature
+           ~compiler_env:analysis.compiler_env
+           ~is_private:(fun name ->
+             Compiler_environment.export_is_private analysis.typecheck_state.env name)
+           analysis.typed_structure.str_type))
+
 let interface ?(target = Target.default) ?(filename = "<string>") source =
-  match analyze ~target ~filename source with
-  | Error _ as err -> err
-  | Ok analysis ->
-      Ok
-        (Printtyp.wrap_printing_env ~error:false analysis.compiler_env
-           (fun () ->
-             Format.asprintf "%a@." Printtyp.signature
-               (Lg_compiler_support.Ocaml_module.public_signature
-                  ~compiler_env:analysis.compiler_env
-                  ~is_private:(fun name -> Compiler_environment.export_is_private analysis.typecheck_state.env name)
-                  analysis.typed_structure.str_type)))
+  analyze ~target ~filename source |> Result.map interface_of_analysis
 
 let order_workspace_from_state ?(target = Target.default) ?reader_target
     initial_state sources =
@@ -2265,14 +2344,7 @@ let order_workspace_from_state ?(target = Target.default) ?reader_target
         | Error _ as error -> error
         | Ok result -> parse ((filename, result) :: parsed) rest)
   in
-  let source_stem filename =
-    [ ".lgi"; ".clj"; ".cljc"; ".cljs" ]
-    |> List.find_map (fun extension ->
-           if Filename.check_suffix filename extension then
-             Some (Filename.chop_suffix filename extension)
-           else None)
-    |> Option.value ~default:filename
-  in
+  let source_stem = Ocaml_interface.source_stem in
   let rec group_sources = function
     | [] -> []
     | ((filename, _) as source) :: rest ->
@@ -2286,8 +2358,8 @@ let order_workspace_from_state ?(target = Target.default) ?reader_target
           source :: matching
           |> List.stable_sort (fun (left, _) (right, _) ->
                  Bool.compare
-                   (not (Filename.check_suffix left ".lgi"))
-                   (not (Filename.check_suffix right ".lgi")))
+                   (not (Ocaml_interface.is_interface left))
+                   (not (Ocaml_interface.is_interface right)))
         in
         group :: group_sources remaining
   in
@@ -2327,6 +2399,9 @@ let order_workspace_from_state ?(target = Target.default) ?reader_target
 
 let analyze_workspace_with_errors_from_state ?(target = Target.default)
     ?(check_incremental_ocaml = true) initial_state sources =
+  let sources = List.stable_sort (fun (left, _) (right, _) ->
+      Bool.compare (not (Ocaml_interface.is_interface left))
+        (not (Ocaml_interface.is_interface right))) sources in
   let validate_ocaml state =
     match Lowering.structure_of_located_items state.located_items with
     | Error _ as err -> err
@@ -2426,6 +2501,11 @@ let analyze_from_state ?(target = Target.default) ?(filename = "<string>")
   | Ok ([], (_, error) :: _) -> Error error
   | Ok ([], []) -> Error.error "source contains no analyzable lg forms"
   | Ok ((_, analysis) :: _, _errors) -> Ok analysis
+
+let interface_from_state ?(target = Target.default) ?(filename = "<string>")
+    state source =
+  analyze_from_state ~target ~filename state source
+  |> Result.map interface_of_analysis
 
 let analyze_workspace ?(target = Target.default) sources =
   match analyze_workspace_with_errors ~target sources with

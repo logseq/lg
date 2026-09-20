@@ -445,7 +445,7 @@ compatibility is delegated to the OCaml typechecker.
 
 2. Write failing integration tests for type errors.
 
-3. Run `rtk dune test --root .` and confirm failures are from missing language behavior.
+3. Run `dune test --root .` and confirm failures are from missing language behavior.
 
 4. Implement the reader AST.
 
@@ -458,9 +458,9 @@ compatibility is delegated to the OCaml typechecker.
 8. Update `examples/person.cljc` to exercise top-level `require` and explicit
    modules without a namespace declaration.
 
-9. Run `rtk dune test --root .`.
+9. Run `dune test --root .`.
 
-10. Run `rtk dune exec --root . lg -- --run examples/person.cljc`.
+10. Run `dune exec --root . lg -- --run examples/person.cljc`.
 
 11. Refactor duplicated printing and type comparison code.
 

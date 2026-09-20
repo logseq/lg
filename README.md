@@ -5,6 +5,73 @@ The current backend emits OCaml, so generated programs can be checked by the
 OCaml compiler and can interoperate with OCaml packages. `.cljc` source is
 shared by the native OCaml, Melange, and js_of_ocaml environments.
 
+## OCaml interface sidecars
+
+Types and function contracts can live in an adjacent `.mli` using OCaml syntax.
+For example, `person.mli`:
+
+```ocaml
+type person = { age : int }
+val next_age : person -> int
+val identity_value : 'a -> 'a
+```
+
+And `person.cljc`:
+
+```clojure
+(ns example.person)
+(defn next-age [person] (+ (:age person) 1))
+(defn identity-value [x] x)
+```
+
+The normal CLI compile/run commands discover the adjacent interface.
+Batch commands also accept explicit `.mli` inputs in either order:
+
+```sh
+lg --compile-files person.cljc person.mli -o person.ml
+```
+
+The same discovery applies to commands that compile from a saved stdlib state.
+Compiler API callers explicitly compile the `.mli` chunk first, then the LG
+chunk with the same path stem. Pending interfaces persist in saved states.
+Rebuild older `.state` artifacts after upgrading to this compiler state format.
+The function implementation must satisfy its declared contract, including
+universal type parameters; `'a -> 'a` cannot be implemented as `int -> int`.
+
+OCaml identifiers use LG's normal name munging: `next_age` matches `next-age`,
+and `reset_bang` matches `reset!`. Ambiguous matches are errors. An interface
+can contain `val`, manifest type aliases, immutable records, and ordinary
+closed variants, including type parameters. Type definitions normally live
+only in the interface. `type token` instead requires a concrete LG type
+definition; a record declaration can supply the field types of an existing
+`defrecord` whose fields match. Interface-owned types have separate OCaml module
+identities, so independent interfaces can reuse names such as `item`.
+
+Function signatures use the OCaml representation of the LG function:
+
+| LG definition | OCaml interface |
+| --- | --- |
+| `(defn answer [] ...)` | `val answer : unit -> int` |
+| `(defn add [x y] ...)` | `val add : int -> int -> int` |
+| `(defn choose ([] ...) ([x] ...))` | `val choose : (unit -> int) * ((int -> int) * unit)` |
+| `(defn total [x & xs] ...)` | `val total : (int -> int Seq.t -> int) * unit` |
+
+Callbacks, tuples, options, lists, arrays, references, polymorphic variants,
+and qualified host types use OCaml type syntax. LG vectors use `'a Rrbvec.t`.
+Overloaded and variadic signatures follow the nested pair representation above,
+in source clause order, ending in `unit`.
+
+`.lgi` remains supported and continues to use LG syntax. Do not duplicate a
+value contract across `.lgi` and `.mli`. An `.mli` supplies declarations and
+contracts; it does not hide other namespace members. This currently supports
+the declaration subset above, not every OCaml interface feature: modules,
+functors, labelled arrows, objects, private types, mutable record fields, inline record
+constructors, and GADT declarations are rejected explicitly.
+Explicit variance/injectivity, `nonrec`, and attributes other than documentation
+attributes are also rejected rather than silently changing their meaning.
+
+## Compiler pipeline
+
 The compiler pipeline is intentionally split into lg syntax and typing
 first, then OCaml lowering:
 

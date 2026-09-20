@@ -1651,6 +1651,25 @@ and compile_definition scope env next_type form =
                      Function_elaborator.infer_named_record scope env
                        field.ty))
           in
+          let conflicting_field =
+            List.find_opt
+              (fun (field_name, metadata_type) ->
+                match (signature_field_type field_name, metadata_type) with
+                | Some declared, Some annotated ->
+                    not
+                      (Types.assignable ~policy:Host_boundary ~expected:declared
+                         ~actual:annotated
+                      && Types.assignable ~policy:Host_boundary ~expected:annotated
+                           ~actual:declared)
+                | _ -> false)
+              field_specs
+          in
+          match conflicting_field with
+          | Some (field_name, _) ->
+              Error.error
+                ("defrecord field annotation does not match its signature: "
+                ^ name ^ "/" ^ field_name)
+          | None ->
           let field_specs =
             List.map
               (fun (field_name, metadata_type) ->
