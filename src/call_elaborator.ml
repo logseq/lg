@@ -7585,8 +7585,13 @@ let adapt_dynamic_callback env expected arg =
                     in
                     Result.map
                       (fun values ->
-                        (Structural_map.record_expr actual_fields values)
-                          .semantic_expr)
+                        let record =
+                          match actual_ty with
+                          | TNamed_record record ->
+                              Structural_map.named_record_expr record values
+                          | _ -> Structural_map.record_expr actual_fields values
+                        in
+                        record.semantic_expr)
                       (collect [] actual_fields)
                 | _ -> Ok value.semantic_expr
             in

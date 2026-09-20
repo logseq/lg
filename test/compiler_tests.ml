@@ -54845,8 +54845,145 @@ let test_generic_record_callback_type_arguments_preserve_precedence () =
   assert_ocaml_runs "generic_record_callback_type_arguments" "42\n" output;
   ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_migration_callbacks_preserve_nominal_models () =
+  let source =
+    {|
+(ns migration-repro (:refer-clojure :exclude [apply]))
+
+(type-record model-snapshot [payload]
+  (snapshot-version :int)
+  (snapshot-fingerprint :string)
+  (snapshot-payload :payload))
+
+(type-variant snapshot-capture-result [payload]
+  (SnapshotCaptured :model-snapshot<payload>)
+  (SnapshotCaptureRejected :string))
+
+(type-record migration-plan [payload model]
+  (migration-source-version :int)
+  (migration-source-fingerprint :string)
+  (migration-target-fingerprint :string)
+  (migrate-snapshot :fn<payload;model>)
+  (validate-model :fn<model;option<string>>))
+
+(type-variant migration-result [model]
+  (MigrationApplied :model)
+  (MigrationRejected :string)
+  (MigrationRestartRequired :string))
+
+(signature migration-repro/capture [model payload]
+  :fn<int;string;model;fn<model;payload>;snapshot-capture-result<payload>>)
+(signature migration-repro/apply [payload model]
+  :fn<migration-plan<payload;model>;model-snapshot<payload>;migration-result<model>>)
+(defn capture [version fingerprint model encode]
+  (if (or (< version 0) (= fingerprint ""))
+    (SnapshotCaptureRejected "snapshot contract is invalid")
+    (try
+      (SnapshotCaptured
+       (record model-snapshot
+         (snapshot-version version)
+         (snapshot-fingerprint fingerprint)
+         (snapshot-payload (encode model))))
+      (catch (Invalid_argument message)
+        (SnapshotCaptureRejected message)))))
+
+(defn apply [plan snapshot]
+  (cond
+    (not (= (:snapshot-version snapshot)
+            (:migration-source-version plan)))
+    (MigrationRestartRequired "snapshot version changed")
+    (not (= (:snapshot-fingerprint snapshot)
+            (:migration-source-fingerprint plan)))
+    (MigrationRestartRequired "snapshot fingerprint changed")
+    (= (:migration-target-fingerprint plan) "")
+    (MigrationRestartRequired "target fingerprint is missing")
+    :else
+    (try
+      (let [model ((:migrate-snapshot plan) (:snapshot-payload snapshot))]
+        (match ((:validate-model plan) model)
+          (Some message) (MigrationRejected message)
+          None (MigrationApplied model)))
+      (catch (Invalid_argument message)
+        (MigrationRejected message)))))
+
+
+(type-record migrated-counter
+  (counter-value :int)
+  (counter-label :string))
+
+(signature migration-repro/migrate-counter
+  :fn<int;migrated-counter>)
+(signature migration-repro/validate-counter
+  :fn<migrated-counter;option<string>>)
+(signature migration-repro/apply-counter
+  :fn<migration-plan<int;migrated-counter>;model-snapshot<int>;migration-result<migrated-counter>>)
+
+(defmacro is [condition message] (list 'assert condition message))
+(defmacro assert-equal [expected actual message]
+  `(is (= ~expected ~actual) ~message))
+
+(defn migrate-counter [payload]
+  (record migrated-counter
+    (counter-value payload)
+    (counter-label "Migrated")))
+
+(defn validate-counter [model]
+  (if (= (:counter-value model) 7)
+    None
+    (Some "counter changed")))
+
+(defn apply-counter [plan snapshot]
+  (migration-repro/apply plan snapshot))
+
+(defn run-case []
+  (let [snapshot-result
+        (migration-repro/capture 1 "counter-v1" 7 (fn [^:int model] model))]
+    (match snapshot-result
+      (migration-repro/SnapshotCaptureRejected message)
+      (is false message)
+      (migration-repro/SnapshotCaptured snapshot)
+      (let [plan
+            (record migration-repro/migration-plan
+              (migration-source-version 1)
+              (migration-source-fingerprint "counter-v1")
+              (migration-target-fingerprint "counter-v2")
+              (migrate-snapshot migrate-counter)
+              (validate-model validate-counter))
+            migrated (apply-counter plan snapshot)]
+        (match migrated
+          (migration-repro/MigrationApplied model)
+          (do
+            (assert-equal 7 (:counter-value model)
+                          "migration preserves the old model value")
+            (assert-equal "Migrated" (:counter-label model)
+                          "migration constructs the new concrete model"))
+          _ (is false "the compatible typed migration applies"))
+        (match
+         (apply-counter
+          (record migration-repro/migration-plan
+            (migration-source-version 1)
+            (migration-source-fingerprint "other-v1")
+            (migration-target-fingerprint "counter-v2")
+            (migrate-snapshot migrate-counter)
+            (validate-model validate-counter))
+          snapshot)
+          (migration-repro/MigrationRestartRequired message)
+          (assert-equal
+           "snapshot fingerprint changed" message
+           "an incompatible snapshot routes to restart rather than a cast")
+          _ (is false "an incompatible snapshot requires restart"))))))
+
+(run-case)
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "migration_callbacks_preserve_nominal_models" "" native;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let tests =
   [
+    ( "migration callbacks preserve nominal models",
+      test_migration_callbacks_preserve_nominal_models );
     ( "generic record callback type arguments preserve precedence",
       test_generic_record_callback_type_arguments_preserve_precedence );
     ( "string control escapes preserve bytes", test_string_control_escapes_preserve_bytes );
