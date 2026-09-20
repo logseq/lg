@@ -1621,53 +1621,49 @@ let rec remap_module_type ~from_path ~to_path ty =
               record.fields;
         }
 
-let rec refresh_named_record (fresh : named_record) ty =
-  let refresh = refresh_named_record fresh in
-  match ty with
-  | TPoly_variant _ -> Semantic_type.map_children (refresh) ty
-  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
-  | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
-      ty
-  | TNullable inner -> TNullable (refresh inner)
-  | TOcaml_app (name, args) -> TOcaml_app (name, List.map refresh args)
-  | TConstraint constraint_ -> TConstraint (map_constraint refresh constraint_)
-  | TTuple args -> TTuple (List.map refresh args)
-  | TArray inner -> TArray (refresh inner)
-  | TRef inner -> TRef (refresh inner)
-  | TList inner -> TList (refresh inner)
-  | TVector inner -> TVector (refresh inner)
-  | TSet inner -> TSet (refresh inner)
-  | TSeq inner -> TSeq (refresh inner)
-  | TFn (args, ret) -> TFn (List.map refresh args, refresh ret)
-  | TOverloaded_fn arities ->
-      TOverloaded_fn
-        (List.map
-           (fun arity ->
-             {
-               fixed_params = List.map refresh arity.fixed_params;
-               rest_param = Option.map refresh arity.rest_param;
-               return_ty = refresh arity.return_ty;
-             })
-           arities)
-  | TRecord fields ->
-      TRecord
-        (List.map
-           (fun (field : field) -> { field with ty = refresh field.ty })
-           fields)
-  | TNamed_record record when Type_id.equal record.type_id fresh.type_id ->
-      if List.length record.type_arguments = List.length fresh.type_arguments
-      then TNamed_record { fresh with type_arguments = record.type_arguments }
-      else TNamed_record fresh
-  | TNamed_record record ->
-      TNamed_record
-        {
-          record with
-          type_arguments = List.map refresh record.type_arguments;
-          fields =
-            List.map
-              (fun (field : field) -> { field with ty = refresh field.ty })
-              record.fields;
-        }
+let refresh_named_record (fresh : named_record) =
+  (* One refresh can visit a shared type through many bindings and fields. *)
+  (* A direct-mapped cache bounds lookup cost even when distinct type nodes
+     have identical structural hashes. Collisions only cause recomputation. *)
+  let refreshed = Array.make 64 None in
+  let rec refresh ty =
+    let slot = Hashtbl.hash ty land 63 in
+    match refreshed.(slot) with
+    | Some (original, mapped) when original == ty -> mapped
+    | Some _ | None ->
+        let mapped =
+          match ty with
+          | TNamed_record record when Type_id.equal record.type_id fresh.type_id ->
+              if record == fresh then ty
+              else if
+                List.length record.type_arguments = List.length fresh.type_arguments
+              then
+                if record.fields == fresh.fields
+                   && record.nominal = fresh.nominal
+                   && record.extensible = fresh.extensible
+                   && String.equal record.type_name fresh.type_name
+                   && record.type_parameters = fresh.type_parameters
+                   && String.equal record.set_module_name fresh.set_module_name
+                then ty
+                else
+                  TNamed_record { fresh with type_arguments = record.type_arguments }
+              else TNamed_record fresh
+          | _ ->
+              let changed = ref false in
+              let mapped =
+                Semantic_type.map_children
+                  (fun child ->
+                    let mapped = refresh child in
+                    if mapped != child then changed := true;
+                    mapped)
+                  ty
+              in
+              if !changed then mapped else ty
+        in
+        refreshed.(slot) <- Some (ty, mapped);
+        mapped
+  in
+  refresh
 
 let find_field keyword fields =
   match List.find_opt (fun field -> field.keyword = keyword) fields with

@@ -4564,6 +4564,53 @@ let test_refresh_named_record_realigns_forward_declared_records () =
       | _ -> failwith "expected a named record")
   | _ -> failwith "expected a named record")
 
+let test_refresh_named_record_preserves_shared_types () =
+  let open Lg.Types in
+  let stale = named_record ~type_name:"shared_record"
+      ~set_module_name:"shared_record_set" [] in
+  let fresh = named_record ~type_name:"shared_record"
+      ~set_module_name:"shared_record_set" [make_field ":value" TInt] in
+  let rec share depth leaf =
+    if depth = 0 then leaf
+    else let child = share (depth - 1) leaf in TTuple [child; child]
+  in
+  match fresh with
+  | TNamed_record record ->
+      let instance =
+        TNamed_record { record with type_arguments = Sys.opaque_identity [] }
+      in
+      if refresh_named_record record instance != instance then
+        failwith "record refresh copied an already current definition";
+      let unrelated = share 18 (TVector TString) in
+      let before = Gc.allocated_bytes () in
+      let unchanged = refresh_named_record record unrelated in
+      let allocated = Gc.allocated_bytes () -. before in
+      if unchanged != unrelated then
+        failwith "record refresh copied an unrelated shared type";
+      if allocated > 2_000_000. then
+        failwith (Printf.sprintf "record refresh allocated %.0f bytes" allocated);
+      let rec check depth = function
+        | ty when depth = 0 ->
+            if ty <> fresh then failwith "record refresh lost updated fields"
+        | TTuple [left; right] ->
+            if left != right then failwith "record refresh lost subtree sharing";
+            check (depth - 1) left
+        | _ -> failwith "record refresh changed the type shape"
+      in
+      check 18 (refresh_named_record record (share 18 stale));
+      let repeated =
+        TTuple
+          (List.init 20_000
+             (fun _ -> TVector (TList (Sys.opaque_identity TString))))
+      in
+      let started = Sys.time () in
+      if refresh_named_record record repeated != repeated then
+        failwith "record refresh copied repeated unrelated shapes";
+      let elapsed = Sys.time () -. started in
+      if elapsed > 0.2 then
+        failwith (Printf.sprintf "record refresh hash collisions took %.3fs" elapsed)
+  | _ -> assert false
+
 let test_freshen_deferred_dynamic_dispatch_stays_monomorphic () =
   let open Lg.Types in
   let dynamic = dynamic_constraint TUnknown in
@@ -41901,7 +41948,15 @@ let test_inference_propagates_long_recursive_declarations () =
   let source = String.concat "\n" (declarations @
     [Printf.sprintf "(defn chain%d [x] (if (zero? x) 42 (chain0 (dec x))))" count;
      "(println (chain0 1))"]) in
+  let allocated_before = Gc.allocated_bytes () in
   let compiled = Lg.Compiler.compile_string source |> expect_ok in
+  let allocated = Gc.allocated_bytes () -. allocated_before in
+  (* Includes compiler setup; repeated rebuilding of unrelated bindings used
+     over 11 GB for this small recursive group. *)
+  if allocated > 4_000_000_000. then
+    failwith
+      (Printf.sprintf "recursive declaration inference allocated %.0f bytes"
+         allocated);
   assert_ocaml_runs "long_recursive_declarations" "42\n" compiled
 
 let test_inference_propagates_long_constraint_chains () =
@@ -55623,6 +55678,8 @@ let tests =
       test_frontend_location_index_avoids_quadratic_scans );
     ( "refresh named record realigns forward declared records",
       test_refresh_named_record_realigns_forward_declared_records );
+    ( "refresh named record preserves shared types",
+      test_refresh_named_record_preserves_shared_types );
     ( "freshen deferred dynamic dispatch stays monomorphic",
       test_freshen_deferred_dynamic_dispatch_stays_monomorphic );
     ( "freshen deferred erased seqable values stay dynamic",

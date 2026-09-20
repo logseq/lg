@@ -96,10 +96,12 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
             let env =
               match record_ty with
               | TNamed_record record ->
+                  let refresh = Types.refresh_named_record record in
                   Env.fold
                     (fun key (binding : Types.binding) env ->
-                      let ty = Types.refresh_named_record record binding.ty in
-                      Env.add key { binding with ty } env)
+                      let ty = refresh binding.ty in
+                      if ty == binding.ty then env
+                      else Env.add key { binding with ty } env)
                     env env
               | _ -> env
             in

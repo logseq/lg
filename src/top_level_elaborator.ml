@@ -2959,17 +2959,12 @@ and compile_definition scope env next_type form =
       let apply_scc_substitutions substitutions env =
         Env.fold
           (fun key (binding : binding) env ->
-            let binding =
-              {
-                binding with
-                ty = Type_solver.apply substitutions binding.ty;
-                scheme = None;
-              }
-              |> Types.generalize_binding
-            in
-            Env.add key
-              binding
-              env)
+            let ty = Type_solver.apply substitutions binding.ty in
+            if ty == binding.ty then env
+            else
+              Env.add key
+                (Types.generalize_binding { binding with ty; scheme = None })
+                env)
           env env
       in
       let refine_scc_inference inferred env =
@@ -3306,19 +3301,7 @@ and compile_definition scope env next_type form =
              ^ Types.source_name predeclared_ty ^ " vs "
              ^ Types.source_name actual_ty)
         | Ok substitutions ->
-            Ok
-              (Env.fold
-                 (fun key (binding : binding) env ->
-                   let binding =
-                     {
-                       binding with
-                       ty = Type_solver.apply substitutions binding.ty;
-                       scheme = None;
-                     }
-                     |> Types.generalize_binding
-                   in
-                   Env.add key binding env)
-                 env env)
+            Ok (apply_scc_substitutions substitutions env)
       in
       let rec compile_definitions env next_type row_items bindings = function
         | [] ->
