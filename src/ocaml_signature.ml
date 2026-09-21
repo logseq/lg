@@ -131,10 +131,9 @@ let active_include_dirs () =
                  else Some directory)
         else include_dirs ()
       in
-      let directories = project_dirs @ !(package_include_dirs ()) in
       let directories =
-        if !melange_target then unique_interface_directories directories
-        else directories
+        unique_interface_directories
+          (project_dirs @ !(package_include_dirs ()))
       in
       active_include_dirs_cache := Some directories;
       directories
