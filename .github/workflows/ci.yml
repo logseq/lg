@@ -46,6 +46,9 @@ jobs:
       - run: opam exec -- dune build @jsoo-cross-runtime
       # The smoke rules compile against installed lg-test cmi under
       # _build/install, which opam's -p builds never populate in-tree.
-      - run: opam exec -- dune build @install @test/clojure_suite/clojure-test-suite-smoke
+      # @install must complete first: the smoke rules read those files without
+      # declaring them as deps, so a single invocation can schedule smoke first.
+      - run: opam exec -- dune build @install
+      - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
       - run: opam exec -- sh test/install_smoke.sh
       - run: opam lint .
