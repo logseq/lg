@@ -6,7 +6,7 @@ let usage () =
      --compile-files-from <state> [--emit-state <output-state>] \
      <input.cljc>... -o output.ml | \
      --compile-files-chunk-from <state> [--prefix-interface <prefix.cmi>] \
-     <input.cljc>... -o output.ml | \
+     [--emit-state <output-state>] <input.cljc>... -o output.ml | \
      --compile-files-from-state <input-state> <output-state> <input.cljc>... -o \
      output.ml | \
      --compile-chunk-from <state> <input.cljc> [-o output.ml] | \
@@ -915,6 +915,12 @@ let parse_args argv =
           | [ "--prefix-interface" ] -> usage ()
           | _ -> (None, args)
         in
+        let emit_state_path, args =
+          match args with
+          | "--emit-state" :: path :: rest -> (Some path, rest)
+          | [ "--emit-state" ] -> usage ()
+          | _ -> (None, args)
+        in
         match List.rev args with
         | output_path :: "-o" :: reversed_inputs ->
             Compile_files_from
@@ -924,7 +930,7 @@ let parse_args argv =
                 output_path;
                 include_prefix = false;
                 prefix_interface;
-                emit_state_path = None;
+                emit_state_path;
               }
         | _ -> usage ())
     | _program :: "--compile-files-from-state" :: state_path
@@ -2641,7 +2647,10 @@ let () =
                     Filename.basename path |> Filename.remove_extension
                     |> String.capitalize_ascii
                   in
-                  "open " ^ module_name ^ "\n" ^ ocaml_source
+                  (* include (not open) re-exports the prefix's definitions, so
+                     deeper chains (`chunk-from` of a state produced by another
+                     `chunk-from` module) stay usable as prefixes themselves. *)
+                  "include " ^ module_name ^ "\n" ^ ocaml_source
           in
           write_output (Some output_path) ocaml_source)
   | Compile_files_from_state
