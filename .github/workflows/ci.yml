@@ -20,7 +20,7 @@ jobs:
         with:
           ocaml-compiler: "5.5"
       - run: npm ci
-      - run: opam install . --with-test
+      - run: opam install .
       - run: opam exec -- sh test/compiler_cold_build_performance_gate_test.sh
       - run: opam exec -- dune build --action-stderr-on-success=must-be-empty @runtest
       - run: opam exec -- sh test/build_footprint_gate_test.sh _build
