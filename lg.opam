@@ -22,6 +22,8 @@ depends: [
   "melange-transit-native"
   "melange-transit-melange"
   "yojson"
+  "core" {with-test}
+  "datascript-ocaml-native" {with-test}
   "odoc" {with-doc}
 ]
 build: [
@@ -46,4 +48,7 @@ pin-depends: [
   ["melange-transit-core.0.1.0" "git+https://github.com/RCmerci/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-native.0.1.0" "git+https://github.com/RCmerci/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-melange.0.1.0" "git+https://github.com/RCmerci/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
+  ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#4c1ea15772e0a3d551c4bd793346b380fb12dc72"]
+  ["datascript-ocaml-native.dev" "git+https://github.com/logseq/datascript-ocaml.git#4c1ea15772e0a3d551c4bd793346b380fb12dc72"]
+  ["datascript-ocaml-lg.dev" "git+https://github.com/logseq/datascript-ocaml.git#4c1ea15772e0a3d551c4bd793346b380fb12dc72"]
 ]

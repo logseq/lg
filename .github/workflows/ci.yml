@@ -20,6 +20,11 @@ jobs:
         with:
           ocaml-compiler: "5.5"
       - run: npm ci
+      # Private pin-depends (datascript-ocaml) need a PAT with repo read access.
+      - env:
+          LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
       - run: opam install . --deps-only --with-test
       - run: opam install .
       - run: opam exec -- sh test/compiler_cold_build_performance_gate_test.sh

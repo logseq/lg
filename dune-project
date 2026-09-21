@@ -28,7 +28,9 @@
   melange-transit-core
   melange-transit-native
   melange-transit-melange
-  yojson))
+  yojson
+  (core :with-test)
+  (datascript-ocaml-native :with-test)))
 
 (package
  (name lg-test)
