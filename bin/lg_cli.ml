@@ -3,7 +3,8 @@ let usage () =
     "Usage: lg <input.cljc> [-o output.ml] | --interface <input.cljc> [-o \
      output.mli] | --run <input.cljc> | --compile-files <input.cljc>... -o \
      output.ml | --compile-files-state <state> <input.cljc>... -o output.ml | \
-     --compile-files-from <state> <input.cljc>... -o output.ml | \
+     --compile-files-from <state> [--emit-state <output-state>] \
+     <input.cljc>... -o output.ml | \
      --compile-files-chunk-from <state> [--prefix-interface <prefix.cmi>] \
      <input.cljc>... -o output.ml | \
      --compile-files-from-state <input-state> <output-state> <input.cljc>... -o \
@@ -796,6 +797,7 @@ type mode =
       output_path : string;
       include_prefix : bool;
       prefix_interface : string option;
+      emit_state_path : string option;
     }
   | Compile_files_from_state of {
       state_path : string;
@@ -888,6 +890,12 @@ let parse_args argv =
               }
         | _ -> usage ())
     | _program :: "--compile-files-from" :: state_path :: args -> (
+        let emit_state_path, args =
+          match args with
+          | "--emit-state" :: path :: rest -> (Some path, rest)
+          | [ "--emit-state" ] -> usage ()
+          | _ -> (None, args)
+        in
         match List.rev args with
         | output_path :: "-o" :: reversed_inputs ->
             Compile_files_from
@@ -897,6 +905,7 @@ let parse_args argv =
                 output_path;
                 include_prefix = true;
                 prefix_interface = None;
+                emit_state_path;
               }
         | _ -> usage ())
     | _program :: "--compile-files-chunk-from" :: state_path :: args -> (
@@ -915,6 +924,7 @@ let parse_args argv =
                 output_path;
                 include_prefix = false;
                 prefix_interface;
+                emit_state_path = None;
               }
         | _ -> usage ())
     | _program :: "--compile-files-from-state" :: state_path
@@ -2581,21 +2591,46 @@ let () =
               cache_key = !produced_key;
             })
   | Compile_files_from
-      { state_path; input_paths; output_path; include_prefix; prefix_interface } -> (
+      {
+        state_path;
+        input_paths;
+        output_path;
+        include_prefix;
+        prefix_interface;
+        emit_state_path;
+      } -> (
+      let produced_key = ref "" in
       match
-        compile_files_from_saved_state ?reader_target ?prefix_interface target
-          state_path input_paths
+        compile_files_from_saved_state ?reader_target ?prefix_interface
+          ~produced_key target state_path input_paths
       with
       | Error err -> report_error err
-      | Ok (_state, _packages, ocaml_source, diagnostics) ->
+      | Ok (state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
+          let saved =
+            if include_prefix || Option.is_some emit_state_path then
+              match read_saved_compilation_state state_path with
+              | Ok saved -> Some saved
+              | Error err -> report_error err
+            else None
+          in
+          (match emit_state_path with
+          | None -> ()
+          | Some output_state_path ->
+              let saved = Option.get saved in
+              write_saved_compilation_state output_state_path
+                {
+                  target;
+                  state = Lg.Compiler.cacheable_state state;
+                  packages;
+                  ocaml_source =
+                    concatenate_compilation_outputs
+                      [ saved.ocaml_source; ocaml_source ];
+                  cache_key = !produced_key;
+                });
           let ocaml_source =
             if include_prefix then
-              let saved =
-                match read_saved_compilation_state state_path with
-                | Ok saved -> saved
-                | Error err -> report_error err
-              in
+              let saved = Option.get saved in
               concatenate_compilation_outputs
                 [ saved.ocaml_source; ocaml_source ]
             else
