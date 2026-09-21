@@ -9,7 +9,7 @@ license: "MIT"
 homepage: "https://github.com/tiensonqin/lg"
 bug-reports: "https://github.com/tiensonqin/lg/issues"
 depends: [
-  "ocaml" {>= "5.4"}
+  "ocaml" {>= "5.5"}
   "dune" {>= "3.17" & >= "3.17"}
   "melange" {>= "6.0"}
   "alcotest"

@@ -16,7 +16,7 @@
  (description
   "A statically typed Clojure-syntax frontend that emits checked OCaml Parsetree.")
  (depends
-  (ocaml (>= 5.4))
+  (ocaml (>= 5.5))
   (dune (>= 3.17))
   (melange (>= 6.0))
   (js_of_ocaml (>= 6.0))
@@ -41,7 +41,7 @@
  (description
   "A Clojure.test-compatible test runner with Alcotest and Melange backends.")
  (depends
-  (ocaml (>= 5.4))
+  (ocaml (>= 5.5))
   (dune (>= 3.17))
   (melange (>= 6.0))
   alcotest
