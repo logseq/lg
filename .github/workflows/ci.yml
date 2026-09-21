@@ -36,7 +36,12 @@ jobs:
           # 2-core hosted runners need ~3x the local dev limit.
           LG_COLD_BUILD_LIMIT_SECONDS: "45"
       - run: opam exec -- dune build --action-stderr-on-success=must-be-empty @runtest
+      # The default 430MB limit assumes a smaller tree; a full @runtest build on
+      # the runner is ~590MB (mostly compiled test executables).
       - run: opam exec -- sh test/build_footprint_gate_test.sh _build
+        env:
+          LG_BUILD_FOOTPRINT_LIMIT_KIB: "819200"
+          LG_TEST_BUILD_FOOTPRINT_LIMIT_KIB: "358400"
       - run: opam exec -- dune build @jsoo-cross-runtime
       - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
       - run: opam exec -- dune build @install
