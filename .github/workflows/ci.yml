@@ -22,6 +22,9 @@ jobs:
       - run: npm ci
       - run: opam install .
       - run: opam exec -- sh test/compiler_cold_build_performance_gate_test.sh
+        env:
+          # 2-core hosted runners need ~3x the local dev limit.
+          LG_COLD_BUILD_LIMIT_SECONDS: "45"
       - run: opam exec -- dune build --action-stderr-on-success=must-be-empty @runtest
       - run: opam exec -- sh test/build_footprint_gate_test.sh _build
       - run: opam exec -- dune build @jsoo-cross-runtime
