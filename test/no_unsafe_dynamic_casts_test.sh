@@ -63,7 +63,7 @@ if [ "$dynamic_files" != "$allowed_dynamic_files" ]; then
   exit 1
 fi
 
-if rg -n 'parseInt.*mel\.scope' "$root/runtime/runtime_number_melange.ml"; then
+if rg -n 'parseInt.*mel\.scope' "$root/runtime_melange_backend/runtime_number_melange.ml"; then
   echo "parseInt is a global Melange binding and must not use a scoped primitive" >&2
   exit 1
 fi

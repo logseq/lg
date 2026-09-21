@@ -25,7 +25,9 @@ let changed_bindings previous updated =
   |> List.filter (fun (key, binding) ->
          match Env.find_opt key previous with
          | None -> true
-         | Some previous_binding -> previous_binding <> binding)
+         | Some previous_binding ->
+             (* Unchanged persistent bindings share their complete type graphs. *)
+             previous_binding != binding && previous_binding <> binding)
 
 let open_bindings ?(qualified = false) scope env module_path =
   let prefix = module_path ^ "/" in

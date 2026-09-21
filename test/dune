@@ -610,3 +610,11 @@
  (action
   (run bash %{dep:cli_checkpoint_cache_test.sh} %{exe:../bin/lg_cli.exe}
    %{dep:../stdlib/lg_stdlib_native.state})))
+
+(rule
+ (aliases prefix-interface runtest)
+ (deps cli_prefix_interface_test.sh ../bin/lg_cli.exe ../runtime/lg_runtime.cma
+  ../vendor/rrbvec/rrbvec.cma)
+ (action
+  (run sh %{dep:cli_prefix_interface_test.sh} %{exe:../bin/lg_cli.exe}
+   %{ocamlc} ../runtime/.lg_runtime.objs/byte ../vendor/rrbvec/.rrbvec.objs/byte)))

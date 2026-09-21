@@ -111,11 +111,94 @@ let rec variables ty =
   | TBool | TUnit | TNil | TUnknown | TOcaml _ ->
       []
 
+module Physical_type_nodes = Hashtbl.Make (struct
+  type t = ty
+  let equal left right = left == right
+  let hash ty = Hashtbl.hash_param 4 16 ty
+end)
+
+let may_contain_variable ?visited predicate ty =
+  (* This is only a preflight check. Bound repeated visits to shared type graphs;
+     exhausting the budget conservatively falls back to normal substitution. *)
+  let remaining = ref 2048 in
+  let rec affects ty =
+    let already_visited =
+      match visited with
+      | None -> false
+      | Some nodes ->
+          if Physical_type_nodes.mem nodes ty then true
+          else (Physical_type_nodes.add nodes ty (); false)
+    in
+    if already_visited then false
+    else (
+    decr remaining;
+    if !remaining < 0 then true
+    else
+      match ty with
+      | TMeta { id; _ } ->
+          predicate (Metavariable id)
+      | TVar name -> predicate (Declared name)
+      | TNullable inner | TArray inner | TRef inner | TList inner
+      | TVector inner | TSet inner | TSeq inner -> affects inner
+      | TOcaml_app (_, items) | TTuple items -> List.exists affects items
+      | TConstraint constraint_ ->
+          List.exists affects (constraint_children constraint_)
+      | TFn (parameters, result) ->
+          List.exists affects parameters || affects result
+      | TOverloaded_fn arities ->
+          List.exists
+            (fun arity ->
+              List.exists affects arity.fixed_params
+              || Option.fold ~none:false ~some:affects arity.rest_param
+              || affects arity.return_ty)
+            arities
+      | TRecord fields ->
+          List.exists (fun (field : field) -> affects field.ty) fields
+      | TNamed_record record ->
+          List.exists affects record.type_arguments
+          || List.exists (fun (field : field) -> affects field.ty) record.fields
+      | TPoly_variant row ->
+          List.exists
+            (fun (_, payload) -> Option.fold ~none:false ~some:affects payload)
+            row.tags
+      | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+      | TKeyword | TBool | TUnit | TNil | TUnknown | TOcaml _ -> false)
+  in
+  affects ty
+
+let potentially_affected substitutions ty =
+  may_contain_variable (fun variable -> Variable_map.mem variable substitutions) ty
+
+(* Quantified names may be included: this summary only proves absence.
+   None means the traversal budget was exhausted, so substitution must run. *)
+let potential_variables ty =
+  let variables = ref [] in
+  let collect variable =
+    if not (variable_mem variable !variables) then
+      variables := variable :: !variables;
+    false
+  in
+  let exhausted = may_contain_variable collect ty in
+  (* Only allocate graph memoization when the inexpensive tree walk cannot
+     finish. Physical identity preserves distinct types even on hash collisions. *)
+  let exhausted = exhausted &&
+    may_contain_variable ~visited:(Physical_type_nodes.create 32) collect ty in
+  if exhausted then None else Some !variables
+
 let rec apply substitutions ty =
-  if Variable_map.cardinal substitutions = 0 then ty
-  else
+  match ty with
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TUnknown | TOcaml _ -> ty
+  | _ when Variable_map.cardinal substitutions = 0 -> ty
+  | (TMeta _ | TVar _) -> apply_with_substitutions substitutions ty
+  | _ when not (potentially_affected substitutions ty) -> ty
+  | _ -> apply_with_substitutions substitutions ty
+and apply_with_substitutions substitutions ty =
     let visiting = ref [] in
+    (* Keep adjacent and separated shared children without hashing whole types.
+       Cyclic replacements can map the same node differently while visiting. *)
     let last_mapped = ref None in
+    let previous_mapped = ref None in
     let memoized_node = function
       | TNullable _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ | TList _
       | TVector _ | TSet _ | TSeq _ | TFn _ | TOverloaded_fn _ | TRecord _
@@ -129,12 +212,19 @@ let rec apply substitutions ty =
     let rec apply_ty ty =
       if not (memoized_node ty) then apply_uncached ty
       else
+        let context = !visiting in
         match !last_mapped with
-        | Some (original, mapped) when original == ty -> mapped
-        | Some _ | None ->
-            let mapped = apply_uncached ty in
-            last_mapped := Some (ty, mapped);
-            mapped
+        | Some (original, previous_context, mapped)
+          when original == ty && previous_context == context -> mapped
+        | Some _ | None -> (
+            match !previous_mapped with
+            | Some (original, previous_context, mapped)
+              when original == ty && previous_context == context -> mapped
+            | Some _ | None ->
+                let mapped = apply_uncached ty in
+                previous_mapped := !last_mapped;
+                last_mapped := Some (ty, context, mapped);
+                mapped)
     and apply_replacement variable original replacement =
       if variable_mem variable !visiting then original
       else
@@ -391,12 +481,26 @@ let rec is_open = function
 let force substitutions variable ty = add variable ty substitutions
 
 let matching_fields left right =
-  left
-  |> List.filter_map (fun (left_field : field) ->
-      right
-      |> List.find_opt (fun (right_field : field) ->
-          left_field.keyword = right_field.keyword)
-      |> Option.map (fun right_field -> (left_field.ty, right_field.ty)))
+  let find_right =
+    if List.compare_length_with left 8 >= 0
+       && List.compare_length_with right 32 >= 0 then (
+      let fields = Hashtbl.create (List.length right) in
+      List.iter
+        (fun (field : field) ->
+          (* Match the first occurrence, as the ordered scan does. *)
+          if not (Hashtbl.mem fields field.keyword) then
+            Hashtbl.add fields field.keyword field.ty)
+        right;
+      fun keyword -> Hashtbl.find_opt fields keyword)
+    else
+      fun keyword ->
+        List.find_opt (fun (field : field) -> keyword = field.keyword) right
+        |> Option.map (fun (field : field) -> field.ty)
+  in
+  List.filter_map
+    (fun (field : field) ->
+      Option.map (fun right_ty -> field.ty, right_ty) (find_right field.keyword))
+    left
 
 let resolve_head substitutions ty =
   let rec resolve visiting ty =

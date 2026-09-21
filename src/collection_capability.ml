@@ -799,7 +799,7 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
           apply
             (match Compiler_environment.target env with
             | Target.Melange ->
-                "Lg_runtime.Runtime_array_melange.fold_left"
+                "Lg_runtime_melange.Runtime_array_melange.fold_left"
             | Target.Native | Target.Js_of_ocaml -> "Array.fold_left")
             [ fn.semantic_expr; init.semantic_expr; collection.semantic_expr ]
       | TString ->

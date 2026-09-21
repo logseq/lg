@@ -21,11 +21,65 @@ let rec string_mem name = function
   | candidate :: _ when String.equal name candidate -> true
   | _ :: rest -> string_mem name rest
 
+(* Names select bounded cache slots; physical type identity validates each hit.
+   Two entries retain alternating refinements; domain-local ephemerons let
+   obsolete inference types be collected. *)
+let parameter_variable_cache =
+  Domain.DLS.new_key (fun () -> Array.make 1024 (None, None))
+
+let parameter_applier substitutions =
+  if Type_solver.Variable_map.cardinal substitutions = 0 then snd
+  else
+    let cache = Domain.DLS.get parameter_variable_cache in
+    let remember slot ty =
+      let variables = Type_solver.potential_variables ty in
+      let latest, _ = cache.(slot) in
+      cache.(slot) <- (Some (Ephemeron.K1.make ty variables), latest);
+      variables
+    in
+    fun (name, ty) ->
+      let slot = Hashtbl.hash name land 1023 in
+      let variables =
+        let latest, previous = cache.(slot) in
+        let query = function
+          | Some entry -> Ephemeron.K1.query entry ty
+          | None -> None
+        in
+        match query latest with
+        | Some variables -> variables
+        | None -> (
+            match query previous with
+            | Some variables ->
+                cache.(slot) <- (previous, latest);
+                variables
+            | None -> remember slot ty)
+      in
+      match variables with
+      | Some variables
+        when not (List.exists
+                    (fun variable ->
+                      Type_solver.Variable_map.mem variable substitutions)
+                    variables) -> ty
+      | _ -> Type_solver.apply_with_substitutions substitutions ty
+
+(* Types contain immutable symbolic evidence, so identical nodes are equal.
+   Distinct nodes still require full structural equality, including record fields. *)
+let rec equal_parameters (left : (string * ty) list) right =
+  left == right
+  || match left, right with
+     | (left_name, left_ty) :: left_rest, (right_name, right_ty) :: right_rest ->
+         String.equal left_name right_name
+         && (left_ty == right_ty || left_ty = right_ty)
+         && equal_parameters left_rest right_rest
+     | _ -> false
+
 let replace_param name ty params =
-  params
-  |> List.map (fun (param_name, param_ty) ->
-         if String.equal param_name name then (param_name, ty)
-         else (param_name, param_ty))
+  Type_solver.map_preserving_identity
+    (fun ((param_name, param_ty) as entry) ->
+      if String.equal param_name name && not (ty == param_ty) then
+        (param_name, ty)
+      else entry)
+    params
 
 let host_record_type = function
   | TOcaml type_name -> (
@@ -601,6 +655,42 @@ and inferred_row_compatible structural named =
   | _ -> false
 
 and merge_record_fields existing inferred =
+  (* Small refinements dominate call counts; index only substantial batches. *)
+  if List.compare_length_with inferred 8 >= 0
+     && List.compare_length_with existing 32 >= 0 then
+    merge_record_fields_indexed existing inferred
+  else merge_record_fields_linear existing inferred
+
+and merge_record_fields_indexed existing inferred =
+  let count = List.length existing in
+  let fields = Array.make (count + List.length inferred) (List.hd existing) in
+  let positions = Hashtbl.create count in
+  List.iteri (fun index (field : field) ->
+      fields.(index) <- field;
+      match Hashtbl.find_opt positions field.keyword with
+      | None -> Hashtbl.add positions field.keyword (index, [])
+      | Some (first, rest) ->
+          Hashtbl.replace positions field.keyword (first, index :: rest)) existing;
+  let used = ref count in
+  List.iter (fun (incoming : field) ->
+      match Hashtbl.find_opt positions incoming.keyword with
+      | None ->
+          fields.(!used) <- incoming;
+          Hashtbl.add positions incoming.keyword (!used, []);
+          incr used
+      | Some (first_index, reversed_rest) ->
+          let first = fields.(first_index) in
+          let replace index =
+            let ty = refine_type first.ty incoming.ty in
+            fields.(index) <- if ty == first.ty then first else { first with ty }
+          in
+          (* Retain the first field's metadata and the original refinement order
+             for duplicate keys, including keys appended earlier in this batch. *)
+          replace first_index;
+          List.iter replace (List.rev reversed_rest)) inferred;
+  List.init !used (Array.get fields)
+
+and merge_record_fields_linear existing inferred =
   List.fold_left
     (fun fields (inferred_field : field) ->
       match find_field inferred_field.keyword fields with
@@ -816,12 +906,15 @@ and constrain_monomorphic_symbol expected_ty params name existing_ty =
         Type_solver.unify Type_solver.empty existing_ty expected_ty
         |> Result.value ~default:Type_solver.empty
       in
+      let apply_parameter = parameter_applier substitutions in
       let params =
-        List.map
-          (fun (param_name, param_ty) ->
-            ( param_name,
-              Type_solver.apply substitutions param_ty
-              |> Types.deduplicate_protocol_constraints ))
+        Type_solver.map_preserving_identity
+          (fun ((param_name, param_ty) as entry) ->
+            let ty =
+              apply_parameter entry
+              |> Types.deduplicate_protocol_constraints
+            in
+            if ty == param_ty then entry else (param_name, ty))
           params
       in
       let existing_ty =

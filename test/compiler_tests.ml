@@ -4085,6 +4085,344 @@ let test_refining_identical_types_preserves_shared_structure () =
   if Lg.Type_inference_core.refine_type TUnknown TInt <> TInt then
     failwith "distinct type evidence must still refine unknown values"
 
+let test_type_solver_scalar_substitutions_do_not_allocate_traversal_state () =
+  let open Lg.Types in
+  let substitutions = Lg.Type_solver.of_list [ (Lg.Type_solver.Declared "value", TInt) ] in
+  let scalars = [ TInt; TFloat; TChar; TString; TRegex; TMap_keys; TSymbol;
+                  TKeyword; TBool; TUnit; TNil; TUnknown; TOcaml "Opaque.t" ] in
+  let allocated_before = Gc.allocated_bytes () in
+  for _ = 1 to 10_000 do
+    List.iter (fun ty ->
+      if not (Lg.Type_solver.apply substitutions ty == ty) then
+        failwith "substitution changed a scalar type") scalars
+  done;
+  let allocated = Gc.allocated_bytes () -. allocated_before in
+  if allocated > 2_000_000. then failwith (Printf.sprintf
+      "scalar substitutions allocated unnecessary traversal state (%.0f bytes)" allocated)
+
+let test_record_field_lookup_preserves_concrete_fields () =
+  let open Lg.Types in
+  let fields = List.init 80 (fun i -> make_field (":field-" ^ string_of_int i) TInt) in
+  let record = named_record ~type_name:"Lookup_record" ~set_module_name:"Lookup_set" fields in
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 10_000 do
+    match record_fields record with
+    | Some actual when actual == fields -> ()
+    | _ -> failwith "concrete record field lookup must retain the original field list"
+  done;
+  let allocated = Gc.allocated_bytes () -. before in
+  if allocated > 1_000_000. then
+    failwith "concrete record lookup allocated repeated substitution state"
+
+let test_record_field_lookup_preserves_static_fields_when_specializing () =
+  let open Lg.Types in
+  let static = make_field ":name" TString in
+  let generic = make_field ":value" (TVar "value") in
+  let fields = [ static; generic ] in
+  let original = named_record ~type_parameters:[ "value" ]
+      ~type_name:"Lookup_generic" ~set_module_name:"Lookup_generic_set" fields in
+  (match record_fields original with
+   | Some actual when actual == fields -> ()
+   | _ -> failwith "identity type arguments must retain the original fields");
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 10_000 do
+    ignore (record_fields original)
+  done;
+  if Gc.allocated_bytes () -. before > 1_000_000. then
+    failwith "identity type arguments must not allocate a substitution map";
+  let specialized = match original with
+    | TNamed_record record -> TNamed_record { record with type_arguments = [ TInt ] }
+    | _ -> assert false in
+  match record_fields specialized with
+  | Some [ actual_static; actual_generic ]
+    when actual_static == static && actual_generic.ty = TInt && generic.ty = TVar "value" -> ()
+  | _ -> failwith "specializing a record must only replace affected fields"
+
+let test_type_solver_unrelated_composites_avoid_mapping_allocations () =
+  let open Lg.Types in
+  let fields = List.init 80 (fun i ->
+      make_field (":field-" ^ string_of_int i)
+        (TVector (TRef (TOcaml ("Opaque" ^ string_of_int i ^ ".t"))))) in
+  let ty = TFn ([ TRecord fields ], TInt) in
+  let substitutions = Lg.Type_solver.of_list [ (Lg.Type_solver.Declared "other", TInt) ] in
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 1_000 do
+    if not (Lg.Type_solver.apply substitutions ty == ty) then
+      failwith "unrelated substitutions changed a composite type"
+  done;
+  let allocated = Gc.allocated_bytes () -. before in
+  if allocated > 1_000_000. then failwith (Printf.sprintf
+      "unrelated substitutions allocated mapping state (%.0f bytes)" allocated)
+
+let test_type_solver_unrelated_shared_dag_check_is_bounded () =
+  let open Lg.Types in
+  let rec share depth ty =
+    if depth = 0 then ty else
+      let child = share (depth - 1) ty in TTuple [ child; child ] in
+  let ty = TFn ([ share 24 TInt ], TInt) in
+  let substitutions = Lg.Type_solver.of_list [ (Lg.Type_solver.Declared "other", TString) ] in
+  let before = Sys.time () in
+  if not (Lg.Type_solver.apply substitutions ty == ty) then
+    failwith "unrelated substitution changed a shared type graph";
+  if Sys.time () -. before > 0.05 then
+    failwith "the unrelated-substitution check expanded a shared type graph"
+
+let test_parameter_equality_preserves_complete_type_evidence () =
+  let open Lg.Types in
+  let equal = Lg.Type_inference_core.equal_parameters in
+  let field = make_field ":value" TInt in
+  let record = TRecord [ field ] in
+  let named = named_record ~type_parameters:[ "a" ]
+      ~type_name:"Equality_record" ~set_module_name:"Equality_record_set" [ field ] in
+  let named_fields, named_arguments = match named with
+    | TNamed_record record ->
+        (TNamed_record { record with fields = [ { field with ty = TString } ] },
+         TNamed_record { record with type_arguments = [ TInt ] })
+    | _ -> assert false in
+  let cases =
+    [ ([], []);
+      ([ "x", named ], [ "x", named_fields ]);
+      ([ "x", named ], [ "x", named_arguments ]);
+      ([ "x", TInt ], [ "x", TInt ]);
+      ([ "x", TInt ], [ "y", TInt ]);
+      ([ "x", TInt ], [ "x", TString ]);
+      ([ "x", record ], [ "x", TRecord [ { field with mutable_ = true } ] ]);
+      ([ "x", record ], [ "x", TRecord [ { field with ty = TString } ] ]);
+      ([ "x", record ], [ "x", TRecord [ make_field ":value" TInt ] ]);
+      ([ "x", TInt; "y", TString ], [ "y", TString; "x", TInt ]);
+      ([ "x", TInt ], []);
+      ([], [ "x", TInt ]) ]
+  in
+  List.iter (fun (left, right) ->
+      if equal left right <> (left = right) then
+        failwith "parameter equality changed structural evidence or binding order") cases
+
+let test_parameter_equality_skips_identical_type_graphs () =
+  let open Lg.Types in
+  let rec share depth ty =
+    if depth = 0 then ty else
+      let child = share (depth - 1) ty in TTuple [ child; child ] in
+  let shared = share 23 TInt in
+  let left = [ "stable", shared; "changed", TInt ] in
+  let right = [ "stable", shared; "changed", TString ] in
+  let started = Sys.time () in
+  for _ = 1 to 4 do
+    if Lg.Type_inference_core.equal_parameters left right then
+      failwith "a shared type must not hide a changed later parameter"
+  done;
+  if Sys.time () -. started > 0.1 then
+    failwith "parameter equality traversed an identical shared type graph"
+
+let test_large_record_merge_preserves_order_and_duplicate_metadata () =
+  let open Lg.Types in
+  let fields = List.init 80 (fun i -> make_field (":f" ^ string_of_int i) TUnknown) in
+  let first = make_field ":duplicate" TUnknown in
+  let duplicate = { first with mutable_ = true } in
+  let existing = first :: fields @ [ duplicate ] in
+  let inferred = (make_field ":duplicate" TInt) ::
+      List.init 80 (fun i -> make_field (":f" ^ string_of_int i) TInt)
+      @ [ make_field ":new" TUnknown; make_field ":new" TString ] in
+  let reference = List.fold_left (fun fields (incoming : field) ->
+      match find_field incoming.keyword fields with
+      | None -> fields @ [ incoming ]
+      | Some first -> List.map (fun (field : field) ->
+          if field.keyword = incoming.keyword then
+            { first with ty = Lg.Type_inference_core.refine_type first.ty incoming.ty }
+          else field) fields) existing inferred in
+  if Lg.Type_inference_core.merge_record_fields existing inferred <> reference then
+    failwith "indexed record merge changed order, duplicate metadata, or repeated refinement"
+
+let test_large_record_merge_avoids_quadratic_copies () =
+  let open Lg.Types in
+  let fields = List.init 80 (fun i -> make_field (":f" ^ string_of_int i) TInt) in
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 500 do
+    if Lg.Type_inference_core.merge_record_fields fields fields <> fields then
+      failwith "unchanged bulk refinement changed field types"
+  done;
+  if Gc.allocated_bytes () -. before > 12_000_000. then
+    failwith "bulk record merge repeatedly copied the full field list"
+
+let test_type_summary_visits_shared_graphs_once () =
+  let open Lg.Types in
+  let rec share depth ty =
+    if depth = 0 then ty else
+      let child = share (depth - 1) ty in TTuple [ child; child ] in
+  let closed = share 24 TInt in
+  (match Lg.Type_solver.potential_variables closed with
+   | Some [] -> ()
+   | _ -> failwith "shared closed graphs must have a complete variable summary");
+  let variable = Lg.Type_solver.fresh () in
+  let graph = TTuple [ share 24 (TTuple [ TVar "shared"; variable ]); TVar "late" ] in
+  (match Lg.Type_solver.potential_variables graph with
+   | Some variables when List.length variables = 3
+       && Lg.Type_solver.variable_mem (Lg.Type_solver.Declared "shared") variables
+       && Lg.Type_solver.variable_mem (Lg.Type_solver.Declared "late") variables
+       && (match variable with
+           | TMeta { id; _ } -> Lg.Type_solver.variable_mem (Lg.Type_solver.Metavariable id) variables
+           | _ -> false) -> ()
+   | _ -> failwith "shared graph analysis lost a type variable");
+  let distinct = TTuple [ share 24 (TVar "first"); share 24 (TVar "second") ] in
+  (match Lg.Type_solver.potential_variables distinct with
+   | Some variables when List.length variables = 2 -> ()
+   | _ -> failwith "physical graph memoization merged distinct variable nodes");
+  let deep = List.init 3_000 Fun.id |> List.fold_left (fun ty _ -> TNullable ty) (TVar "deep") in
+  match Lg.Type_solver.potential_variables deep with
+  | None -> ()
+  | Some _ -> failwith "distinct deep graphs must retain the conservative budget"
+
+let test_module_binding_diff_skips_unchanged_shared_types () =
+  let open Lg.Types in
+  let rec shared depth =
+    if depth = 0 then TInt else let child = shared (depth - 1) in TTuple [child; child]
+  in
+  let ty = shared 18 in
+  let previous = List.init 100 (fun i ->
+      let name = "unchanged" ^ string_of_int i in name, binding name ty)
+    |> Lg.Compiler_environment.of_bindings in
+  let added = binding "added" TBool in
+  let updated = Lg.Compiler_environment.add "added" added previous in
+  let started = Sys.time () in
+  let changed = Lg.Module_environment.changed_bindings previous updated in
+  let elapsed = Sys.time () -. started in
+  if changed <> ["added", added] then failwith "unchanged shared bindings were exported";
+  if elapsed > 0.05 then
+    failwith (Printf.sprintf "module diff traversed unchanged shared types: %.4fs" elapsed)
+
+let test_module_binding_diff_preserves_changes () =
+  let open Lg.Types in
+  let old = binding "original" (TTuple [TInt; TString]) in
+  let previous = Lg.Compiler_environment.of_bindings ["equal", old; "changed", old; "removed", old] in
+  let equal = { old with ty = TTuple [TInt; TString] } in
+  let changed = { old with ocaml_name = "renamed" } in
+  let added = binding "added" TBool in
+  let updated = Lg.Compiler_environment.of_bindings ["equal", equal; "changed", changed; "added", added] in
+  let actual = Lg.Module_environment.changed_bindings previous updated |> List.sort compare in
+  if actual <> List.sort compare ["changed", changed; "added", added] then
+    failwith "module diff lost metadata changes or reported removals/equal bindings"
+
+let test_parameter_summary_cache_retains_alternating_types () =
+  let open Lg.Types in
+  let rec share depth ty =
+    if depth = 0 then ty else let child = share (depth - 1) ty in TTuple [child; child]
+  in
+  let first = share 20 (TVar "first") in
+  let second = share 20 (TVar "second") in
+  let apply = Lg.Type_inference_core.parameter_applier
+      (Lg.Type_solver.of_list [Lg.Type_solver.Declared "unrelated", TInt]) in
+  ignore (apply ("alternating-summary", first));
+  ignore (apply ("alternating-summary", second));
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 200 do
+    if apply ("alternating-summary", first) != first
+       || apply ("alternating-summary", second) != second then
+      failwith "unaffected parameter types must retain identity"
+  done;
+  let allocated = Gc.allocated_bytes () -. before in
+  if allocated > 150_000. then
+    failwith (Printf.sprintf "alternating shared types repeatedly rebuild summaries: %.0f bytes" allocated)
+
+let test_parameter_summary_cache_uses_current_substitutions () =
+  let open Lg.Types in
+  let ty = TTuple [TVar "a"; TVar "b"] in
+  let apply variable replacement =
+    Lg.Type_inference_core.parameter_applier
+      (Lg.Type_solver.of_list [Lg.Type_solver.Declared variable, replacement])
+      ("changing-substitutions", ty)
+  in
+  if apply "a" TInt <> TTuple [TInt; TVar "b"]
+     || apply "b" TString <> TTuple [TVar "a"; TString] then
+    failwith "cached summaries must not reuse substitutions";
+  Gc.full_major ();
+  if apply "a" TBool <> TTuple [TBool; TVar "b"] then
+    failwith "parameter summaries must remain correct after collection"
+
+let test_parameter_refinement_preserves_unaffected_entries () =
+  let open Lg.Types in
+  let shared = Lg.Type_solver.fresh () in
+  let stable = ("stable", TString) in
+  let params = [ ("value", shared); ("linked", TVector shared); stable ] in
+  match Lg.Type_inference_core.constrain_symbol TInt params "value" with
+  | Ok [ ("value", TInt); ("linked", TVector TInt); actual_stable ]
+    when actual_stable == stable -> ()
+  | _ -> failwith "parameter refinement lost shared type evidence or copied an unrelated entry"
+
+let test_parameter_refinement_avoids_noop_list_copies () =
+  let open Lg.Types in
+  let params = List.init 1_000 (fun i -> ("local-" ^ string_of_int i, TInt)) in
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 1_000 do
+    match Lg.Type_inference_core.constrain_symbol TInt params "local-0" with
+    | Ok actual when actual == params -> ()
+    | _ -> failwith "no-op parameter constraints must retain the original list"
+  done;
+  if Gc.allocated_bytes () -. before > 1_000_000. then
+    failwith "no-op parameter constraints copied unrelated locals"
+
+let test_parameter_replacement_preserves_duplicate_and_missing_names () =
+  let open Lg.Types in
+  let stable = ("stable", TBool) in
+  let params = [ ("value", TInt); stable; ("value", TString) ] in
+  let actual = Lg.Type_inference_core.replace_param "value" TChar params in
+  (match actual with
+   | [ ("value", TChar); actual_stable; ("value", TChar) ] when actual_stable == stable -> ()
+   | _ -> failwith "replacement must update all matching names and retain unrelated entries");
+  if not (Lg.Type_inference_core.replace_param "absent" TInt params == params) then
+    failwith "replacing a missing parameter must retain the original list"
+
+let test_parameter_refinement_reuses_unrelated_type_analysis () =
+  let open Lg.Types in
+  let shared = Lg.Type_solver.fresh () in
+  let fields = List.init 160 (fun i -> make_field (":field-" ^ string_of_int i)
+      (TVector (TRef (TOcaml ("Opaque" ^ string_of_int i ^ ".t"))))) in
+  let stable = TRecord fields in
+  let params = ("value", shared) ::
+      List.init 250 (fun i -> ("stable-" ^ string_of_int i, stable)) in
+  let before = Sys.time () in
+  for _ = 1 to 1_000 do
+    match Lg.Type_inference_core.constrain_symbol TInt params "value" with
+    | Ok (("value", TInt) :: _) -> ()
+    | _ -> failwith "cached unrelated type analysis changed the constrained variable"
+  done;
+  let elapsed = Sys.time () -. before in
+  if elapsed > 0.2 then failwith (Printf.sprintf
+      "parameter refinement repeatedly scanned unrelated type trees (%.3fs)" elapsed)
+
+let test_parameter_refinement_keeps_substitutions_and_types_distinct () =
+  let open Lg.Types in
+  let shared = Lg.Type_solver.fresh () in
+  let params = [ ("value", shared); ("linked", TVector shared) ] in
+  let check expected params =
+    match Lg.Type_inference_core.constrain_symbol expected params "value" with
+    | Ok [ ("value", actual); ("linked", TVector linked) ]
+      when equal actual expected && equal linked expected -> ()
+    | _ -> failwith "parameter type analysis reused a stale substitution" in
+  check TInt params;
+  check TString params;
+  let other = Lg.Type_solver.fresh () in
+  check TBool [ ("value", other); ("linked", TVector other) ];
+  let rec nest n ty = if n = 0 then ty else TVector (nest (n - 1) ty) in
+  let rec leaf = function TVector ty -> leaf ty | ty -> ty in
+  match Lg.Type_inference_core.constrain_symbol TInt
+      [ ("value", shared); ("deep", nest 3_000 shared) ] "value" with
+  | Ok [ ("value", TInt); ("deep", deep) ] when leaf deep = TInt -> ()
+  | _ -> failwith "bounded parameter analysis skipped a deep affected type"
+
+let test_parameter_refinement_does_not_retain_temporary_types () =
+  let open Lg.Types in
+  let[@inline never] populate () =
+    let ty = TVector (TRef (Lg.Type_solver.fresh ())) in
+    let weak = Weak.create 1 in
+    Weak.set weak 0 (Some ty);
+    let params = [ ("value", Lg.Type_solver.fresh ()); ("temporary", ty) ] in
+    ignore (Lg.Type_inference_core.constrain_symbol TInt params "value");
+    weak in
+  let weak = populate () in
+  Gc.full_major ();
+  Gc.full_major ();
+  if Weak.check weak 0 then
+    failwith "parameter analysis retained a type from an obsolete inference context"
+
 let test_empty_type_substitutions_preserve_type_identity () =
   let open Lg.Types in
   let ty =
@@ -4171,6 +4509,39 @@ let test_type_solver_preserves_shared_substitution_dags () =
     failwith
       (Printf.sprintf
          "shared type substitution must be linear, but took %.3fs" elapsed)
+
+let test_type_solver_memo_handles_separated_shared_nodes () =
+  let open Lg.Types in
+  let rec shared depth =
+    if depth = 0 then TVar "leaf"
+    else let child = shared (depth - 1) in
+      TTuple [ child; TVector TInt; child ]
+  in
+  let template = shared 17 in
+  let before = Gc.allocated_bytes () in
+  let result = Lg.Type_solver.apply
+      (Lg.Type_solver.of_list [ Lg.Type_solver.Declared "leaf", TString ]) template in
+  let allocated = Gc.allocated_bytes () -. before in
+  let rec check depth = function
+    | TString when depth = 0 -> ()
+    | TTuple [ left; TVector TInt; right ] when depth > 0 ->
+        if left != right then failwith "separated shared nodes were expanded";
+        check (depth - 1) left
+    | _ -> failwith "shared substitution changed the result type"
+  in
+  check 17 result;
+  if allocated > 2_000_000. then
+    failwith "shared substitution allocated an expanded tree"
+
+let test_type_solver_memo_respects_cycle_context () =
+  let open Lg.Types in
+  let shared = TList (TVar "y") in
+  let substitutions = Lg.Type_solver.of_list
+      [ Lg.Type_solver.Declared "x", shared; Lg.Type_solver.Declared "y", shared ] in
+  let result = Lg.Type_solver.apply substitutions (TTuple [ TVar "x"; TVar "y" ]) in
+  let expected = TTuple [ TList (TList (TVar "y")); TList (TVar "y") ] in
+  if result <> expected then
+    failwith "substitution memo reused a result from a different cycle context"
 
 let test_type_solver_applies_wide_substitutions_linearly () =
   let open Lg.Types in
@@ -4549,6 +4920,72 @@ let test_frontend_location_index_avoids_quadratic_scans () =
       (Printf.sprintf
          "frontend location construction took %.2fs; expected at most 1.00s"
          elapsed)
+
+let test_type_solver_matching_fields_preserves_order () =
+  let open Lg.Types in
+  let padding = List.init 40 (fun i -> make_field (":pad" ^ string_of_int i) TUnit) in
+  let right = make_field ":a" TInt :: make_field ":a" TString
+              :: make_field ":b" TBool :: padding in
+  let left = make_field ":b" TFloat :: make_field ":missing" TUnit
+             :: make_field ":a" TString :: make_field ":a" TInt :: padding in
+  let expected = (TFloat, TBool) :: (TString, TInt) :: (TInt, TInt)
+                 :: List.map (fun _ -> TUnit, TUnit) padding in
+  if Lg.Type_solver.matching_fields left right <> expected then
+    failwith "record matching must preserve left order and the first right duplicate";
+  if Lg.Type_solver.matching_fields [] right <> []
+     || Lg.Type_solver.matching_fields left [] <> [] then
+    failwith "empty records must have no matching fields"
+
+let test_type_solver_matching_fields_scales () =
+  let open Lg.Types in
+  let measure size =
+    let fields = List.init size (fun i -> make_field (":field" ^ string_of_int i) TInt) in
+    let right = List.rev fields in
+    let started = Sys.time () in
+    for _ = 1 to 40 do
+      let pairs = Lg.Type_solver.matching_fields fields right in
+      if List.length pairs <> size then failwith "record matches were lost"
+    done;
+    Sys.time () -. started
+  in
+  let small = measure 128 in
+  let large = measure 2048 in
+  if large > (40. *. small) +. 0.015 then
+    failwith (Printf.sprintf "record matching scales quadratically: %.4fs / %.4fs" small large)
+
+let test_new_record_declaration_does_not_scan_unrelated_bindings () =
+  let open Lg.Types in
+  let env = List.init 5_000 (fun i ->
+      let name = "unrelated_" ^ string_of_int i in
+      name, binding name (TFn ([ TVector (TOcaml (name ^ ".t")) ], TString)))
+      |> Lg.Compiler_environment.of_bindings in
+  let before = Gc.allocated_bytes () in
+  for i = 1 to 20 do
+    match Lg.Type_definition_elaborator.compile_type_record_fields
+        "declarations" env 0 ("new_" ^ string_of_int i) [] [ make_field ":value" TInt ] with
+    | Ok _ -> ()
+    | Error _ -> failwith "new independent record declaration failed"
+  done;
+  if Gc.allocated_bytes () -. before > 3_000_000. then
+    failwith "new record declarations scanned unrelated binding types"
+
+let test_record_declaration_refreshes_forward_consumers () =
+  let open Lg.Types in
+  let scope = "forward_refresh" and name = "item" in
+  let type_id = Lg.Type_id.create ~owner:[scope] ~name in
+  let stale = named_record ~type_id ~type_name:name ~set_module_name:"Set_item" [] in
+  let key = Lg.Resolver.record_type_key scope name in
+  let env = Lg.Compiler_environment.of_bindings
+      [ key, binding ~forward_declared:true name stale;
+        "consumer", binding "consumer" (TFn ([ TNullable stale ], TVector stale)) ] in
+  match Lg.Type_definition_elaborator.compile_type_record_fields
+      scope env 0 name [] [ make_field ":value" TInt ] with
+  | Error _ -> failwith "forward record declaration failed"
+  | Ok (_, env, _, _) ->
+      match Lg.Compiler_environment.find_opt "consumer" env with
+      | Some { ty = TFn ([ TNullable (TNamed_record input) ], TVector (TNamed_record output)); _ }
+        when input.fields = [ make_field ":value" TInt ] && output.fields = input.fields -> ()
+      | _ -> failwith "record declaration lost a nested forward consumer"
 
 let test_refresh_named_record_realigns_forward_declared_records () =
   let open Lg.Types in
@@ -24975,7 +25412,7 @@ let test_melange_array_dot_map_uses_static_array_map () =
   if
     not
       (string_contains_substring melange_source
-         "Lg_runtime.Runtime_array_melange.map")
+         "Lg_runtime_melange.Runtime_array_melange.map")
   then failwith "expected Melange array maps to use the native JS array map"
 
 let test_native_and_melange_language_integers_use_ocaml_int () =
@@ -37042,7 +37479,7 @@ let test_ocaml_uncurried_call_emits_melange_direct_application () =
   if
     not
       (string_contains_substring ocaml_source
-         "Lg_runtime.Runtime_array_melange.call2")
+         "Lg_runtime_melange.Runtime_array_melange.call2")
   then failwith "expected a type-safe uncurried Melange application";
   Lg.Compiler.compile_string {|(uncurried-call (fn [x] x) 1 2)|}
   |> expect_error_contains
@@ -37065,7 +37502,7 @@ let test_source_array_binary_search_uses_native_indices () =
   in
   if
     string_contains_substring melange_source
-      "Lg_runtime.Runtime_array_melange.binary_search"
+      "Lg_runtime_melange.Runtime_array_melange.binary_search"
   then failwith "source binary search must not call the legacy runtime algorithm";
   if string_contains_substring melange_source "Int64.to_float" then
     failwith "Melange binary search results must remain host indexes";
@@ -55703,6 +56140,25 @@ let tests =
       test_empty_type_substitutions_preserve_type_identity );
     ( "unrelated type substitutions preserve type identity",
       test_unrelated_type_substitutions_preserve_type_identity );
+    ( "type_solver_scalar_substitutions_do_not_allocate_traversal_state",
+      test_type_solver_scalar_substitutions_do_not_allocate_traversal_state );
+    ( "record field lookup preserves concrete fields", test_record_field_lookup_preserves_concrete_fields );
+    ( "record field lookup preserves static fields when specializing", test_record_field_lookup_preserves_static_fields_when_specializing );
+    ( "type solver unrelated composites avoid mapping allocations", test_type_solver_unrelated_composites_avoid_mapping_allocations );
+    ( "type solver unrelated shared DAG check is bounded", test_type_solver_unrelated_shared_dag_check_is_bounded );
+    ( "type solver memo handles separated shared nodes", test_type_solver_memo_handles_separated_shared_nodes );
+    ( "type solver memo respects cycle context", test_type_solver_memo_respects_cycle_context );
+    ( "parameter equality preserves complete type evidence", test_parameter_equality_preserves_complete_type_evidence );
+    ( "parameter equality skips identical type graphs", test_parameter_equality_skips_identical_type_graphs );
+    ( "large record merge preserves order and duplicate metadata", test_large_record_merge_preserves_order_and_duplicate_metadata );
+    ( "large record merge avoids quadratic copies", test_large_record_merge_avoids_quadratic_copies );
+    ( "type summary visits shared graphs once", test_type_summary_visits_shared_graphs_once );
+    ( "parameter refinement preserves unaffected entries", test_parameter_refinement_preserves_unaffected_entries );
+    ( "parameter refinement avoids no-op list copies", test_parameter_refinement_avoids_noop_list_copies );
+    ( "parameter replacement preserves duplicate and missing names", test_parameter_replacement_preserves_duplicate_and_missing_names );
+    ( "parameter refinement reuses unrelated type analysis", test_parameter_refinement_reuses_unrelated_type_analysis );
+    ( "parameter refinement keeps substitutions and types distinct", test_parameter_refinement_keeps_substitutions_and_types_distinct );
+    ( "parameter refinement does not retain temporary types", test_parameter_refinement_does_not_retain_temporary_types );
     ( "type solver applies deep substitutions linearly",
       test_type_solver_applies_deep_substitutions_linearly );
     ( "assoc field inference avoids full environment scans",
@@ -55743,6 +56199,14 @@ let tests =
       test_protocol_result_context_does_not_constrain_arguments );
     ( "frontend location index avoids quadratic scans",
       test_frontend_location_index_avoids_quadratic_scans );
+    ( "module binding diff skips unchanged shared types", test_module_binding_diff_skips_unchanged_shared_types );
+    ( "module binding diff preserves changes", test_module_binding_diff_preserves_changes );
+    ( "parameter summary cache retains alternating types", test_parameter_summary_cache_retains_alternating_types );
+    ( "parameter summary cache uses current substitutions", test_parameter_summary_cache_uses_current_substitutions );
+    ( "type solver matching fields preserves order", test_type_solver_matching_fields_preserves_order );
+    ( "type solver matching fields scales", test_type_solver_matching_fields_scales );
+    ( "new record declaration does not scan unrelated bindings", test_new_record_declaration_does_not_scan_unrelated_bindings );
+    ( "record declaration refreshes forward consumers", test_record_declaration_refreshes_forward_consumers );
     ( "refresh named record realigns forward declared records",
       test_refresh_named_record_realigns_forward_declared_records );
     ( "refresh named record preserves shared types",

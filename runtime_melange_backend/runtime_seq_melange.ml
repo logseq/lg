@@ -1,3 +1,5 @@
+open Lg_runtime
+
 external call1 : ('a -> 'b) -> int -> 'a -> 'b = "call" [@@mel.send]
 external call0 : (unit -> 'a) -> int -> unit -> 'a = "call" [@@mel.send]
 external call2 : ('a -> 'b -> 'c) -> int -> 'a -> 'b -> 'c = "call"

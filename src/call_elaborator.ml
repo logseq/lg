@@ -9350,7 +9350,7 @@ let create ~compile_expr =
                        ( Semantic_ir.Ident
                            (match Env.target env with
                            | Target.Melange ->
-                               "Lg_runtime.Runtime_seq_melange.defer"
+                               "Lg_runtime_melange.Runtime_seq_melange.defer"
                            | Target.Native | Target.Js_of_ocaml ->
                                "Lg_runtime.Runtime_seq.defer"),
                          [ normalized_thunk ] )))
@@ -9974,7 +9974,7 @@ let create ~compile_expr =
             Ok
               (typed_ir TFloat
                  (Semantic_ir.Apply
-                    (Semantic_ir.Ident "Lg_runtime.Runtime_time_melange.now", [])))
+                    (Semantic_ir.Ident "Lg_runtime_melange.Runtime_time_melange.now", [])))
         | Target.Melange, _ ->
             Error.error "js/performance.now expects 0 arguments"
         | _, _ ->
@@ -11175,7 +11175,7 @@ let create ~compile_expr =
                         let map, arguments =
                           match Env.target env with
                           | Target.Melange ->
-                              ( "Lg_runtime.Runtime_array_melange.map",
+                              ( "Lg_runtime_melange.Runtime_array_melange.map",
                                 [ receiver; callback ] )
                           | Target.Native | Target.Js_of_ocaml ->
                               ("Array.map", [ callback; receiver ])
@@ -11684,7 +11684,7 @@ let create ~compile_expr =
                                  (apply
                                     (match Env.target env with
                                     | Target.Melange ->
-                                        "Lg_runtime.Runtime_seq_melange.unfold_chunks"
+                                        "Lg_runtime_melange.Runtime_seq_melange.unfold_chunks"
                                     | Target.Native | Target.Js_of_ocaml ->
                                         "Lg_runtime.Runtime_seq.unfold_chunks")
                                     [ step.semantic_expr;
@@ -11733,8 +11733,8 @@ let create ~compile_expr =
                             (match Env.target env with
                             | Target.Melange ->
                                 if String.equal name "seq-unfold" then
-                                  "Lg_runtime.Runtime_seq_melange.unfold_memoized"
-                                else "Lg_runtime.Runtime_seq_melange.unfold"
+                                  "Lg_runtime_melange.Runtime_seq_melange.unfold_memoized"
+                                else "Lg_runtime_melange.Runtime_seq_melange.unfold"
                             | Target.Native | Target.Js_of_ocaml ->
                                 if String.equal name "seq-unfold" then
                                   "Lg_runtime.Runtime_seq.unfold_memoized"
@@ -11766,7 +11766,7 @@ let create ~compile_expr =
               (typed_ir return_ty
                  (match Env.target env with
                  | Target.Melange ->
-                     apply "Lg_runtime.Runtime_array_melange.call2"
+                     apply "Lg_runtime_melange.Runtime_array_melange.call2"
                        [ fn; Semantic_ir.Int 0; left.semantic_expr;
                          right.semantic_expr ]
                  | Target.Native | Target.Js_of_ocaml ->
@@ -12413,7 +12413,7 @@ let create ~compile_expr =
             let make =
               match Env.target env with
               | Target.Melange ->
-                  "Lg_runtime.Runtime_weak_melange.make"
+                  "Lg_runtime_melange.Runtime_weak_melange.make"
               | Target.Native | Target.Js_of_ocaml ->
                   "Lg_runtime.Runtime_weak_stdlib.make"
             in
@@ -14508,7 +14508,7 @@ let create ~compile_expr =
                   | Target.Melange ->
                       Semantic_ir.Apply
                         ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_number_melange.is_nan",
+                            "Lg_runtime_melange.Runtime_number_melange.is_nan",
                           [ value.semantic_expr ] )
                   | Target.Native | Target.Js_of_ocaml -> invalid_nan_argument)
               | _ -> invalid_nan_argument
@@ -16435,7 +16435,7 @@ let create ~compile_expr =
                                   apply
                                     (match Env.target env with
                                     | Target.Melange ->
-                                        "Lg_runtime.Runtime_seq_melange.transformer_sequence"
+                                        "Lg_runtime_melange.Runtime_seq_melange.transformer_sequence"
                                     | Target.Native | Target.Js_of_ocaml ->
                                         "Lg_runtime.Runtime_seq.transformer_sequence")
                                     [ xform.semantic_expr; sequence ]
@@ -16892,7 +16892,7 @@ let create ~compile_expr =
         let function_name, arguments =
           match (Env.target env, function_name, arguments) with
           | Target.Melange, "Array.map", [ fn; array ] ->
-              ("Lg_runtime.Runtime_array_melange.map", [ array; fn ])
+              ("Lg_runtime_melange.Runtime_array_melange.map", [ array; fn ])
           | _ -> (function_name, arguments)
         in
         match (function_name, arguments) with

@@ -4188,7 +4188,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 | Target.Melange ->
                                     Semantic_ir.Apply
                                       ( Semantic_ir.Ident
-                                          "Lg_runtime.Runtime_array_melange.call0",
+                                          "Lg_runtime_melange.Runtime_array_melange.call0",
                                         [ sequence; Semantic_ir.Int 0 ] )
                                 | Target.Native | Target.Js_of_ocaml ->
                                     Semantic_ir.Apply

@@ -1233,7 +1233,8 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
   let packages =
     match target with
     | Target.Melange ->
-        "melange" :: "lg.rrbvec" :: "lg.runtime" :: "lg.edn-backend" :: packages
+        "melange" :: "lg.rrbvec" :: "lg.runtime" :: "lg.runtime-melange"
+        :: "lg.edn-backend" :: packages
     | Target.Js_of_ocaml -> "re" :: "js_of_ocaml" :: packages
     | Target.Native ->
         "re" :: "lg.rrbvec" :: "lg.runtime" :: "lg.edn-backend.native"

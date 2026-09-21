@@ -553,7 +553,9 @@ The selected platform branch takes precedence over `:default`. Unselected
 branches are parsed but are not elaborated or type checked. The generated
 program depends on the small `lg.runtime` library, which builds in native,
 bytecode/js_of_ocaml, and Melange modes; the compiler and its `compiler-libs`
-dependency remain native tools.
+dependency remain native tools. Melange programs additionally use
+`lg.runtime-melange` for JavaScript-specific operations. Keeping those modules
+in a separate library avoids a Melange PPX dependency in native runtime builds.
 
 Compile the example to OCaml:
 
@@ -655,6 +657,19 @@ default. Only prefixes taking at least 100 ms to compile are cached. Set
 `LG_COMPILE_CACHE_MIN_SECONDS` or `LG_COMPILE_CACHE_MAX_BYTES` to tune these
 limits, `LG_CACHE_DIR` to relocate the cache, or
 `LG_DISABLE_COMPILE_CACHE=1` to disable it.
+
+When a saved prefix has already been compiled to an OCaml module, chunk
+compilation can reuse its interface:
+
+```sh
+lg --compile-files-chunk-from app.state --prefix-interface app.cmi tests -o tests.ml
+```
+
+The interface must correspond to the complete saved prefix. Its dependencies
+must be available on the OCaml include path. LG still checks the new sources
+and generated OCaml; the output opens the prefix module. The CMI content is
+part of the suffix cache key, so replacing an interface invalidates cached
+continuations. Build rules must declare the CMI as a dependency.
 
 Explicit saved compiler states use the same versioned, checksummed envelope and
 are rejected before deserialization when their payload exceeds 512 MiB. Cache

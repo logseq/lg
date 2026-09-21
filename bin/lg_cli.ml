@@ -4,7 +4,8 @@ let usage () =
      output.mli] | --run <input.cljc> | --compile-files <input.cljc>... -o \
      output.ml | --compile-files-state <state> <input.cljc>... -o output.ml | \
      --compile-files-from <state> <input.cljc>... -o output.ml | \
-     --compile-files-chunk-from <state> <input.cljc>... -o output.ml | \
+     --compile-files-chunk-from <state> [--prefix-interface <prefix.cmi>] \
+     <input.cljc>... -o output.ml | \
      --compile-files-from-state <input-state> <output-state> <input.cljc>... -o \
      output.ml | \
      --compile-chunk-from <state> <input.cljc> [-o output.ml] | \
@@ -801,6 +802,7 @@ type mode =
       input_paths : string list;
       output_path : string;
       include_prefix : bool;
+      prefix_interface : string option;
     }
   | Compile_files_from_state of {
       state_path : string;
@@ -901,9 +903,16 @@ let parse_args argv =
                 input_paths = List.rev reversed_inputs;
                 output_path;
                 include_prefix = true;
+                prefix_interface = None;
               }
         | _ -> usage ())
     | _program :: "--compile-files-chunk-from" :: state_path :: args -> (
+        let prefix_interface, args =
+          match args with
+          | "--prefix-interface" :: path :: rest -> (Some path, rest)
+          | [ "--prefix-interface" ] -> usage ()
+          | _ -> (None, args)
+        in
         match List.rev args with
         | output_path :: "-o" :: reversed_inputs ->
             Compile_files_from
@@ -912,6 +921,7 @@ let parse_args argv =
                 input_paths = List.rev reversed_inputs;
                 output_path;
                 include_prefix = false;
+                prefix_interface;
               }
         | _ -> usage ())
     | _program :: "--compile-files-from-state" :: state_path
@@ -2227,8 +2237,41 @@ let compile_chunk_from_saved_state ?reader_target target state_path input_path =
                 |> Result.map (fun (state, compilation) ->
                        (state, packages, compilation)))))
 
+let prepare_prefix_interface target = function
+  | None -> Ok None
+  | Some path ->
+      if not (Filename.check_suffix path ".cmi") then
+        compiler_error "compiled prefix interface must be a .cmi file"
+      else
+        let name = Filename.basename path |> Filename.remove_extension in
+        let module_name = String.capitalize_ascii name in
+        let valid_name =
+          String.length module_name > 0
+          && module_name.[0] >= 'A' && module_name.[0] <= 'Z'
+          && String.for_all
+               (function
+                 | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '\'' -> true
+                 | _ -> false)
+               module_name
+        in
+        if not valid_name then compiler_error "invalid compiled prefix module name"
+        else
+          try
+            let digest = Digest.file path |> Digest.to_hex in
+            let directory = Filename.dirname path in
+            let directory =
+              if Filename.is_relative directory then
+                Filename.concat (Sys.getcwd ()) directory
+              else directory
+            in
+            Lg.Ocaml_signature.set_melange_target (target = Lg.Target.Melange);
+            Lg.Ocaml_signature.add_include_dirs [ directory ];
+            Ok (Some ("include " ^ module_name ^ "\n", module_name ^ digest))
+          with Sys_error message -> compiler_error message
+
 let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
-    ?reader_target target state_path input_paths =
+    ?reader_target ?prefix_interface target state_path input_paths =
+  Result.bind (prepare_prefix_interface target prefix_interface) (fun prefix ->
   match
     timed_step ("read saved state " ^ state_path) (fun () ->
         read_saved_compilation_state state_path)
@@ -2268,7 +2311,10 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
           (fun sources ->
         let initial_prefix_key =
           if use_cache then
-            saved_state_prefix_key ~target ?reader_target state_path
+            let key = saved_state_prefix_key ~target ?reader_target state_path in
+            match prefix with
+            | None -> key
+            | Some (_, digest) -> Digest.to_hex (Digest.string (key ^ digest))
           else "cache-disabled"
         in
         let cached_outputs, checkpoint =
@@ -2310,7 +2356,9 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
                     (timed_step "resume OCaml environment" (fun () ->
                          if check_ocaml then
                            resume_compiler_state ~target ~packages
-                             ~sources:(saved.ocaml_source :: List.rev outputs)
+                             ~sources:((match prefix with
+                               | None -> saved.ocaml_source
+                               | Some (source, _) -> source) :: List.rev outputs)
                              compiler_state
                          else read_compiler_state compiler_state))
                     (fun state ->
@@ -2339,7 +2387,7 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
         compile initial_prefix_key (Replayed saved.state) [] [] sources))
     in
     if use_cache then prune_compile_cache ();
-    result)
+    result))
 
 let infer_interface target input_path =
   let source = read_file input_path in
@@ -2534,9 +2582,10 @@ let () =
               ocaml_source;
             })
   | Compile_files_from
-      { state_path; input_paths; output_path; include_prefix } -> (
+      { state_path; input_paths; output_path; include_prefix; prefix_interface } -> (
       match
-        compile_files_from_saved_state ?reader_target target state_path input_paths
+        compile_files_from_saved_state ?reader_target ?prefix_interface target
+          state_path input_paths
       with
       | Error err -> report_error err
       | Ok (_state, _packages, ocaml_source, diagnostics) ->
@@ -2550,7 +2599,15 @@ let () =
               in
               concatenate_compilation_outputs
                 [ saved.ocaml_source; ocaml_source ]
-            else ocaml_source
+            else
+              match prefix_interface with
+              | None -> ocaml_source
+              | Some path ->
+                  let module_name =
+                    Filename.basename path |> Filename.remove_extension
+                    |> String.capitalize_ascii
+                  in
+                  "open " ^ module_name ^ "\n" ^ ocaml_source
           in
           write_output (Some output_path) ocaml_source)
   | Compile_files_from_state

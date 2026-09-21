@@ -5,12 +5,13 @@
 
 (ns clojure.core
   (:require [ocaml.package/lg.runtime]
+            #?(:melange [ocaml.package/lg.runtime-melange])
             [ocaml.package/lg.rrbvec]
             [ocaml.Buffer :as buffer]
             [ocaml.Stdlib :as stdlib]
             [ocaml.Rrbvec :as rrb-vector]
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
-            [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
+            #?(:melange [ocaml.Lg_runtime_melange.Runtime_array_melange :as runtime-array-melange])
             [ocaml.Lg_runtime.Runtime_chunk_buffer :as runtime-chunk-buffer]
             [ocaml.Lg_runtime.Runtime_collection :as runtime-collection]
             [ocaml.Lg_runtime.Runtime_future :as runtime-future]
@@ -18,14 +19,14 @@
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_int_melange :as runtime-int-melange]
             [ocaml.Lg_runtime.Runtime_map :as runtime-map]
-            [ocaml.Lg_runtime.Runtime_number_melange :as runtime-number-melange]
+            #?(:melange [ocaml.Lg_runtime_melange.Runtime_number_melange :as runtime-number-melange])
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
             [ocaml.Lg_runtime.Runtime_seq :as runtime-seq]
             [ocaml.Lg_runtime.Runtime_static_value :as runtime-static-value]
             [ocaml.Lg_runtime.Runtime_string :as runtime-string]
             [ocaml.Lg_runtime.Runtime_time :as runtime-time]
-            [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
+            #?(:melange [ocaml.Lg_runtime_melange.Runtime_time_melange :as runtime-time-melange])
             [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]
             [ocaml.Lg_runtime.Runtime_weak :as runtime-weak]))
 
@@ -4520,7 +4521,7 @@
 
 (defn- elapsed-time-string [^:float elapsed]
   #?(:native (str elapsed)
-     :default (runtime-time-melange/format-elapsed elapsed)))
+     :default (runtime-time/format-elapsed elapsed)))
 
 (defmacro time
   "Evaluates `expr` once, prints elapsed milliseconds with [[prn]], and returns its value."

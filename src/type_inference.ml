@@ -9071,7 +9071,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     restore_explicit_parameter_types ~resolve_named_record specs
                       inferred
                   in
-                  if local_params = inferred then Ok inferred else
+                  if equal_parameters local_params inferred then Ok inferred else
                   let current = state local_params and next = state inferred in
                   if current = next then Ok inferred
                   else if List.mem next seen then
@@ -9292,7 +9292,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             (fun (name, ty) -> (name, deduplicate_protocol_constraints ty))
             inferred
         in
-        if params = inferred then Ok inferred else
+        if equal_parameters params inferred then Ok inferred else
         let current = state params and next = state inferred in
         if current = next then Ok inferred
         else if List.mem next seen then

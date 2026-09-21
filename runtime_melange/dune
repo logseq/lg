@@ -5,4 +5,4 @@
  (modes melange)
  (preprocess
   (pps melange.ppx))
- (libraries melange-edn-melange melange-transit-melange))
+ (libraries lg.runtime-melange melange-edn-melange melange-transit-melange))

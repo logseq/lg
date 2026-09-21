@@ -55,6 +55,9 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
     let type_name =
       Option.value emitted_name ~default:(Names.sanitize_name name)
     in
+    (* Forward defrecords publish placeholder metadata before their declaration.
+       A new record cannot have existing consumers of such a placeholder. *)
+    let replaces_record_metadata = Env.mem (record_type_key scope name) env in
     let existing_record =
       if reuse_existing then
         match Resolver.lookup_type_declaration scope env name with
@@ -95,7 +98,7 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
             in
             let env =
               match record_ty with
-              | TNamed_record record ->
+              | TNamed_record record when replaces_record_metadata ->
                   let refresh = Types.refresh_named_record record in
                   Env.fold
                     (fun key (binding : Types.binding) env ->

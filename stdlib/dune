@@ -105,6 +105,8 @@
   clojure/zip.lgi
   clojure/zip.cljc
   %{lib:lg.runtime:lg_runtime.cma}
+  %{lib:lg.runtime-melange:lg_runtime_melange.cma}
+  (alias ../runtime_melange_backend/all)
   ../bin/lg_cli.exe)
  (action
   (run
@@ -156,6 +158,7 @@
   lg.edn-backend
   lg.edn-backend.melange
   lg.runtime
+  lg.runtime-melange
   lg.runtime-melange-aliases
   rrbvec))
 

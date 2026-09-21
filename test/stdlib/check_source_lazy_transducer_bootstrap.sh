@@ -30,7 +30,7 @@ if rg -n 'Runtime_dynamic|Obj\.magic|__lg_dynamic|to_dynamic|of_dynamic' \
   "$root/stdlib/clojure/core.cljc" \
   "$root/stdlib/clojure/core.lgi" \
   "$root/runtime/runtime_seq.ml" \
-  "$root/runtime/runtime_seq_melange.ml" >/dev/null; then
+  "$root/runtime_melange_backend/runtime_seq_melange.ml" >/dev/null; then
   echo "lazy/transducer source layer introduced a dynamic escape hatch" >&2
   exit 1
 fi

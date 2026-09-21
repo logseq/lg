@@ -1,3 +1,5 @@
+open Lg_runtime
+
 val defer : (unit -> unit -> 'a) -> unit -> 'a
 
 val transformer_sequence :

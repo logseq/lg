@@ -1,3 +1,5 @@
+open Lg_runtime
+
 type 'a weak_ref
 
 external create : 'a -> 'a weak_ref = "WeakRef" [@@mel.new]

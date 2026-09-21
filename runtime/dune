@@ -11,15 +11,6 @@
  (js_of_ocaml
   (javascript_files runtime_time_stubs.js))
  (ocamlopt_flags :standard -no-g)
- (preprocess
-  (per_module
-   ((pps melange.ppx)
-    runtime_array_melange
-    runtime_math_melange
-    runtime_number_melange
-    runtime_seq_melange
-    runtime_time_melange
-    runtime_weak_melange)))
  (libraries rrbvec lg.edn-backend))
 
 (install

@@ -5,7 +5,7 @@
 
 (ns cljs.math
   (:require [ocaml.Lg_runtime.Runtime_math :as runtime-math]
-            [ocaml.Lg_runtime.Runtime_math_melange :as runtime-math-melange]
+            #?(:melange [ocaml.Lg_runtime_melange.Runtime_math_melange :as runtime-math-melange])
             [ocaml.Lg_runtime.Runtime_exception :as runtime-exception]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Stdlib :as stdlib]))

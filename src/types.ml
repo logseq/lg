@@ -1439,8 +1439,14 @@ let record_fields = function
   | TNamed_record record ->
       let fields =
         if
-          List.length record.type_parameters
+          record.type_parameters <> []
+          && List.length record.type_parameters
           = List.length record.type_arguments
+          && not (List.for_all2
+                    (fun parameter -> function
+                      | TVar name -> String.equal parameter name
+                      | _ -> false)
+                    record.type_parameters record.type_arguments)
         then
           let substitutions =
             Type_solver.of_list
@@ -1449,12 +1455,10 @@ let record_fields = function
                 (Type_solver.Declared parameter, argument))
               record.type_parameters record.type_arguments)
           in
-          List.map
+          Type_solver.map_preserving_identity
             (fun (field : field) ->
-              {
-                field with
-                ty = Type_solver.apply substitutions field.ty;
-              })
+              let ty = Type_solver.apply substitutions field.ty in
+              if ty == field.ty then field else { field with ty })
             record.fields
         else record.fields
       in
