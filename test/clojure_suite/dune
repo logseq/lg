@@ -16,8 +16,17 @@
    --exclusions
    %{dep:promotion_exclusions.tsv})))
 
+; The promoted suite compiles as a shared prefix module plus parallel chunks:
+; the base rules compile the clojure.test runtime prefix once and save its
+; state; the chunks rules then run one script that fans out N lg_cli
+; processes in parallel, each compiling a round-robin slice of the promoted
+; namespaces off that state (emitting `include` of the base module instead
+; of recompiling the prefix) plus a runner module. Chunk modules append a
+; `__clj_smoke_ready` marker which the runner references so module
+; initialization order is deterministic before it calls run-tests.
+
 (rule
- (target clojure_test_suite_smoke_native.ml)
+ (targets clj_smoke_native_base.ml clj_smoke_native_base.state)
  (deps
   ../../stdlib/lg_stdlib_native.state
   ../../test_runner/clojure/test.cljc
@@ -26,7 +35,6 @@
   scan_clojure_suite.py
   promoted_namespaces.txt
   lg_portability.cljc
-  (source_tree upstream)
   (source_tree ../../src)
   ../../bin/lg_cli.exe)
  (action
@@ -36,6 +44,8 @@
    (run
     python3
     %{dep:compile_promoted_smoke.py}
+    --mode
+    base
     --lg-cli
     %{exe:../../bin/lg_cli.exe}
     --target
@@ -48,20 +58,22 @@
     %{dep:../../test_runner/clojure/test_native.cljc}
     --portability
     %{dep:lg_portability.cljc}
-    --suite-dir
-    upstream/clojure/core_test
     --manifest
     %{dep:promoted_namespaces.txt}
+    --emit-state
+    clj_smoke_native_base.state
     --working-directory
     %{workspace_root}
     --output
-    %{target}
+    clj_smoke_native_base.ml
     --open-module
     Lg_stdlib_native))))
 
-(executable
- (name clojure_test_suite_smoke_native)
- (modules clojure_test_suite_smoke_native)
+(library
+ (name clj_smoke_native_base)
+ (modes native)
+ (wrapped false)
+ (modules clj_smoke_native_base)
  (flags
   (:standard -w -26-27-32-37-69))
  (libraries
@@ -74,15 +86,22 @@
   rrbvec))
 
 (rule
- (target clojure_test_suite_smoke_melange.ml)
+ (targets
+  clj_smoke_native_chunk_0.ml
+  clj_smoke_native_chunk_1.ml
+  clj_smoke_native_chunk_2.ml
+  clj_smoke_native_chunk_3.ml
+  clj_smoke_native_chunk_4.ml
+  clj_smoke_native_chunk_5.ml
+  clj_smoke_native_chunk_6.ml
+  clj_smoke_native_chunk_7.ml
+  clojure_test_suite_smoke_native.ml)
  (deps
-  ../../stdlib/lg_stdlib_melange.state
-  ../../test_runner/clojure/test.cljc
-  ../../test_runner/clojure/test_melange.cljc
+  clj_smoke_native_base.state
+  .clj_smoke_native_base.objs/byte/clj_smoke_native_base.cmi
   compile_promoted_smoke.py
   scan_clojure_suite.py
   promoted_namespaces.txt
-  lg_portability.cljc
   (source_tree upstream)
   (source_tree ../../src)
   ../../bin/lg_cli.exe)
@@ -93,6 +112,78 @@
    (run
     python3
     %{dep:compile_promoted_smoke.py}
+    --mode
+    chunks
+    --lg-cli
+    %{exe:../../bin/lg_cli.exe}
+    --target
+    native
+    --chunk-state
+    clj_smoke_native_base.state
+    --prefix-interface
+    .clj_smoke_native_base.objs/byte/clj_smoke_native_base.cmi
+    --suite-dir
+    upstream/clojure/core_test
+    --manifest
+    %{dep:promoted_namespaces.txt}
+    --chunks
+    8
+    --module-prefix
+    Clj_smoke_native_chunk_
+    --run-module
+    Lg_test_alcotest
+    --runner-output
+    clojure_test_suite_smoke_native.ml
+    --working-directory
+    %{workspace_root}
+    --output
+    clj_smoke_native_chunk))))
+
+(executable
+ (name clojure_test_suite_smoke_native)
+ (modules
+  clj_smoke_native_chunk_0
+  clj_smoke_native_chunk_1
+  clj_smoke_native_chunk_2
+  clj_smoke_native_chunk_3
+  clj_smoke_native_chunk_4
+  clj_smoke_native_chunk_5
+  clj_smoke_native_chunk_6
+  clj_smoke_native_chunk_7
+  clojure_test_suite_smoke_native)
+ (flags
+  (:standard -w -26-27-32-37-69))
+ (libraries
+  clj_smoke_native_base
+  lg_compiled_stdlib_native
+  lg.runtime
+  lg.edn-backend.native
+  lg-test.runtime
+  lg-test.alcotest
+  re
+  rrbvec))
+
+(rule
+ (targets clj_smoke_melange_base.ml clj_smoke_melange_base.state)
+ (deps
+  ../../stdlib/lg_stdlib_melange.state
+  ../../test_runner/clojure/test.cljc
+  ../../test_runner/clojure/test_melange.cljc
+  compile_promoted_smoke.py
+  scan_clojure_suite.py
+  promoted_namespaces.txt
+  lg_portability.cljc
+  (source_tree ../../src)
+  ../../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    python3
+    %{dep:compile_promoted_smoke.py}
+    --mode
+    base
     --lg-cli
     %{exe:../../bin/lg_cli.exe}
     --target
@@ -105,24 +196,105 @@
     %{dep:../../test_runner/clojure/test_melange.cljc}
     --portability
     %{dep:lg_portability.cljc}
+    --manifest
+    %{dep:promoted_namespaces.txt}
+    --emit-state
+    clj_smoke_melange_base.state
+    --working-directory
+    %{workspace_root}
+    --output
+    clj_smoke_melange_base.ml
+    --open-module
+    Lg_stdlib_melange))))
+
+(library
+ (name clj_smoke_melange_base)
+ (modes melange)
+ (wrapped false)
+ (modules clj_smoke_melange_base)
+ (flags
+  (:standard -w -26-27-32-37-69))
+ (libraries
+  lg_compiled_stdlib_melange
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  lg-test.runtime
+  lg-test.melange
+  rrbvec))
+
+(rule
+ (targets
+  clj_smoke_melange_chunk_0.ml
+  clj_smoke_melange_chunk_1.ml
+  clj_smoke_melange_chunk_2.ml
+  clj_smoke_melange_chunk_3.ml
+  clj_smoke_melange_chunk_4.ml
+  clj_smoke_melange_chunk_5.ml
+  clj_smoke_melange_chunk_6.ml
+  clj_smoke_melange_chunk_7.ml
+  clojure_test_suite_smoke_melange.ml)
+ (deps
+  clj_smoke_melange_base.state
+  .clj_smoke_melange_base.objs/melange/clj_smoke_melange_base.cmi
+  compile_promoted_smoke.py
+  scan_clojure_suite.py
+  promoted_namespaces.txt
+  (source_tree upstream)
+  (source_tree ../../src)
+  ../../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    python3
+    %{dep:compile_promoted_smoke.py}
+    --mode
+    chunks
+    --lg-cli
+    %{exe:../../bin/lg_cli.exe}
+    --target
+    melange
+    --chunk-state
+    clj_smoke_melange_base.state
+    --prefix-interface
+    .clj_smoke_melange_base.objs/melange/clj_smoke_melange_base.cmi
     --suite-dir
     upstream/clojure/core_test
     --manifest
     %{dep:promoted_namespaces.txt}
+    --chunks
+    8
+    --module-prefix
+    Clj_smoke_melange_chunk_
+    --run-module
+    Lg_test_melange
+    --runner-output
+    clojure_test_suite_smoke_melange.ml
     --working-directory
     %{workspace_root}
     --output
-    %{target}
-    --open-module
-    Lg_stdlib_melange))))
+    clj_smoke_melange_chunk))))
 
 (melange.emit
  (target clojure-test-suite-smoke-melange)
  (alias clojure-test-suite-smoke-melange)
  (module_systems es6)
- (modules clojure_test_suite_smoke_melange)
+ (modules
+  clj_smoke_melange_chunk_0
+  clj_smoke_melange_chunk_1
+  clj_smoke_melange_chunk_2
+  clj_smoke_melange_chunk_3
+  clj_smoke_melange_chunk_4
+  clj_smoke_melange_chunk_5
+  clj_smoke_melange_chunk_6
+  clj_smoke_melange_chunk_7
+  clojure_test_suite_smoke_melange)
  (compile_flags -w -26-27-32-37-69)
  (libraries
+  clj_smoke_melange_base
   lg_compiled_stdlib_melange
   lg.edn-backend
   lg.edn-backend.melange

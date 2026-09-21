@@ -3977,7 +3977,27 @@ let adapt_every_special_arity env expected actual =
                          invalid_predicate );
                      ] )))
             (Collection_capability.first_expr env collection)
-      | _ -> Error.error "not a special every? arity")
+      | _ -> (
+          (* The predicate is callable but cannot be statically adapted to
+             this arity's element type (e.g. a capability-constrained
+             predicate over open elements); only an empty collection can be
+             served without invoking the predicate. *)
+          let collection =
+            typed_ir collection_ty (Semantic_ir.Ident collection_name)
+          in
+          Result.map
+            (fun first ->
+              function_
+                (Semantic_ir.Match
+                   ( first.semantic_expr,
+                     [
+                       ( Semantic_ir.PConstructor ("None", None),
+                         empty_result );
+                       ( Semantic_ir.PConstructor
+                           ("Some", Some Semantic_ir.PAny),
+                         invalid_predicate );
+                     ] )))
+            (Collection_capability.first_expr env collection)))
   | _ -> Error.error "not a non-callable every? empty-collection adapter"
 
 let function_has_host_int_return_boundary expected actual =
@@ -15073,7 +15093,7 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as error -> error
         | Ok [ value ] when is_function_payload value.ty ->
-            Error.error "fn? false branch cannot contain only functions"
+            Ok value
         | Ok [ value ] ->
             let constructors = Env.predicate_variant_constructors value.ty env in
             let remaining =
@@ -20258,7 +20278,13 @@ let create ~compile_expr =
                       Type_solver.apply substitutions return_ty
                     in
                     let return_ty =
-                      if not (contains_unresolved_type return_ty) then return_ty
+                      if
+                        (not (contains_unresolved_type return_ty))
+                        ||
+                        match return_ty with
+                        | TUnknown | TMeta _ | TVar _ -> true
+                        | _ -> false
+                      then return_ty
                       else
                         List.find_map
                           (function

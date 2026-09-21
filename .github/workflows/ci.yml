@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -18,14 +19,36 @@ jobs:
           cache: npm
       - uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: "5.4"
+          ocaml-compiler: "5.5"
+      - name: Test tooling
+        run: |
+          sudo apt-get install -y ripgrep
+          curl -fsSL https://raw.githubusercontent.com/babashka/babashka/master/install | sudo bash
       - run: npm ci
+      # Private pin-depends (datascript-ocaml) need a PAT with repo read access.
+      - env:
+          LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
       - run: opam install . --deps-only --with-test
+      - run: opam install .
       - run: opam exec -- sh test/compiler_cold_build_performance_gate_test.sh
+        env:
+          # 2-core hosted runners need ~3x the local dev limit.
+          LG_COLD_BUILD_LIMIT_SECONDS: "45"
       - run: opam exec -- dune build --action-stderr-on-success=must-be-empty @runtest
+      # The default 430MB limit assumes a smaller tree; a full @runtest build on
+      # the runner is ~590MB (mostly compiled test executables).
       - run: opam exec -- sh test/build_footprint_gate_test.sh _build
+        env:
+          LG_BUILD_FOOTPRINT_LIMIT_KIB: "819200"
+          LG_TEST_BUILD_FOOTPRINT_LIMIT_KIB: "358400"
       - run: opam exec -- dune build @jsoo-cross-runtime
-      - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
+      # The smoke rules compile against installed lg-test cmi under
+      # _build/install, which opam's -p builds never populate in-tree.
+      # @install must complete first: the smoke rules read those files without
+      # declaring them as deps, so a single invocation can schedule smoke first.
       - run: opam exec -- dune build @install
+      - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
       - run: opam exec -- sh test/install_smoke.sh
       - run: opam lint .

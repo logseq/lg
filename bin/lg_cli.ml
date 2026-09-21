@@ -3,9 +3,10 @@ let usage () =
     "Usage: lg <input.cljc> [-o output.ml] | --interface <input.cljc> [-o \
      output.mli] | --run <input.cljc> | --compile-files <input.cljc>... -o \
      output.ml | --compile-files-state <state> <input.cljc>... -o output.ml | \
-     --compile-files-from <state> <input.cljc>... -o output.ml | \
-     --compile-files-chunk-from <state> [--prefix-interface <prefix.cmi>] \
+     --compile-files-from <state> [--emit-state <output-state>] \
      <input.cljc>... -o output.ml | \
+     --compile-files-chunk-from <state> [--prefix-interface <prefix.cmi>] \
+     [--emit-state <output-state>] <input.cljc>... -o output.ml | \
      --compile-files-from-state <input-state> <output-state> <input.cljc>... -o \
      output.ml | \
      --compile-chunk-from <state> <input.cljc> [-o output.ml] | \
@@ -385,6 +386,12 @@ type saved_compilation_state = {
   state : Lg.Compiler.state;
   packages : string list;
   ocaml_source : string;
+  (* Deterministic provenance key of the compilation that produced this state:
+     the prefix-key chain over each input path and source. Marshaled state bytes
+     are not reproducible (they contain .cmi-load-order-dependent variable
+     identifiers), so consumers chain from this key instead of digesting the
+     artifact. *)
+  cache_key : string;
 }
 
 let compiler_error message =
@@ -526,19 +533,6 @@ let next_prefix_key ~target ?reader_target previous_key input_path source =
          reader_target_cache_key reader_target;
          input_path;
          source;
-       ])
-  |> Digest.to_hex
-
-let saved_state_prefix_key ~target ?reader_target state_path =
-  Digest.string
-    (String.concat "\000"
-         [
-            compiler_cache_identity ();
-            compile_files_cache_format_version;
-            "saved-state";
-            Lg.Target.to_string target;
-            reader_target_cache_key reader_target;
-            Digest.to_hex (Digest.file state_path);
        ])
   |> Digest.to_hex
 
@@ -803,6 +797,7 @@ type mode =
       output_path : string;
       include_prefix : bool;
       prefix_interface : string option;
+      emit_state_path : string option;
     }
   | Compile_files_from_state of {
       state_path : string;
@@ -895,6 +890,12 @@ let parse_args argv =
               }
         | _ -> usage ())
     | _program :: "--compile-files-from" :: state_path :: args -> (
+        let emit_state_path, args =
+          match args with
+          | "--emit-state" :: path :: rest -> (Some path, rest)
+          | [ "--emit-state" ] -> usage ()
+          | _ -> (None, args)
+        in
         match List.rev args with
         | output_path :: "-o" :: reversed_inputs ->
             Compile_files_from
@@ -904,6 +905,7 @@ let parse_args argv =
                 output_path;
                 include_prefix = true;
                 prefix_interface = None;
+                emit_state_path;
               }
         | _ -> usage ())
     | _program :: "--compile-files-chunk-from" :: state_path :: args -> (
@@ -911,6 +913,12 @@ let parse_args argv =
           match args with
           | "--prefix-interface" :: path :: rest -> (Some path, rest)
           | [ "--prefix-interface" ] -> usage ()
+          | _ -> (None, args)
+        in
+        let emit_state_path, args =
+          match args with
+          | "--emit-state" :: path :: rest -> (Some path, rest)
+          | [ "--emit-state" ] -> usage ()
           | _ -> (None, args)
         in
         match List.rev args with
@@ -922,6 +930,7 @@ let parse_args argv =
                 output_path;
                 include_prefix = false;
                 prefix_interface;
+                emit_state_path;
               }
         | _ -> usage ())
     | _program :: "--compile-files-from-state" :: state_path
@@ -2096,20 +2105,19 @@ let order_input_paths ?reader_target:_ _target _compiler_state input_paths =
   Ok (order_paths_by_namespace_dependencies input_paths)
 
 let compile_files ?(use_cache = true) ?(check_ocaml = true) ?reader_target
-    target input_paths =
+    ?(produced_key = ref "") target input_paths =
   let input_paths = expand_input_paths input_paths in
   let initial_prefix_key =
-    if use_cache then
-      Digest.string
-        (String.concat "\000"
-           [ compiler_cache_identity (); compile_files_cache_format_version ])
-      |> Digest.to_hex
-    else "cache-disabled"
+    Digest.string
+      (String.concat "\000"
+         [ compiler_cache_identity (); compile_files_cache_format_version ])
+    |> Digest.to_hex
   in
   let write_cached_prefix = prefix_cache_writer () in
   let rec loop cached_outputs checkpoint prefix_key compiler_state packages
       outputs diagnostics = function
     | [] ->
+        produced_key := prefix_key;
         let packages = List.sort_uniq String.compare packages in
         let outputs = List.rev outputs in
         Result.map
@@ -2210,12 +2218,16 @@ let load_adjacent_interface target input_path state =
       (read_file interface)
     |> Result.map fst
 
-let compile_chunk_from_saved_state ?reader_target target state_path input_path =
+let compile_chunk_from_saved_state ?reader_target
+    ?(produced_key = ref "") target state_path input_path =
   Result.bind (read_saved_compilation_state state_path) (fun saved ->
       if saved.target <> target then
         compiler_error "saved compiler state target does not match --target"
       else
         let source = read_file input_path in
+        produced_key :=
+          next_prefix_key ~target ?reader_target saved.cache_key input_path
+            source;
         Result.bind
           (Lg.Compiler.prepare_source ~target ?reader_target
              ~filename:input_path source)
@@ -2270,7 +2282,8 @@ let prepare_prefix_interface target = function
           with Sys_error message -> compiler_error message
 
 let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
-    ?reader_target ?prefix_interface target state_path input_paths =
+    ?reader_target ?prefix_interface ?(produced_key = ref "") target state_path
+    input_paths =
   Result.bind (prepare_prefix_interface target prefix_interface) (fun prefix ->
   match
     timed_step ("read saved state " ^ state_path) (fun () ->
@@ -2310,12 +2323,10 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
                order_prepared_sources ?reader_target target saved.state sources))
           (fun sources ->
         let initial_prefix_key =
-          if use_cache then
-            let key = saved_state_prefix_key ~target ?reader_target state_path in
-            match prefix with
-            | None -> key
-            | Some (_, digest) -> Digest.to_hex (Digest.string (key ^ digest))
-          else "cache-disabled"
+          match prefix with
+          | None -> saved.cache_key
+          | Some (_, digest) ->
+              Digest.to_hex (Digest.string (saved.cache_key ^ digest))
         in
         let cached_outputs, checkpoint =
           if use_cache then
@@ -2327,6 +2338,7 @@ let compile_files_from_saved_state ?(use_cache = true) ?(check_ocaml = true)
         let rec compile prefix_key compiler_state outputs diagnostics =
           function
           | [] ->
+              produced_key := prefix_key;
               Result.map
                 (fun state ->
                   ( state,
@@ -2567,8 +2579,10 @@ let () =
           report_diagnostics diagnostics;
           write_output (Some output_path) ocaml_source)
   | Compile_files_state { state_path; input_paths; output_path } -> (
+      let produced_key = ref "" in
       match
-        compile_files ~use_cache:false ?reader_target target input_paths
+        compile_files ~use_cache:false ?reader_target ~produced_key target
+          input_paths
       with
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
@@ -2580,23 +2594,49 @@ let () =
               state = Lg.Compiler.cacheable_state state;
               packages;
               ocaml_source;
+              cache_key = !produced_key;
             })
   | Compile_files_from
-      { state_path; input_paths; output_path; include_prefix; prefix_interface } -> (
+      {
+        state_path;
+        input_paths;
+        output_path;
+        include_prefix;
+        prefix_interface;
+        emit_state_path;
+      } -> (
+      let produced_key = ref "" in
       match
-        compile_files_from_saved_state ?reader_target ?prefix_interface target
-          state_path input_paths
+        compile_files_from_saved_state ?reader_target ?prefix_interface
+          ~produced_key target state_path input_paths
       with
       | Error err -> report_error err
-      | Ok (_state, _packages, ocaml_source, diagnostics) ->
+      | Ok (state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
+          let saved =
+            if include_prefix || Option.is_some emit_state_path then
+              match read_saved_compilation_state state_path with
+              | Ok saved -> Some saved
+              | Error err -> report_error err
+            else None
+          in
+          (match emit_state_path with
+          | None -> ()
+          | Some output_state_path ->
+              let saved = Option.get saved in
+              write_saved_compilation_state output_state_path
+                {
+                  target;
+                  state = Lg.Compiler.cacheable_state state;
+                  packages;
+                  ocaml_source =
+                    concatenate_compilation_outputs
+                      [ saved.ocaml_source; ocaml_source ];
+                  cache_key = !produced_key;
+                });
           let ocaml_source =
             if include_prefix then
-              let saved =
-                match read_saved_compilation_state state_path with
-                | Ok saved -> saved
-                | Error err -> report_error err
-              in
+              let saved = Option.get saved in
               concatenate_compilation_outputs
                 [ saved.ocaml_source; ocaml_source ]
             else
@@ -2607,14 +2647,18 @@ let () =
                     Filename.basename path |> Filename.remove_extension
                     |> String.capitalize_ascii
                   in
-                  "open " ^ module_name ^ "\n" ^ ocaml_source
+                  (* include (not open) re-exports the prefix's definitions, so
+                     deeper chains (`chunk-from` of a state produced by another
+                     `chunk-from` module) stay usable as prefixes themselves. *)
+                  "include " ^ module_name ^ "\n" ^ ocaml_source
           in
           write_output (Some output_path) ocaml_source)
   | Compile_files_from_state
       { state_path; output_state_path; input_paths; output_path } -> (
+      let produced_key = ref "" in
       match
-        compile_files_from_saved_state ~use_cache:false ?reader_target target
-          state_path input_paths
+        compile_files_from_saved_state ~use_cache:false ?reader_target
+          ~produced_key target state_path input_paths
       with
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
@@ -2635,6 +2679,7 @@ let () =
               state = Lg.Compiler.cacheable_state state;
               packages;
               ocaml_source;
+              cache_key = !produced_key;
             })
   | Compile_chunk_from { state_path; input_path; output_path } -> (
       match
@@ -2646,8 +2691,10 @@ let () =
           write_output output_path compilation.ocaml_source)
   | Compile_chunk_state
       { state_path; output_state_path; input_path; output_path } -> (
+      let produced_key = ref "" in
       match
-        compile_chunk_from_saved_state ?reader_target target state_path input_path
+        compile_chunk_from_saved_state ?reader_target ~produced_key target
+          state_path input_path
       with
       | Error err -> report_error err
       | Ok (state, packages, compilation) ->
@@ -2666,6 +2713,7 @@ let () =
               ocaml_source =
                 concatenate_compilation_outputs
                   [ saved.ocaml_source; compilation.ocaml_source ];
+              cache_key = !produced_key;
             })
   | Run_files { input_paths } -> (
       match compile_files ?reader_target target input_paths with

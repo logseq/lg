@@ -5,6 +5,7 @@ type saved_compilation_state = {
   state : Lg.Compiler.state;
   packages : string list;
   ocaml_source : string;
+  cache_key : string; [@warning "-69"]
 }
 
 (* The bytecode toplevel can only execute units that are linked into its host

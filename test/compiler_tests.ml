@@ -261,7 +261,7 @@ let test_test_directory_avoids_existing_pid_directory () =
 
 let compile_only_command dir ml_path =
   Printf.sprintf
-    "cd %s && ocamlfind ocamlc -package melange-edn-native,re,unix -w -26 -I %s -I %s -I %s -I %s \
+    "cd %s && ocamlfind ocamlc -package melange-edn-native,re,unix -w -11-26 -I %s -I %s -I %s -I %s \
      -I %s -I %s -I %s -c %s"
     (Filename.quote dir)
     (Filename.quote (rrbvec_build_dir ()))

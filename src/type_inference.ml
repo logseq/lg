@@ -2234,6 +2234,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | TFn ([ parameter_ty ], return_ty) :: collection_ty :: rest -> (
           match static_seqable_element_type collection_ty with
           | Some element_ty ->
+              let element_ty =
+                (* An open element type (e.g. an empty collection literal)
+                   carries no information; keep the callback's own parameter
+                   type so capability constraints survive. *)
+                if Type_solver.is_open element_ty then parameter_ty
+                else element_ty
+              in
               let return_ty =
                 Types.instantiate_type ~templates:[ parameter_ty ]
                   ~actuals:[ element_ty ] return_ty

@@ -131,10 +131,9 @@ let active_include_dirs () =
                  else Some directory)
         else include_dirs ()
       in
-      let directories = project_dirs @ !(package_include_dirs ()) in
       let directories =
-        if !melange_target then unique_interface_directories directories
-        else directories
+        unique_interface_directories
+          (project_dirs @ !(package_include_dirs ()))
       in
       active_include_dirs_cache := Some directories;
       directories
@@ -157,7 +156,18 @@ let add_include_dirs dirs =
   if updated <> !package_include_dirs then (
     package_include_dirs := updated;
     active_include_dirs_cache := None);
-  ensure_initialized ()
+  (* Register the directories in the global load path immediately so
+     restored environments can resolve their modules, but only rebuild an
+     environment that already exists — eagerly building one here can run
+     before package include directories are registered, and under melange
+     the stdlib interface lives in those package dirs. *)
+  Lg_compiler_support.Ocaml_value.refresh_include_dirs
+    ~melange:!melange_target
+    (active_include_dirs ());
+  if
+    Option.is_some !initialized_include_dirs
+    || Lg_compiler_support.Ocaml_value.environment_initialized ()
+  then ensure_initialized ()
 
 let init () = ensure_initialized ()
 

@@ -219,8 +219,11 @@ LG_CACHE_DIR="$test_dir/bounded-cache" \
   "$cli" --compile-files-from "$stdlib_state" "$source_file" \
     -o "$test_dir/bounded.ml"
 
-bounded_size=$(du -sk "$test_dir/bounded-cache/compile-files" \
-  | awk '{print $1 * 1024}')
+# Count payload bytes, not directory blocks: du reports at least one block per
+# directory on Linux even when every entry was pruned.
+bounded_size=$(find "$test_dir/bounded-cache/compile-files" -type f \
+  ! -name '.lock' -exec stat -c %s {} + 2>/dev/null \
+  | awk '{total += $1} END {print total + 0}')
 if [ "$bounded_size" -gt 1 ]; then
   echo "compile cache exceeded LG_COMPILE_CACHE_MAX_BYTES" >&2
   exit 1

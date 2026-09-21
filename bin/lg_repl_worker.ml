@@ -494,7 +494,15 @@ let report_socket_startup_error output ~id
     (Protocol.write_response output
        (Protocol.Status { id; namespace = "user"; status = Protocol.Failed }))
 
+let restore_sigchld () =
+  (* The listener ignores SIGCHLD to auto-reap session children, and ignored
+     dispositions survive execve. Child workers spawn subprocesses (dune via
+     open_process_args_full) whose waitpid fails with ECHILD unless the
+     disposition is reset. *)
+  Sys.set_signal Sys.sigchld Sys.Signal_default
+
 let run_socket_session state_path =
+  restore_sigchld ();
   set_binary_mode_in stdin true;
   set_binary_mode_out stdout true;
   match Session.create_from_stdlib ~state_path with
@@ -516,6 +524,7 @@ let run_socket_session state_path =
   | Ok session -> Socket_session.serve session ~input:stdin ~output:stdout
 
 let run_nrepl_connection state_path =
+  restore_sigchld ();
   Nrepl_server.serve_connection ~worker_path:Sys.executable_name ~state_path
     ~input:stdin ~output:stdout
 

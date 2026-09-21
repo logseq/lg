@@ -56,6 +56,7 @@ type saved_compilation_state = {
   state : Lg.Compiler.state;
   packages : string list;
   ocaml_source : string;
+  cache_key : string; [@warning "-69"]
 }
 
 let stdlib_state_path () =

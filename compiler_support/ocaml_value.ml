@@ -35,7 +35,7 @@ let unique_directories directories =
       if List.mem directory unique then unique else unique @ [ directory ])
     [] directories
 
-let init ?melange include_dirs =
+let configure_include_dirs ?melange include_dirs =
   let detected_melange =
     List.exists (fun path -> Filename.basename path = "melange") include_dirs
   in
@@ -83,6 +83,23 @@ let init ?melange include_dirs =
     Clflags.no_std_include := uses_melange;
     Compmisc.init_path ();
     initialized := true);
+  include_dirs
+
+(* Whether an environment (including Load_path/Clflags state) was already
+   built, either by init or indirectly through a restored compilation
+   state. Newly registered include directories must refresh that state. *)
+let environment_initialized () = Option.is_some !initial_env_cache
+
+(* Register directories in the global load path without building an initial
+   environment. Environments restored from a saved compilation state resolve
+   modules through Load_path, so new package directories must be visible
+   immediately even when no environment has been initialized here yet. *)
+let refresh_include_dirs ?melange include_dirs =
+  let include_dirs = configure_include_dirs ?melange include_dirs in
+  List.iter (fun dir -> Load_path.add_dir ~hidden:false dir) include_dirs
+
+let init ?melange include_dirs =
+  let include_dirs = configure_include_dirs ?melange include_dirs in
   match !initial_env_cache with
   | Some (cached_dirs, env) when cached_dirs = include_dirs -> env
   | Some _ | None ->

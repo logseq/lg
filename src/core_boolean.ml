@@ -39,6 +39,23 @@ let compile_bool_literal_predicate name args expected =
               [ arg.semantic_expr ] )
         else if Types.equal arg.ty TBool then
           Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)
+        else if Option.is_some (Types.truthy_constraint_info arg.ty) then
+          (* Constrained values are (witness, value) pairs; evaluate the
+             witness on the payload to get the logical value, then compare
+             it against the literal. *)
+          Semantic_ir.Infix
+            ( "=",
+              Semantic_ir.Apply
+                ( Semantic_ir.Apply
+                    (Semantic_ir.Ident "fst", [ arg.semantic_expr ]),
+                  [ Semantic_ir.Apply
+                      (Semantic_ir.Ident "snd", [ arg.semantic_expr ]) ] ),
+              Semantic_ir.Bool expected )
+        else if Type_solver.is_open arg.ty then
+          (* The value's type is open, so it may hold a boolean at runtime;
+             compare structurally instead of assuming it is never the
+             literal. *)
+          Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)
         else
           Semantic_ir.Sequence [ evaluated_argument arg; Semantic_ir.Bool false ]
       in
