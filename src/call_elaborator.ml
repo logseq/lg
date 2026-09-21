@@ -15073,7 +15073,7 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as error -> error
         | Ok [ value ] when is_function_payload value.ty ->
-            Error.error "fn? false branch cannot contain only functions"
+            Ok value
         | Ok [ value ] ->
             let constructors = Env.predicate_variant_constructors value.ty env in
             let remaining =

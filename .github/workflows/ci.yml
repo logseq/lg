@@ -44,7 +44,8 @@ jobs:
           LG_BUILD_FOOTPRINT_LIMIT_KIB: "819200"
           LG_TEST_BUILD_FOOTPRINT_LIMIT_KIB: "358400"
       - run: opam exec -- dune build @jsoo-cross-runtime
-      - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
-      - run: opam exec -- dune build @install
+      # The smoke rules compile against installed lg-test cmi under
+      # _build/install, which opam's -p builds never populate in-tree.
+      - run: opam exec -- dune build @install @test/clojure_suite/clojure-test-suite-smoke
       - run: opam exec -- sh test/install_smoke.sh
       - run: opam lint .
