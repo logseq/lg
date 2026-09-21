@@ -579,8 +579,21 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
           (plan ?row_type_name ~row_type_name_for ~protocol_satisfies
              ~sequence_satisfies expected (Types.constraint_value_type actual))
       else if identity_compatible expected actual then Ok Identity
-      else if open_leaf expected || open_leaf actual then
-        Ok Identity
+      else if
+        (open_leaf expected || open_leaf actual)
+        &&
+        match expected with
+        | TConstraint
+            (Exception_data_constraint _ | Protocol_constraint _) -> (
+            (* Constrained values are stored as (witness, value) pairs; a
+               raw open source cannot supply the witness, so this is not a
+               plain identity. A source that is itself constrained already
+               carries the pair representation. *)
+            match actual with
+            | TConstraint _ -> true
+            | _ -> not (open_leaf actual))
+        | _ -> true
+      then Ok Identity
       else if
         Types.equal expected (TOcaml "Lg_edn_backend.t")
         && Types.edn_compatible_static_type actual
@@ -948,6 +961,12 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                            implementation_available;
                          })
                 | TConstraint (Open_boundary_constraint _) ->
+                    Error (Incompatible_types { expected; actual })
+                | TConstraint _ when open_leaf actual ->
+                    (* A capability witness cannot be materialized for a
+                       bare open source type; let callers fall back to
+                       another arity or adaptation instead of failing at
+                       emit. *)
                     Error (Incompatible_types { expected; actual })
                 | TConstraint _ ->
                     Ok (Capability_witness { expected; source_ty = actual })

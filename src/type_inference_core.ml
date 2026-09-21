@@ -817,16 +817,22 @@ let same_fixed_arity left right =
   List.length left.fixed_params = List.length right.fixed_params
   && Option.is_none left.rest_param && Option.is_none right.rest_param
 
-let same_function_arity_shape left right =
-  same_fixed_arity left right
-  && Types.equal left.return_ty right.return_ty
-
 let add_overloaded_arity arities arity =
+  let alpha_equivalent left right =
+    Types.equal
+      (Type_solver.canonical left)
+      (Type_solver.canonical right)
+  in
+  let arity_shape (arity : fn_arity) =
+    TFn (arity.fixed_params, arity.return_ty)
+  in
   if
     List.exists
       (fun existing ->
-        same_function_arity_shape existing arity
-        && List.for_all2 Types.equal existing.fixed_params arity.fixed_params)
+        same_fixed_arity existing arity
+        && alpha_equivalent
+             (arity_shape existing)
+             (arity_shape arity))
       arities
   then arities
   else arities @ [ arity ]
