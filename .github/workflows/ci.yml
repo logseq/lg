@@ -19,6 +19,10 @@ jobs:
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "5.5"
+      - name: Test tooling
+        run: |
+          sudo apt-get install -y ripgrep
+          curl -fsSL https://raw.githubusercontent.com/babashka/babashka/master/install | sudo bash
       - run: npm ci
       # Private pin-depends (datascript-ocaml) need a PAT with repo read access.
       - env:

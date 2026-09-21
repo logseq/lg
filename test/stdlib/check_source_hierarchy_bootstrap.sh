@@ -10,7 +10,8 @@ for function in make-hierarchy isa? parents ancestors descendants derive underiv
     exit 1
   fi
 
-  if grep -E "^[[:space:]]*\\| \"(clojure.core/|cljs.core/)?${function//\?/\\?}\"" \
+  escaped_function=$(printf '%s' "$function" | sed 's/\?/\\?/g')
+  if grep -E "^[[:space:]]*\\| \"(clojure.core/|cljs.core/)?${escaped_function}\"" \
     "$root/src/call_elaborator.ml" >/dev/null; then
     echo "clojure.core/$function is still compiler-dispatched" >&2
     exit 1
