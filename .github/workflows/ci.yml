@@ -36,6 +36,22 @@ jobs:
         env:
           # 2-core hosted runners need ~3x the local dev limit.
           LG_COLD_BUILD_LIMIT_SECONDS: "45"
+      # Restored before the gates that don't need a cold tree: the cold-build
+      # gate above would silently hit .lg-cache / dune shared-cache artifacts.
+      - name: Restore build caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/dune
+            .lg-cache
+          key: build-cache-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            build-cache-${{ github.ref_name }}-
+            build-cache-main-
+      - name: Enable dune shared cache
+        run: |
+          mkdir -p ~/.config/dune
+          printf '(lang dune 3.0)\n(cache enabled)\n' > ~/.config/dune/config
       - run: opam exec -- dune build --action-stderr-on-success=must-be-empty @runtest
       # The default 430MB limit assumes a smaller tree; a full @runtest build on
       # the runner is ~590MB (mostly compiled test executables).
@@ -52,3 +68,11 @@ jobs:
       - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
       - run: opam exec -- sh test/install_smoke.sh
       - run: opam lint .
+      - name: Save build caches
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/dune
+            .lg-cache
+          key: build-cache-${{ github.ref_name }}-${{ github.sha }}
