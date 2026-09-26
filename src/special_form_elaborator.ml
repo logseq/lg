@@ -61,6 +61,15 @@ let compile_args_for compile_expr scope env arg_forms =
   in
   loop [] arg_forms
 
+(* Strips annotation-only wrappers; unlike Semantic_ir.unlocated, real
+   conversions (PackDynamic/UnpackDynamic/NullableToSeq) are preserved. *)
+let rec transparent_expression = function
+  | Semantic_ir.Typed (_, expression)
+  | Semantic_ir.Located (_, _, expression)
+  | Semantic_ir.GadtScope expression ->
+      transparent_expression expression
+  | expression -> expression
+
 let located_pattern identity pattern =
   match identity with
   | None -> pattern
@@ -886,7 +895,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               let pattern = capability_pattern name source in
               ((Semantic_ir.PConstructor (constructor, Some pattern),
                 Semantic_ir.Constructor (constructor, Some value)),
-               pattern = Semantic_ir.PVar name && value = Semantic_ir.Ident name))
+               pattern = Semantic_ir.PVar name
+               && transparent_expression value = Semantic_ir.Ident name))
             (adapt_branch_expression env target (typed_ir source (Semantic_ir.Ident name)))
         in
         Result.bind (adapt "Ok" target_ok source_ok) (fun (success, success_identity) ->
@@ -909,15 +919,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         let payload = typed_ir source_inner (Semantic_ir.Ident payload_name) in
         Result.map
           (fun adapted ->
-            Semantic_ir.Match
-              ( branch.semantic_expr,
-                [
-                  ( Semantic_ir.PConstructor ("None", None),
-                    Semantic_ir.Constructor ("None", None) );
-                  ( Semantic_ir.PConstructor
-                      ("Some", Some (Semantic_ir.PVar payload_name)),
-                    Semantic_ir.Constructor ("Some", Some adapted) );
-                ] ))
+            if
+              transparent_expression adapted = Semantic_ir.Ident payload_name
+            then branch.semantic_expr
+            else
+              Semantic_ir.Match
+                ( branch.semantic_expr,
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Constructor ("None", None) );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar payload_name)),
+                      Semantic_ir.Constructor ("Some", Some adapted) );
+                  ] ))
           (adapt_branch_expression env target_inner payload)
     | ( (TNullable _target_inner
         | TOcaml_app ("option", [ _target_inner ])),
@@ -1712,7 +1726,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | Some expected
                 when Option.is_some (Types.dynamic_map_types expected) ->
                   expected
-              | Some _ | None -> Types.dynamic_map TUnknown TUnknown
+              | Some _ | None ->
+                  Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ())
             in
             Ok
               (typed_ir map_ty
@@ -3204,6 +3219,20 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | _ -> Error.error "invalid GADT constructor type"
     in
     let rec compile_pattern target_ty pattern =
+      let pattern =
+        let payload_ty =
+          match target_ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
+          | _ -> None
+        in
+        match (payload_ty, pattern) with
+        | Some inner, (FList (FSymbol name :: _) | FSymbol name)
+          when name <> "Some" && name <> "None"
+               && is_constructor_name name
+               && is_ocaml_constructor_pattern_target inner name ->
+            FList [ FSymbol "Some"; pattern ]
+        | _ -> pattern
+      in
       let target_ty =
         match (target_ty, pattern) with
         | TOcaml name, (FList (FSymbol ("tag" | "tuple") :: _) | FVector _) -> (
@@ -4819,6 +4848,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     ~lookup_closed_sum_constructors
                     ~lookup_protocol_constraint
                     ~lookup_dynamic_key_record_type ~resolve_named_record
+                    ~lookup_key_record_type:
+                      (Expression_support.record_type_for_keyword env)
                     (List.combine names inferred_param_tys)
                     body_forms
                 with
@@ -5288,6 +5319,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~lookup_key_record_type:
+            (Expression_support.record_type_for_keyword env)
           ~resolve_named_record params forms
       with
       | Ok inferred ->
@@ -5354,6 +5387,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               ~lookup_closed_sum_candidates
               ~lookup_closed_sum_constructors
               ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+              ~lookup_key_record_type:
+                (Expression_support.record_type_for_keyword env)
               ~resolve_named_record params forms
             |> Result.value ~default:params
           in

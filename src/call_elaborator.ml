@@ -608,6 +608,7 @@ let edn_compatible_static_type = Types.edn_compatible_static_type
 
 let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true
+  else if (match expected with TMeta _ -> true | _ -> false) then true
   else if is_edn_value_type expected then
     is_edn_value_type actual || edn_compatible_static_type actual
   else if Option.is_some (Types.protocol_constraint_info expected) then true
@@ -827,26 +828,95 @@ let rec argument_compatible expected actual =
           (fun expected -> generic_function_compatible (function_type expected))
           expected_arities
     | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
-        let function_type (arity : fn_arity) =
-          let parameters =
-            match arity.rest_param with
-            | None -> arity.fixed_params
-            | Some rest_ty -> arity.fixed_params @ [ TSeq rest_ty ]
-          in
-          TFn (parameters, arity.return_ty)
+        let parameter_compatible expected actual =
+          argument_compatible expected actual
+          || Result.is_ok (Type_solver.unify Type_solver.empty actual expected)
+          || Result.is_ok (Type_solver.unify Type_solver.empty expected actual)
         in
-        List.for_all
-          (fun (expected : fn_arity) ->
-            actual_arities
-            |> List.find_opt (fun (actual : fn_arity) ->
-                   List.length actual.fixed_params
-                   = List.length expected.fixed_params
-                   && Option.is_some actual.rest_param
-                      = Option.is_some expected.rest_param)
-            |> Option.fold ~none:false ~some:(fun actual ->
-                   argument_compatible (function_type expected)
-                     (function_type actual)))
-          expected_arities
+        (* An actual arity covers a call of `count` arguments when it is a
+           fixed arity of that length or a variadic arity that accepts at
+           most `count` fixed arguments. *)
+        let actual_covers (actual : fn_arity) count =
+          (Option.is_none actual.rest_param
+           && List.length actual.fixed_params = count)
+          || (Option.is_some actual.rest_param
+              && List.length actual.fixed_params <= count)
+        in
+        let actual_param (actual : fn_arity) index =
+          match List.nth_opt actual.fixed_params index with
+          | Some parameter -> parameter
+          | None -> (
+              match actual.rest_param with
+              | Some rest -> rest
+              | None -> TUnknown)
+        in
+        let expected_param_at (expected : fn_arity) index =
+          match List.nth_opt expected.fixed_params index with
+          | Some parameter -> parameter
+          | None -> Option.value ~default:TUnknown expected.rest_param
+        in
+        let arity_compatible (expected : fn_arity) =
+          let expected_count = List.length expected.fixed_params in
+          (* A variadic expected arity demands every count >= its fixed
+             length: a variadic actual covers the tail, fixed actuals must
+             cover the gap below it. *)
+          let smallest_variadic =
+            List.fold_left
+              (fun smallest (actual : fn_arity) ->
+                match actual.rest_param with
+                | Some _ -> min smallest (List.length actual.fixed_params)
+                | None -> smallest)
+              max_int actual_arities
+          in
+          let covered =
+            match expected.rest_param with
+            | None ->
+                List.exists
+                  (fun actual -> actual_covers actual expected_count)
+                  actual_arities
+            | Some _ ->
+                smallest_variadic <> max_int
+                && (expected_count >= smallest_variadic
+                    || List.init (smallest_variadic - expected_count)
+                         (fun index -> expected_count + index)
+                       |> List.for_all (fun count ->
+                              List.exists
+                                (fun actual -> actual_covers actual count)
+                                actual_arities))
+          in
+          (* An actual arity participates when it accepts some call shape
+             the expected arity demands. *)
+          let relevant (actual : fn_arity) =
+            match (expected.rest_param, actual.rest_param) with
+            | Some _, Some _ -> true
+            | Some _, None ->
+                List.length actual.fixed_params >= expected_count
+            | None, _ -> actual_covers actual expected_count
+          in
+          covered
+          && List.for_all
+               (fun (actual : fn_arity) ->
+                 (not (relevant actual))
+                 ||
+                 let positions =
+                   max expected_count (List.length actual.fixed_params)
+                 in
+                 List.init positions Fun.id
+                   |> List.for_all (fun index ->
+                          parameter_compatible
+                            (expected_param_at expected index)
+                            (actual_param actual index))
+                 &&
+                 match (expected.rest_param, actual.rest_param) with
+                 | Some expected_rest, Some actual_rest ->
+                     parameter_compatible expected_rest actual_rest
+                 | _ -> true
+                 && (Type_solver.is_open expected.return_ty
+                     || parameter_compatible expected.return_ty
+                          actual.return_ty))
+               actual_arities
+        in
+        List.for_all arity_compatible expected_arities
     | _ -> false
 
 let named_argument_compatible expected actual =
@@ -1182,6 +1252,23 @@ let constrained_identifier_pattern name ty =
 let callback_adapter_parameter_ty expected actual =
   if Type_solver.is_open expected && not (Type_solver.is_open actual) then actual
   else expected
+
+(* A record value bound through a lambda or let needs an explicit type
+   annotation: unannotated, OCaml resolves its field labels against the most
+   recently declared record carrying them, which may be a different row type
+   than the value's. *)
+let record_value_pattern _env name ty =
+  let record =
+    match ty with
+    | TNamed_record record -> Some record
+    | _ -> None
+  in
+  match record with
+  | Some record ->
+      Semantic_ir.PConstraint
+        ( Semantic_ir.PVar name,
+          Structural_map.record_projection_type record )
+  | None -> Semantic_ir.PVar name
 
 let constrained_argument_expression argument =
   match Semantic_ir.unlocated argument.semantic_expr with
@@ -5106,7 +5193,8 @@ let rec adapt_value_to_type env expected actual =
                                 Semantic_ir.PTuple
                                   [
                                     Semantic_ir.PVar key_name;
-                                    Semantic_ir.PVar value_name;
+                                    record_value_pattern env value_name
+                                      actual_value;
                                   ];
                               ],
                               Semantic_ir.Tuple [ key; value ] );
@@ -5922,7 +6010,7 @@ let rec typed_row_argument env type_name expected_fields argument =
         (fun projected ->
           Semantic_ir.Let
             ( [
-                ( Semantic_ir.PVar value_name,
+                ( record_value_pattern env value_name value_ty,
                   Semantic_ir.Apply
                     ( Semantic_ir.Ident "Option.get",
                       [ argument.semantic_expr ] ) );
@@ -6199,7 +6287,7 @@ let rec emit_argument_adaptation env adaptation argument =
                    ( List.map2 constrained_identifier_pattern argument_names
                        callback.expected_params,
                      packed )))
-            (pack_constrained_value env callback.expected_return result))
+            (emit_argument_adaptation env callback.result_adaptation result))
   | Adaptation.Constant_function constant ->
       let result_name = "__lg_constant_function_result" in
       let parameter_names =
@@ -6822,7 +6910,8 @@ let rec emit_argument_adaptation env adaptation argument =
                               Semantic_ir.PTuple
                                 [
                                   Semantic_ir.PVar key_name;
-                                  Semantic_ir.PVar value_name;
+                                  record_value_pattern env value_name
+                                    map.actual_value;
                                 ];
                             ],
                             Semantic_ir.Tuple [ key; value ] );
@@ -6933,12 +7022,13 @@ let rec emit_argument_adaptation env adaptation argument =
         typed_ir value_ty
           (Semantic_ir.Sequence [ Semantic_ir.Ident value_name ])
       in
+      let value_pattern = record_value_pattern env value_name value_ty in
       Result.map
         (fun adapted ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Option.map",
               [
-                Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], adapted);
+                Semantic_ir.Fun ([ value_pattern ], adapted);
                 argument.semantic_expr;
               ] ))
         (emit_argument_adaptation env adaptation value)
@@ -7025,7 +7115,7 @@ let rec emit_argument_adaptation env adaptation argument =
             (fun projected ->
               Semantic_ir.Let
                 ( [
-                    ( Semantic_ir.PVar argument_name,
+                    ( record_value_pattern env argument_name argument.ty,
                       argument.semantic_expr );
                   ],
                   projected ))
@@ -7098,7 +7188,7 @@ let rec emit_argument_adaptation env adaptation argument =
             (fun projected ->
               Semantic_ir.Let
                 ( [
-                    ( Semantic_ir.PVar argument_name,
+                    ( record_value_pattern env argument_name argument.ty,
                       argument.semantic_expr );
                   ],
                   projected ))
@@ -7237,12 +7327,12 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
       ~allow_record_callable:(Option.is_some argument.record_values)
       ~row_type_name_for:(fun fields ->
         let owner = Source_context.anonymous_record_owner "" in
-        match Env.find_anonymous_record ~owner fields env with
+        match Env.find_oldest_anonymous_record ~owner fields env with
         | Some record ->
             Some (Structural_map.record_type_application record)
         | None ->
             let record =
-              match Env.find_anonymous_record_by_layout ~owner fields env with
+              match Env.find_oldest_anonymous_record_by_layout ~owner fields env with
               | Some _ as record -> record
               | None -> Env.find_unique_anonymous_record_by_layout fields env
             in
@@ -7408,6 +7498,7 @@ let adapt_nullable_callback env expected arg =
       TFn (actual_params, actual_return) )
     when callback_parameters_compatible expected_params actual_params
          && (expects_dynamic_value actual_return
+            || Option.is_some (optional_payload actual_return)
             || Types.assignable ~policy:Host_boundary
                  ~expected:expected_return ~actual:actual_return) ->
       let parameter_names =
@@ -8869,7 +8960,8 @@ let create ~compile_expr =
                          (Semantic_ir.Apply
                             (Semantic_ir.Ident "Option.get", [ found ]))))
             | _ -> Error.error "EDN metadata lookup requires a keyword key")
-        | Ok target, Ok key when Types.is_dynamic target.ty -> (
+        | Ok target, Ok key
+          when Types.is_dynamic target.ty -> (
             let expected = Types.dynamic_constraint TUnknown in
             match dynamic_scalar_value env expected key with
             | Error _ as error -> error
@@ -13778,6 +13870,9 @@ let create ~compile_expr =
                                     ~lookup_closed_sum_constructors
                                     ~lookup_protocol_constraint
                                     ~lookup_dynamic_key_record_type
+                                    ~lookup_key_record_type:
+                                      (Expression_support.record_type_for_keyword
+                                         env)
                                     ~resolve_named_record
                                     ((parameter, value_ty) :: captured_params)
                                     body_forms
@@ -17685,7 +17780,14 @@ let create ~compile_expr =
           Env.with_expected_type
             (Some (Types.seqable_constraint element_ty))
             expression_env
-      | _ -> expression_env
+      | target_ty -> (
+          match Types.dynamic_map_types target_ty with
+          | Some (key_ty, value_ty) ->
+              Env.with_expected_type
+                (Some
+                   (Types.seqable_constraint (TTuple [ key_ty; value_ty ])))
+                expression_env
+          | None -> expression_env)
     in
     let target_element_type target =
       match target.ty with
@@ -21367,7 +21469,9 @@ let create ~compile_expr =
                             | ( TConstraint
                                   (Seqable_constraint seqable),
                                 Some actual_element )
-                              ->
+                              when (match seqable.element with
+                                   | TUnknown | TMeta _ | TVar _ -> true
+                                   | _ -> false) ->
                                 TConstraint
                                   (Seqable_constraint
                                      {
@@ -21652,12 +21756,12 @@ let create ~compile_expr =
                                   Source_context.anonymous_record_owner ""
                                 in
                                 (match
-                                   Env.find_anonymous_record ~owner fields env
+                                   Env.find_oldest_anonymous_record ~owner fields env
                                  with
                                 | Some _ as record -> record
                                 | None -> (
                                     match
-                                      Env.find_anonymous_record_by_layout
+                                      Env.find_oldest_anonymous_record_by_layout
                                         ~owner fields env
                                     with
                                     | Some _ as record -> record
@@ -22144,19 +22248,53 @@ let create ~compile_expr =
                          | _ -> None)
                   in
                   match ret with
-                  | TNullable (TUnknown | TMeta _ | TVar _) ->
-                      param_tys
-                      |> List.mapi (fun index param_ty -> (index, param_ty))
-                      |> List.find_map (fun (index, param_ty) ->
-                             match
-                               Types.seqable_constraint_element param_ty
-                             with
-                             | None -> None
-                             | Some _ -> (
-                                 match List.nth_opt args index with
-                                 | None -> None
-                                 | Some arg ->
-                                     Collection_capability.element_type env arg))
+                  | TNullable
+                      ((TUnknown | TMeta _ | TVar _) as return_element) ->
+                      (* An option-of-open return aliases the argument's
+                         element either when the open leaf is that argument's
+                         seqable element variable (nth/first: opt<a> over
+                         seqable<a>) or when exactly one parameter is seqable.
+                         With several seqable parameters the mapping is
+                         ambiguous — a different open leaf (e.g. a field of
+                         the element row) must not be replaced. *)
+                      let same_var left right =
+                        match (left, right) with
+                        | TVar left, TVar right -> String.equal left right
+                        | TMeta left, TMeta right -> left.id = right.id
+                        | _ -> false
+                      in
+                      let candidates =
+                        match return_element with
+                        | TVar _ | TMeta _ ->
+                            param_tys
+                            |> List.mapi (fun index param_ty -> (index, param_ty))
+                            |> List.find_map (fun (index, param_ty) ->
+                                   match
+                                     Types.seqable_constraint_element param_ty
+                                   with
+                                   | Some element_var
+                                     when same_var element_var return_element ->
+                                       Some index
+                                   | _ -> None)
+                        | TUnknown ->
+                            param_tys
+                            |> List.mapi (fun index param_ty -> (index, param_ty))
+                            |> List.find_map (fun (index, param_ty) ->
+                                   match
+                                     Types.seqable_constraint_element param_ty
+                                   with
+                                   | None -> None
+                                   | Some _ -> Some index)
+                        | _ -> None
+                      in
+
+                      (match candidates with
+                      | Some index -> (
+                          match List.nth_opt args index with
+                          | Some arg ->
+                              Collection_capability.element_type env arg
+                          | None -> None)
+                      | None -> None)
                       |> Option.map (fun element_ty -> TNullable element_ty)
                       |> Option.value ~default:ret
                   | TVector element_ty when open_return element_ty ->
@@ -22764,6 +22902,22 @@ let create ~compile_expr =
                                 (fun argument -> Types.source_name argument.ty)
                                 args)
                          ^ ")")))
+            | ty
+              when (match
+                      match ty with
+                      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+                          inner
+                      | _ -> ty
+                    with
+                    | TKeyword | TSymbol -> true
+                    | _ -> false) -> (
+                (* Keywords and symbols are callable: (kw m) looks the key
+                   up in m, like a literal (:kw m). *)
+                match arg_forms with
+                | target :: defaults ->
+                    compile_static_get scope env
+                      (target :: FSymbol name :: defaults)
+                | [] -> Error.error (name ^ " expects a collection argument"))
             | _ -> Error.error (name ^ " is not callable")))
   and compile_protocol_call scope env name arg_forms =
     let contextual_return_ty ty =

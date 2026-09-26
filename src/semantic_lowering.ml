@@ -53,6 +53,8 @@ let rec expression = function
         | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> true
         | PolyTag (_, value) | Constructor (_, value) -> Option.fold ~none:true ~some:stable value
         | Tuple values | List values | Array values -> List.for_all stable values
+        | Record (fields, _) ->
+            List.for_all (fun (_, value) -> stable value) fields
         | Fun _ | Labelled_fun _ -> true
         | _ -> false in
       let rec binding_pattern name = function

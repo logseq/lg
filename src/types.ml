@@ -791,6 +791,15 @@ let homogeneous_record_value_type fields =
     | ty when Option.is_some (seqable_constraint_info ty) -> None
     | ty -> Some ty
   in
+  let rec erase_holes ty =
+    let ty =
+      match ty with TMeta _ | TVar _ -> TUnknown | ty -> ty
+    in
+    Semantic_type.map_children erase_holes ty
+  in
+  let storage_equal left right =
+    equal (erase_holes left) (erase_holes right)
+  in
   if
     fields = []
     || not (List.for_all (fun (field : field) -> field.runtime_map) fields)
@@ -807,7 +816,7 @@ let homogeneous_record_value_type fields =
               List.for_all
                 (fun (field : field) ->
                   match concrete_storage_type field.ty with
-                  | Some field_ty -> equal first_ty field_ty
+                  | Some field_ty -> storage_equal first_ty field_ty
                   | None -> false)
                 rest
             then Some first_ty
@@ -1216,9 +1225,9 @@ let rec ocaml_name = function
   | TKeyword -> "string"
   | TBool -> "bool"
   | TUnit -> "unit"
-  | TNil -> "'a option"
+  | TNil -> "_ option"
   | TNullable inner -> ocaml_type_argument_name inner ^ " option"
-  | TUnknown -> "'a"
+  | TUnknown -> "_"
   | TMeta _ -> "_"
   | TVar name -> "'" ^ name
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->

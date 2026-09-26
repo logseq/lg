@@ -6272,7 +6272,6 @@ let test_datascript_entity_attrs_keep_tx_value_payloads () =
   (:require [ocaml.package/datascript-ocaml-native]
             [ocaml.package/melange-transit-core]
             [ocaml.Datascript :as ds]
-            [ocaml.Int64 :as int64]
             [ocaml.List :as list]
             [ocaml.Transit_core.Json :as transit]))
 (declare transit-of-value)
@@ -6298,7 +6297,7 @@ let test_datascript_entity_attrs_keep_tx_value_payloads () =
     (ds/Bool flag) (transit/Bool flag)
     (ds/Keyword keyword) (transit/Keyword keyword)
     (ds/Uuid uuid) (transit/Uuid uuid)
-    (ds/Instant instant) (transit/Date (int64/of-int instant))
+    (ds/Instant instant) (transit/Date instant)
     (ds/Regex pattern) (transit/Tagged "regex" (transit/String pattern))
     (ds/Ref eid) (transit-of-entity-ref db (stable-entity-ref db (ds/Entity_id eid)))
     (ds/List values)
