@@ -76,6 +76,7 @@ and constrained_result_callback = {
   expected_return : Semantic_type.ty;
   actual_return : Semantic_type.ty;
   argument_adaptations : t list;
+  result_adaptation : t;
 }
 
 and constant_function = {

@@ -1712,7 +1712,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | Some expected
                 when Option.is_some (Types.dynamic_map_types expected) ->
                   expected
-              | Some _ | None -> Types.dynamic_map TUnknown TUnknown
+              | Some _ | None ->
+                  Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ())
             in
             Ok
               (typed_ir map_ty
@@ -3204,6 +3205,20 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | _ -> Error.error "invalid GADT constructor type"
     in
     let rec compile_pattern target_ty pattern =
+      let pattern =
+        let payload_ty =
+          match target_ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
+          | _ -> None
+        in
+        match (payload_ty, pattern) with
+        | Some inner, (FList (FSymbol name :: _) | FSymbol name)
+          when name <> "Some" && name <> "None"
+               && is_constructor_name name
+               && is_ocaml_constructor_pattern_target inner name ->
+            FList [ FSymbol "Some"; pattern ]
+        | _ -> pattern
+      in
       let target_ty =
         match (target_ty, pattern) with
         | TOcaml name, (FList (FSymbol ("tag" | "tuple") :: _) | FVector _) -> (
@@ -4819,6 +4834,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     ~lookup_closed_sum_constructors
                     ~lookup_protocol_constraint
                     ~lookup_dynamic_key_record_type ~resolve_named_record
+                    ~lookup_key_record_type:
+                      (Expression_support.record_type_for_keyword env)
                     (List.combine names inferred_param_tys)
                     body_forms
                 with
@@ -5288,6 +5305,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~lookup_key_record_type:
+            (Expression_support.record_type_for_keyword env)
           ~resolve_named_record params forms
       with
       | Ok inferred ->
@@ -5354,6 +5373,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               ~lookup_closed_sum_candidates
               ~lookup_closed_sum_constructors
               ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+              ~lookup_key_record_type:
+                (Expression_support.record_type_for_keyword env)
               ~resolve_named_record params forms
             |> Result.value ~default:params
           in

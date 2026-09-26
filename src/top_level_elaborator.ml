@@ -1389,6 +1389,8 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
             ~lookup_closed_sum_candidates
             ~lookup_closed_sum_constructors
             ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+            ~lookup_key_record_type:
+              (Expression_support.record_type_for_keyword env)
             ~resolve_named_record ~observe_call params body_forms
         with
         | Error _ -> field_types
@@ -4299,6 +4301,7 @@ and compile_definition scope env next_type form =
                     allocate_anonymous_record ~owner:"" nested.env
                       nested.next_type fields
               in
+              let fields = allocation.record.fields in
               let record_ty = TNamed_record allocation.record in
               let binding = Types.binding ocaml_name record_ty in
               let env = Env.add env_key binding allocation.env in

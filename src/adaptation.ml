@@ -78,6 +78,7 @@ and constrained_result_callback = {
   expected_return : ty;
   actual_return : ty;
   argument_adaptations : t list;
+  result_adaptation : t;
 }
 
 and constant_function = {
@@ -537,12 +538,33 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
   | TNamed_record _ when open_leaf (Types.constraint_value_type actual) ->
       Ok Identity
   | TNamed_record record when not record.nominal ->
+      (* Applied row records keep capability constraints in their type
+         arguments while the declared fields are bare parameters. Substitute
+         the arguments so a constrained field (seqable/truthy/...) plans a
+         witness pack instead of a bare copy. *)
+      let expected_fields =
+        if
+          List.length record.type_parameters
+          <> List.length record.type_arguments
+        then record.fields
+        else
+          let substitutions =
+            List.combine record.type_parameters record.type_arguments
+            |> List.map (fun (parameter, argument) ->
+                   (Type_solver.Declared parameter, argument))
+            |> Type_solver.of_list
+          in
+          List.map
+            (fun (field : field) ->
+              { field with ty = Type_solver.apply substitutions field.ty })
+            record.fields
+      in
       plan_row_projection
         ~plan_field:(fun expected actual ->
           plan ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
             expected actual)
-        (Some (Structural_map.record_type_application record)) record.fields
-        actual
+        (Some (Structural_map.record_type_application record))
+        expected_fields actual
   | _ -> (
       match (expected, actual) with
       | TUnit, (TNil | TNullable TUnit | TOcaml_app ("option", [ TUnit ])) ->
@@ -1010,6 +1032,16 @@ and plan_constrained_result_callback ~row_type_name_for ~protocol_satisfies
     in
     Result.map
       (fun argument_adaptations ->
+        let result_adaptation =
+          match
+            plan ~row_type_name_for ~protocol_satisfies ~sequence_satisfies
+              expected_return actual_return
+          with
+          | Ok (Sequence_witness _ as adaptation) -> adaptation
+          | _ ->
+              Capability_witness
+                { expected = expected_return; source_ty = actual_return }
+        in
         Constrained_result_callback
           {
             expected_params;
@@ -1017,6 +1049,7 @@ and plan_constrained_result_callback ~row_type_name_for ~protocol_satisfies
             expected_return;
             actual_return;
             argument_adaptations;
+            result_adaptation;
           })
       (plan_arguments [] expected_params actual_params)
 

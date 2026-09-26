@@ -608,6 +608,7 @@ let edn_compatible_static_type = Types.edn_compatible_static_type
 
 let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true
+  else if (match expected with TMeta _ -> true | _ -> false) then true
   else if is_edn_value_type expected then
     is_edn_value_type actual || edn_compatible_static_type actual
   else if Option.is_some (Types.protocol_constraint_info expected) then true
@@ -1251,6 +1252,23 @@ let constrained_identifier_pattern name ty =
 let callback_adapter_parameter_ty expected actual =
   if Type_solver.is_open expected && not (Type_solver.is_open actual) then actual
   else expected
+
+(* A record value bound through a lambda or let needs an explicit type
+   annotation: unannotated, OCaml resolves its field labels against the most
+   recently declared record carrying them, which may be a different row type
+   than the value's. *)
+let record_value_pattern _env name ty =
+  let record =
+    match ty with
+    | TNamed_record record -> Some record
+    | _ -> None
+  in
+  match record with
+  | Some record ->
+      Semantic_ir.PConstraint
+        ( Semantic_ir.PVar name,
+          Structural_map.record_projection_type record )
+  | None -> Semantic_ir.PVar name
 
 let constrained_argument_expression argument =
   match Semantic_ir.unlocated argument.semantic_expr with
@@ -5175,7 +5193,8 @@ let rec adapt_value_to_type env expected actual =
                                 Semantic_ir.PTuple
                                   [
                                     Semantic_ir.PVar key_name;
-                                    Semantic_ir.PVar value_name;
+                                    record_value_pattern env value_name
+                                      actual_value;
                                   ];
                               ],
                               Semantic_ir.Tuple [ key; value ] );
@@ -5991,7 +6010,7 @@ let rec typed_row_argument env type_name expected_fields argument =
         (fun projected ->
           Semantic_ir.Let
             ( [
-                ( Semantic_ir.PVar value_name,
+                ( record_value_pattern env value_name value_ty,
                   Semantic_ir.Apply
                     ( Semantic_ir.Ident "Option.get",
                       [ argument.semantic_expr ] ) );
@@ -6268,7 +6287,7 @@ let rec emit_argument_adaptation env adaptation argument =
                    ( List.map2 constrained_identifier_pattern argument_names
                        callback.expected_params,
                      packed )))
-            (pack_constrained_value env callback.expected_return result))
+            (emit_argument_adaptation env callback.result_adaptation result))
   | Adaptation.Constant_function constant ->
       let result_name = "__lg_constant_function_result" in
       let parameter_names =
@@ -6891,7 +6910,8 @@ let rec emit_argument_adaptation env adaptation argument =
                               Semantic_ir.PTuple
                                 [
                                   Semantic_ir.PVar key_name;
-                                  Semantic_ir.PVar value_name;
+                                  record_value_pattern env value_name
+                                    map.actual_value;
                                 ];
                             ],
                             Semantic_ir.Tuple [ key; value ] );
@@ -7002,12 +7022,13 @@ let rec emit_argument_adaptation env adaptation argument =
         typed_ir value_ty
           (Semantic_ir.Sequence [ Semantic_ir.Ident value_name ])
       in
+      let value_pattern = record_value_pattern env value_name value_ty in
       Result.map
         (fun adapted ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Option.map",
               [
-                Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], adapted);
+                Semantic_ir.Fun ([ value_pattern ], adapted);
                 argument.semantic_expr;
               ] ))
         (emit_argument_adaptation env adaptation value)
@@ -7094,7 +7115,7 @@ let rec emit_argument_adaptation env adaptation argument =
             (fun projected ->
               Semantic_ir.Let
                 ( [
-                    ( Semantic_ir.PVar argument_name,
+                    ( record_value_pattern env argument_name argument.ty,
                       argument.semantic_expr );
                   ],
                   projected ))
@@ -7167,7 +7188,7 @@ let rec emit_argument_adaptation env adaptation argument =
             (fun projected ->
               Semantic_ir.Let
                 ( [
-                    ( Semantic_ir.PVar argument_name,
+                    ( record_value_pattern env argument_name argument.ty,
                       argument.semantic_expr );
                   ],
                   projected ))
@@ -7306,12 +7327,12 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
       ~allow_record_callable:(Option.is_some argument.record_values)
       ~row_type_name_for:(fun fields ->
         let owner = Source_context.anonymous_record_owner "" in
-        match Env.find_anonymous_record ~owner fields env with
+        match Env.find_oldest_anonymous_record ~owner fields env with
         | Some record ->
             Some (Structural_map.record_type_application record)
         | None ->
             let record =
-              match Env.find_anonymous_record_by_layout ~owner fields env with
+              match Env.find_oldest_anonymous_record_by_layout ~owner fields env with
               | Some _ as record -> record
               | None -> Env.find_unique_anonymous_record_by_layout fields env
             in
@@ -7477,6 +7498,7 @@ let adapt_nullable_callback env expected arg =
       TFn (actual_params, actual_return) )
     when callback_parameters_compatible expected_params actual_params
          && (expects_dynamic_value actual_return
+            || Option.is_some (optional_payload actual_return)
             || Types.assignable ~policy:Host_boundary
                  ~expected:expected_return ~actual:actual_return) ->
       let parameter_names =
@@ -8938,7 +8960,8 @@ let create ~compile_expr =
                          (Semantic_ir.Apply
                             (Semantic_ir.Ident "Option.get", [ found ]))))
             | _ -> Error.error "EDN metadata lookup requires a keyword key")
-        | Ok target, Ok key when Types.is_dynamic target.ty -> (
+        | Ok target, Ok key
+          when Types.is_dynamic target.ty -> (
             let expected = Types.dynamic_constraint TUnknown in
             match dynamic_scalar_value env expected key with
             | Error _ as error -> error
@@ -13847,6 +13870,9 @@ let create ~compile_expr =
                                     ~lookup_closed_sum_constructors
                                     ~lookup_protocol_constraint
                                     ~lookup_dynamic_key_record_type
+                                    ~lookup_key_record_type:
+                                      (Expression_support.record_type_for_keyword
+                                         env)
                                     ~resolve_named_record
                                     ((parameter, value_ty) :: captured_params)
                                     body_forms
@@ -21443,7 +21469,9 @@ let create ~compile_expr =
                             | ( TConstraint
                                   (Seqable_constraint seqable),
                                 Some actual_element )
-                              ->
+                              when (match seqable.element with
+                                   | TUnknown | TMeta _ | TVar _ -> true
+                                   | _ -> false) ->
                                 TConstraint
                                   (Seqable_constraint
                                      {
@@ -21728,12 +21756,12 @@ let create ~compile_expr =
                                   Source_context.anonymous_record_owner ""
                                 in
                                 (match
-                                   Env.find_anonymous_record ~owner fields env
+                                   Env.find_oldest_anonymous_record ~owner fields env
                                  with
                                 | Some _ as record -> record
                                 | None -> (
                                     match
-                                      Env.find_anonymous_record_by_layout
+                                      Env.find_oldest_anonymous_record_by_layout
                                         ~owner fields env
                                     with
                                     | Some _ as record -> record
@@ -22220,19 +22248,53 @@ let create ~compile_expr =
                          | _ -> None)
                   in
                   match ret with
-                  | TNullable (TUnknown | TMeta _ | TVar _) ->
-                      param_tys
-                      |> List.mapi (fun index param_ty -> (index, param_ty))
-                      |> List.find_map (fun (index, param_ty) ->
-                             match
-                               Types.seqable_constraint_element param_ty
-                             with
-                             | None -> None
-                             | Some _ -> (
-                                 match List.nth_opt args index with
-                                 | None -> None
-                                 | Some arg ->
-                                     Collection_capability.element_type env arg))
+                  | TNullable
+                      ((TUnknown | TMeta _ | TVar _) as return_element) ->
+                      (* An option-of-open return aliases the argument's
+                         element either when the open leaf is that argument's
+                         seqable element variable (nth/first: opt<a> over
+                         seqable<a>) or when exactly one parameter is seqable.
+                         With several seqable parameters the mapping is
+                         ambiguous — a different open leaf (e.g. a field of
+                         the element row) must not be replaced. *)
+                      let same_var left right =
+                        match (left, right) with
+                        | TVar left, TVar right -> String.equal left right
+                        | TMeta left, TMeta right -> left.id = right.id
+                        | _ -> false
+                      in
+                      let candidates =
+                        match return_element with
+                        | TVar _ | TMeta _ ->
+                            param_tys
+                            |> List.mapi (fun index param_ty -> (index, param_ty))
+                            |> List.find_map (fun (index, param_ty) ->
+                                   match
+                                     Types.seqable_constraint_element param_ty
+                                   with
+                                   | Some element_var
+                                     when same_var element_var return_element ->
+                                       Some index
+                                   | _ -> None)
+                        | TUnknown ->
+                            param_tys
+                            |> List.mapi (fun index param_ty -> (index, param_ty))
+                            |> List.find_map (fun (index, param_ty) ->
+                                   match
+                                     Types.seqable_constraint_element param_ty
+                                   with
+                                   | None -> None
+                                   | Some _ -> Some index)
+                        | _ -> None
+                      in
+
+                      (match candidates with
+                      | Some index -> (
+                          match List.nth_opt args index with
+                          | Some arg ->
+                              Collection_capability.element_type env arg
+                          | None -> None)
+                      | None -> None)
                       |> Option.map (fun element_ty -> TNullable element_ty)
                       |> Option.value ~default:ret
                   | TVector element_ty when open_return element_ty ->

@@ -1961,6 +1961,8 @@ and prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
           ~lookup_closed_sum_candidates
           ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~lookup_key_record_type:
+            (Expression_support.record_type_for_keyword provisional_env)
           ~resolve_named_record
           inference_params body_forms
       with
@@ -2071,9 +2073,13 @@ and prepare_inferred_recursive_fn_body ?explicit_return_ty ~ocaml_name scope env
                           match
                             Type_inference.inferred_form_type params result
                           with
-                          | ty when Type_solver.is_open ty ->
-                              Type_inference.inferred_call_return_type
-                                ~lookup_function_ty params result
+                          | ty when Type_solver.is_open ty -> (
+                              match
+                                Type_inference.inferred_call_return_type
+                                  ~lookup_function_ty params result
+                              with
+                              | (TUnknown | TMeta _ | TVar _) -> ty
+                              | ty -> ty)
                           | ty -> ty
                         in
                         (match ty with

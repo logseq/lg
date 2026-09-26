@@ -97,7 +97,13 @@ let rec record_inference_compatible env ~allow_expected_dynamic expected_fields
 
 let structural_named_record_can_rematch (record : named_record) =
   (not record.nominal)
-  && Type_id.owner record.type_id = []
+  && (Type_id.owner record.type_id = []
+      ||
+      (String.length record.type_name > 1
+       && record.type_name.[0] = 't'
+       && String.for_all
+            (fun character -> character >= '0' && character <= '9')
+            (String.sub record.type_name 1 (String.length record.type_name - 1))))
   && not (String.contains record.type_name '.')
 
 let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
@@ -431,7 +437,15 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
           in
           let templates, actuals = List.split matched_fields in
           Types.instantiate_type ~templates ~actuals (TNamed_record record)
-      | None -> inferred)
+      | None -> (
+          (* No declared record matched: reuse the oldest anonymous record
+             with this exact shape instead of materializing a duplicate one. *)
+          match
+            Env.find_oldest_anonymous_record
+              ~owner:(Source_context.anonymous_record_owner "") fields env
+          with
+          | Some record -> TNamed_record record
+          | None -> inferred))
   | TConstraint constraint_ ->
       TConstraint
         (Types.map_constraint
@@ -1000,6 +1014,8 @@ let prepare ?(param_type_overrides = []) ?(additional_inference_params = [])
           ~lookup_closed_sum_constructors
           ~lookup_successful_call_refinement
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
+          ~lookup_key_record_type:
+            (Expression_support.record_type_for_keyword env)
           ~resolve_named_record
           parameters body_forms
       in

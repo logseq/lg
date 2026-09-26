@@ -74,7 +74,7 @@ let rec core_type ?(inference_variables = []) ?(type_variables = []) = function
       type_constructor "option" [ payload ]
   | Types.TNullable inner ->
       type_constructor "option" [ core_type ~inference_variables ~type_variables inner ]
-  | Types.TUnknown -> Ast_helper.Typ.var ~loc "a"
+  | Types.TUnknown -> Ast_helper.Typ.any ~loc ()
   | Types.TMeta meta -> (
       match List.assoc_opt meta.id inference_variables with
       | Some name -> Ast_helper.Typ.var ~loc name
@@ -1030,6 +1030,222 @@ let referenced_local_types item =
   iterator.structure_item iterator item;
   !references
 
+(* Compiler-generated record types (anonymous `t<N>` rows and `<fn>_row<N>`
+   parameter rows) can be allocated twice for the same layout — e.g. a row
+   materialized by a producer and minted again for a consuming parameter.
+   OCaml compares record types nominally, so identical duplicates must
+   collapse to a single declaration. Merging only happens on fully identical
+   layouts (field names plus alpha-normalized field types), so unrelated
+   records are never conflated; the earliest declaration wins so every use
+   still follows a definition. *)
+let generated_record_declaration = function
+  | { pstr_desc = Pstr_type (Nonrecursive, [ declaration ]); _ } -> (
+      match declaration.ptype_kind with
+      | Ptype_record labels ->
+          let name = declaration.ptype_name.txt in
+          let digits_from index =
+            index < String.length name
+            && String.for_all
+                 (fun c -> c >= '0' && c <= '9')
+                 (String.sub name index (String.length name - index))
+          in
+          let anonymous =
+            String.length name > 1 && name.[0] = 't' && digits_from 1
+          in
+          let parameter_row =
+            match String.rindex_opt name '_' with
+            | Some index ->
+                let suffix =
+                  String.sub name (index + 1) (String.length name - index - 1)
+                in
+                String.length suffix > 3
+                && String.sub suffix 0 3 = "row"
+                && digits_from (index + 4)
+            | None -> false
+          in
+          if anonymous || parameter_row then
+            Some (name, declaration, labels)
+          else None
+      | _ -> None)
+  | _ -> None
+
+let rec longident_equal a b =
+  match (a, b) with
+  | Longident.Lident a, Longident.Lident b -> String.equal a b
+  | Longident.Ldot (a, x), Longident.Ldot (b, y) ->
+      longident_equal a.txt b.txt && String.equal x.txt y.txt
+  | Longident.Lapply (a, x), Longident.Lapply (b, y) ->
+      longident_equal a.txt b.txt && longident_equal x.txt y.txt
+  | _ -> false
+
+let core_type_equal a b =
+  Format.asprintf "%a" Pprintast.core_type a
+  = Format.asprintf "%a" Pprintast.core_type b
+
+(* Match a loser's field type against a winner's field type: winner type
+   parameters bind to the loser's type, every other constructor must match
+   structurally. Returns the accumulated substitution or None. *)
+let match_field_type winner_params =
+  let rec match_type subst winner loser =
+    match (winner.ptyp_desc, loser.ptyp_desc) with
+    | Ptyp_var name, _ when List.mem name winner_params -> (
+        match List.assoc_opt name subst with
+        | None -> Some ((name, loser) :: subst)
+        | Some bound -> if core_type_equal bound loser then Some subst else None)
+    | Ptyp_any, _ -> Some subst
+    | Ptyp_constr (wl, wargs), Ptyp_constr (ll, largs)
+      when longident_equal wl.txt ll.txt
+           && List.length wargs = List.length largs ->
+        match_list subst wargs largs
+    | Ptyp_tuple ws, Ptyp_tuple ls when List.length ws = List.length ls ->
+        List.fold_left2
+          (fun subst (wlabel, w) (llabel, l) ->
+            Option.bind subst (fun s ->
+                if wlabel = llabel then match_type s w l else None))
+          (Some subst) ws ls
+    | Ptyp_arrow (wl, wa, wb), Ptyp_arrow (ll, la, lb)
+      when wl = ll ->
+        Option.bind (match_type subst wa la) (fun subst ->
+            match_type subst wb lb)
+    | _ -> if core_type_equal winner loser then Some subst else None
+  and match_list subst winners losers =
+    List.fold_left2
+      (fun subst w l -> Option.bind subst (fun s -> match_type s w l))
+      (Some subst) winners losers
+  in
+  match_type
+
+(* A loser declaration may merge into an earlier winner when both declare
+   the same field labels and the loser's field types are an instance of the
+   winner's. Returns a substitution winner_param -> loser field type. *)
+let match_record (winner : type_declaration) (_loser : type_declaration)
+    winner_labels loser_labels =
+  let winner_params =
+    List.filter_map
+      (fun (parameter, _) ->
+        match parameter.ptyp_desc with
+        | Ptyp_var name -> Some name
+        | _ -> None)
+      winner.ptype_params
+  in
+  let sorted =
+    List.sort
+      (fun (a : label_declaration) b -> compare a.pld_name.txt b.pld_name.txt)
+  in
+  let winners, losers = (sorted winner_labels, sorted loser_labels) in
+  if
+    List.for_all2
+      (fun (w : label_declaration) (l : label_declaration) ->
+        String.equal w.pld_name.txt l.pld_name.txt
+        && w.pld_mutable = l.pld_mutable)
+      winners losers
+  then
+    match
+      List.fold_left2
+        (fun subst (w : label_declaration) (l : label_declaration) ->
+          Option.bind subst (fun subst ->
+              match_field_type winner_params subst w.pld_type l.pld_type))
+        (Some []) winners losers
+    with
+    | Some subst
+      when List.for_all (fun p -> List.mem_assoc p subst) winner_params ->
+        Some subst
+    | Some _ | None -> None
+  else None
+
+let declaration_params (declaration : type_declaration) =
+  List.filter_map
+    (fun (parameter, _) ->
+      match parameter.ptyp_desc with
+      | Ptyp_var name -> Some name
+      | _ -> None)
+    declaration.ptype_params
+
+let field_name_key (labels : label_declaration list) =
+  labels
+  |> List.map (fun label -> label.pld_name.txt)
+  |> List.sort compare
+  |> String.concat ";"
+
+let dedup_generated_record_types structure =
+  (* candidates: field-name key -> declarations kept so far, in order *)
+  let _, aliases =
+    List.fold_left
+      (fun (candidates, aliases) item ->
+        match generated_record_declaration item with
+        | Some (name, declaration, labels)
+          when declaration.ptype_manifest = None
+               && declaration.ptype_constraints = [] -> (
+            let key = field_name_key labels in
+            let winners =
+              String_map.find_opt key candidates |> Option.value ~default:[]
+            in
+            match
+              List.find_map
+                (fun (winner_name, winner_decl, winner_labels) ->
+                  Option.map
+                    (fun subst -> (winner_name, winner_decl, subst))
+                    (match_record winner_decl declaration winner_labels labels))
+                winners
+            with
+            | Some (winner_name, winner_decl, subst) ->
+                ( candidates,
+                  String_map.add name
+                    (winner_name, declaration_params winner_decl, subst)
+                    aliases )
+            | None ->
+                ( String_map.add key
+                    (winners @ [ (name, declaration, labels) ])
+                    candidates,
+                  aliases ))
+        | Some _ | None -> (candidates, aliases))
+      (String_map.empty, String_map.empty) structure
+  in
+  if String_map.is_empty aliases then structure
+  else
+    List.map
+      (fun item ->
+        match item.pstr_desc with
+        | Pstr_type (Nonrecursive, [ declaration ])
+          when String_map.mem declaration.ptype_name.txt aliases ->
+            (* Replace the duplicate record with a transparent manifest
+               alias: references to it — including ones emitted into other
+               units sharing the same anonymous-record environment — still
+               resolve, and OCaml unfolds the alias at every use. *)
+            let winner, winner_params, subst =
+              String_map.find declaration.ptype_name.txt aliases
+            in
+            let arguments =
+              List.map
+                (fun parameter -> List.assoc parameter subst)
+                winner_params
+            in
+            {
+              item with
+              pstr_desc =
+                Pstr_type
+                  ( Nonrecursive,
+                    [
+                      {
+                        declaration with
+                        ptype_kind = Ptype_abstract;
+                        ptype_manifest =
+                          Some
+                            {
+                              ptyp_desc =
+                                Ptyp_constr
+                                  ( { txt = Longident.Lident winner; loc },
+                                    arguments );
+                              ptyp_loc = loc;
+                              ptyp_loc_stack = [];
+                              ptyp_attributes = [];
+                            };
+                      };
+                    ] );
+            }
+        | _ -> item)
+      structure
+
 let remove_unused_anonymous_types structure =
   let candidates, roots =
     List.fold_left
@@ -1490,7 +1706,7 @@ and structure_of_items_with_sets ?(prune = true) requested_sets module_path item
   let rec loop acc = function
     | [] ->
         let structure = List.concat (List.rev acc) in
-        Ok (if prune then remove_unused_anonymous_types structure else structure)
+        Ok (if prune then remove_unused_anonymous_types (dedup_generated_record_types structure) else structure)
     | Group grouped_items :: rest ->
         loop acc (grouped_items @ rest)
     | item :: rest when recursive_type_item item ->
@@ -1652,7 +1868,8 @@ let structure_of_located_items_excluding excluded_sets items =
     | [] ->
         Ok
           (remove_unused_anonymous_types
-             (prefix @ List.concat (List.rev acc)))
+             (dedup_generated_record_types
+                (prefix @ List.concat (List.rev acc))))
     | ((location, item) :: rest) as remaining -> (
         match recursive_type_items item with
         | Some _ ->
