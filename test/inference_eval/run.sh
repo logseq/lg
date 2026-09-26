@@ -24,6 +24,10 @@ while [ $# -gt 0 ]; do
 done
 export OCAMLPATH="$ROOT/_build/install/default/lib${OCAMLPATH:+:$OCAMLPATH}"
 
+# The .lg-cache keys do not include the compiler version, so results from a
+# stale binary would be replayed. Clear it for a true measurement.
+rm -rf "$ROOT/.lg-cache"
+
 [ -x "$LG" ] || { echo "missing $LG — run dune build first" >&2; exit 2; }
 [ -f "$STATE" ] || { echo "missing $STATE — run dune build first" >&2; exit 2; }
 
